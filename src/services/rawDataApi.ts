@@ -931,11 +931,12 @@ function buildRanking(perfs: EmpPerf[], targets: Map<string, TargetData>, workin
   }
 
   return completedPerfs
-    .sort((a, b) => {
-      const ta = (findTargetByNik(targets, a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
-      const tb = (findTargetByNik(targets, b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
-      return (b.sales / tb) - (a.sales / ta)
-    })
+  .filter(e => e.sales > 0)   // <-- TAMBAHKAN BARIS INI
+  .sort((a, b) => {
+    const ta = (findTargetByNik(targets, a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+    const tb = (findTargetByNik(targets, b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+    return (b.sales / tb) - (a.sales / ta)
+  })
     .map((e, i) => {
       const tData = findTargetByNik(targets, e.nik)
       const tgt   = (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays

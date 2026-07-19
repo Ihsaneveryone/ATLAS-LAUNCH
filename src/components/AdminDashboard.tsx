@@ -336,7 +336,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             )}
 
             {/* Trend chart */}
-            {layout.showTrendChart && (() => {
+            {false && (() => {
               const trend = page === 'today'
                 ? teamTrend
                 : page === 'mtd'
