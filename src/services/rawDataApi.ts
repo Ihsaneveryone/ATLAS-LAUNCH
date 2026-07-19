@@ -5,9 +5,10 @@
  * - TARGET: NIK, NAMA, TARGET_HARIAN (optional — falls back to DEFAULT_TARGET)
  */
 
-import type { PerformanceData, KPIItem } from '../data/mockData'
+import type { DailyTrend, PerformanceData, KPIItem } from '../data/mockData'
 import { YTD_PERFORMANCE } from '../data/mockData'
 import { getConfiguredColumnIndex } from './columnMappingService'
+import { niksMatch, canonicalNik } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
@@ -159,13 +160,235 @@ export async function fetchSkuMap(): Promise<SkuMap> {
 // Row 1 = header, Row 2+ = data
 // A=NIK, B=NAMA, C=TANGGAL, D=RECEIPT NO, E=ARTIKEL, F=DESKRIPSI, G=KODE, H=QTY, L=TOTAL VALUE
 
-export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
-  const raw = await fetchCSV('COPAS S2')
+// Fetch NIK->NAMA mapping dari ATLAS DATABASE atau COPAS sheet sebagai fallback
+async function fetchNikNameMapping(): Promise<Map<string, string>> {
+  try {
+    // Try ATLAS DATABASE first (punya explicit NIK-NAMA mapping)
+    let raw = await fetchCSV('ATLAS DATABASE').catch(() => null)
+    
+    if (!raw) {
+      // Fallback ke COPAS (aggregated sheet)
+      raw = await fetchCSV('COPAS')
+    }
+    
+    if (!raw) {
+      console.warn('[NIK Mapping] Neither ATLAS DATABASE nor COPAS available')
+      return new Map()
+    }
+    
+    const nikNameMap = new Map<string, string>()
+    
+    // Sheet structure: A=NIK, B=NAMA, ...
+    for (const row of raw.slice(1)) {
+      const nik = c(row, 0).trim()
+      const nama = c(row, 1).trim()
+      // Support: 101902 (digit 1 + 4 more digits) or I01902 (letter I + 5 digits)
+      if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+        nikNameMap.set(nik, nama)
+      }
+    }
+    
+    // Fallback: jika target names tidak semua ditemukan, coba USERS sheet
+    let found = 0
+    for (const [, nama] of nikNameMap) {
+      if (nama.includes('GWEN') || nama.includes('ADITYA') || nama.includes('ROZIAN')) found++
+    }
+    
+    if (found < 3) {
+      console.warn('[NIK Mapping] Incomplete target names in primary source, checking USERS sheet...')
+      try {
+        const usersRaw = await fetchCSV('USERS').catch(() => null)
+        if (usersRaw) {
+          for (const row of usersRaw.slice(1)) {
+            const nik = c(row, 0).trim()
+            const nama = c(row, 1).trim()
+            if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+              // Only add if not already in map (ATLAS takes precedence)
+              if (!nikNameMap.has(nik)) {
+                nikNameMap.set(nik, nama)
+              }
+            }
+          }
+          console.warn('[NIK Mapping] Added from USERS sheet, total now:', nikNameMap.size)
+        }
+      } catch (e2) {
+        console.warn('[NIK Mapping] USERS sheet fallback failed:', e2)
+      }
+    }
+    
+    console.warn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
+    // Log sample entries
+    const debugEntries = Array.from(nikNameMap.entries()).slice(0, 5)
+    console.warn('[NIK Mapping] Sample:', debugEntries.map(([k,v]) => `${k}→${v}`).join(', '))
+    // Check target names
+    found = 0
+    for (const [nik, nama] of nikNameMap) {
+      if (nama.includes('GWEN') || nama.includes('ADITYA') || nama.includes('ROZIAN')) {
+        console.warn(`[NIK Mapping] TARGET: ${nik} = ${nama}`)
+        found++
+      }
+    }
+    console.warn(`[NIK Mapping] Found ${found} target names (GWEN/ADITYA/ROZIAN)`)
+    // Hardcoded fallbacks for known mixed-format NIKs that sometimes
+    // appear blank or with an I-prefix in the COPAS S2 sheet export.
+    // This ensures the parser can associate sales rows (even if A is empty)
+    // to the correct numeric NIK used throughout the app.
+    const hardcoded: Record<string, string> = {
+      'KR-I PUTU ADI SUARTAMA': '101902', // I01902
+      'KR-FATKHUN NIMAH': '101903',       // I01903
+      'MOCH.ROZIAN NAUFAL': '101904',     // I01904
+    }
+    for (const [name, nik] of Object.entries(hardcoded)) {
+      if (!nikNameMap.has(nik)) {
+        console.warn(`[NIK Mapping] Adding hardcoded fallback: ${nik} -> ${name}`)
+        nikNameMap.set(nik, name)
+      }
+    }
 
-  // Log 4 baris pertama untuk deteksi struktur
+    return nikNameMap
+  } catch (e) {
+    console.warn('[NIK Mapping] Failed:', e)
+    return new Map()
+  }
+}
+
+
+
+function normalizeNameForMatch(s: string): string {
+  return s.toUpperCase().replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function looksLikeDateHeader(value: string): boolean {
+  const s = value.trim()
+  return /^\d{1,2}[\/\-\.](\d{1,2}|[A-Za-z]{3})[\/\-\.](\d{4})?$/.test(s)
+}
+
+function parseMatrixDailySheet(rows: string[][], nikNameMap: Map<string, string>): RawTxn[] {
+  if (rows.length < 2) return []
+
+  const headers = rows[0].map(h => h.trim())
+  const nikIdx = headers.findIndex(h => h.toUpperCase() === 'NIK')
+  const namaIdx = headers.findIndex(h => h.toUpperCase() === 'NAMA')
+  const dateIndices = headers
+    .map((header, index) => ({ header, index }))
+    .filter(({ header }) => looksLikeDateHeader(header))
+    .map(({ index }) => index)
+
+  if (dateIndices.length === 0) return []
+
+  const nameToNik = new Map<string, string>()
+  for (const row of rows.slice(1)) {
+    const nik = c(row, nikIdx)
+    const nama = c(row, namaIdx)
+    if (nik && nama) {
+      nameToNik.set(normalizeNameForMatch(nama), canonicalNik(nik))
+    }
+  }
+
+  const resolveNik = (row: string[]) => {
+    const rawNik = c(row, nikIdx)
+    if (rawNik) return canonicalNik(rawNik)
+
+    const nama = c(row, namaIdx)
+    if (!nama) return ''
+
+    const normalizedNama = normalizeNameForMatch(nama)
+    if (nameToNik.has(normalizedNama)) return nameToNik.get(normalizedNama) ?? ''
+
+    for (const [mappedNik, mappedNama] of nikNameMap) {
+      if (normalizeNameForMatch(mappedNama) === normalizedNama) {
+        return canonicalNik(mappedNik)
+      }
+    }
+
+    return ''
+  }
+
+  const txns: RawTxn[] = []
+  for (const row of rows.slice(1)) {
+    const nik = resolveNik(row)
+    const nama = c(row, namaIdx)
+    if (!nik || !nama) continue
+
+    for (const idx of dateIndices) {
+      const rawValue = c(row, idx)
+      const val = Number.parseFloat(rawValue.replace(/[^0-9.-]/g, '')) || 0
+      if (val <= 0) continue
+
+      txns.push({
+        nik,
+        nama,
+        tanggal: headers[idx],
+        date: parseDate(headers[idx]),
+        receiptNo: '',
+        artikel: '',
+        qty: val,
+        totalValue: val,
+      })
+    }
+  }
+
+  return txns
+}
+
+export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
+  const nikNameMap = await fetchNikNameMapping()
+  const candidates = ['COPAS S2', 'COPAS', 'COPAS S2 ', 'COPAS S2 (1)', 'COPAS S2 (2)', 'RAW DATA', 'TRANSAKSI', 'DAILY SALES']
+
   const debugRows: string[] = []
+  let raw: string[][] | null = null
+  let usedSheet = ''
+
+  // Prefer a "raw" row-based sheet (has TANGGAL / RECEIPT) over a
+  // matrix-style sheet (dates as columns). If no raw sheet is found,
+  // fall back to the first matrix-style candidate.
+  let matrixFallback: { rows: string[][]; name: string } | null = null
+  for (const candidate of candidates) {
+    try {
+      const candidateRows = await fetchCSV(candidate)
+      const firstRow = candidateRows[0]?.map(v => v.trim()) ?? []
+      const isReferenceSheet = candidateRows.some(row => row.some(cell => cell.includes('#REF!')))
+      const headerText = firstRow.join(' | ').toUpperCase()
+      const looksLikeMatrix = firstRow.some(h => looksLikeDateHeader(h)) && headerText.includes('NIK') && headerText.includes('NAMA')
+      const looksLikeRaw = firstRow.some(h => h.toUpperCase().includes('TANGGAL')) || firstRow.some(h => h.toUpperCase().includes('RECEIPT'))
+
+      if (!candidateRows.length || isReferenceSheet) continue
+      if (looksLikeRaw) {
+        raw = candidateRows
+        usedSheet = candidate
+        break
+      }
+      if (looksLikeMatrix && !matrixFallback) {
+        matrixFallback = { rows: candidateRows, name: candidate }
+      }
+    } catch {
+      // Try next candidate sheet name
+    }
+  }
+
+  if (!raw && matrixFallback) {
+    raw = matrixFallback.rows
+    usedSheet = matrixFallback.name
+  }
+
+  if (!raw) {
+    debugRows.push('Tidak ada sheet transaksi yang valid ditemukan')
+    return { txns: [], debugRows }
+  }
+
+  debugRows.push(`Source transaksi: ${usedSheet}`)
   for (let i = 0; i < Math.min(4, raw.length); i++) {
     debugRows.push(`Row${i}: ${raw[i].slice(0, 8).map((v,ci) => `[${ci}]=${v||'∅'}`).join(' ')}`)
+  }
+
+  const headers = raw[0]?.map((h) => h.trim().toUpperCase()) ?? []
+  const headerText = headers.join(' | ')
+  const looksLikeMatrix = headers.some(h => looksLikeDateHeader(h)) && headerText.includes('NIK') && headerText.includes('NAMA')
+
+  if (looksLikeMatrix) {
+    const txns = parseMatrixDailySheet(raw, nikNameMap)
+    debugRows.push(`Parsed as matrix daily sheet: ${txns.length} transaksi`)
+    return { txns, debugRows }
   }
 
   // Auto-detect baris data: cari baris pertama di mana kolom A berisi angka ≥ 4 digit (format NIK)
@@ -176,12 +399,15 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   }
   debugRows.push(`dataStart: baris ${dataStart}`)
 
+  // Find NIK column dynamically from header
+  let nikIdx = headers.findIndex(h => h.includes('NIK'))
+  if (nikIdx < 0) nikIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_NIK', 0)
+
   // FILL-DOWN NIK: NIK hanya terisi di baris pertama tiap karyawan, baris selanjutnya kosong
   let lastNik  = ''
   let lastNama = ''
   const txns: RawTxn[] = []
 
-  const nikIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_NIK', 0)
   const namaIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_NAMA', 1)
   const tanggalIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TANGGAL', 2)
   const receiptIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_RECEIPT_NO', 3)
@@ -198,8 +424,34 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     if (namaVal.toUpperCase() === 'NONAME') { lastNik = ''; lastNama = ''; continue }
 
     // Update NIK & NAMA kalau ada nilai baru
-    if (/^[Ii]?\d{4,}$/.test(nikVal))  lastNik  = nikVal
+    // Accept: \d{4,} (pure digits) or I\d{5} (I-prefix format like I01902)
+    if (/^(I\d{5}|\d{4,})$/i.test(nikVal)) lastNik = canonicalNik(nikVal)
     if (namaVal && namaVal !== lastNama && !/^\d/.test(namaVal)) lastNama = namaVal.replace(/^[A-Z]{2,3}-/i, '').trim()
+
+    // Fallback: Kalau NIK kosong tapi NAMA ada, cari NIK dari nikNameMap
+    if (!lastNik && lastNama && nikNameMap.size > 0) {
+      const normalizedLastNama = normalizeNameForMatch(lastNama)
+      let found = false
+      for (const [nik, nama] of nikNameMap) {
+        if (normalizeNameForMatch(nama) === normalizedLastNama) {
+          lastNik = nik
+          found = true
+          console.warn(`[COPAS S2 Fallback] Match: "${lastNama}" → NIK "${nik}"`)
+          break
+        }
+      }
+      if (!found && (lastNama.includes('GWEN') || lastNama.includes('ADITYA') || lastNama.includes('ROZIAN'))) {
+        console.warn(`[COPAS S2 Fallback] NO EXACT MATCH for "${lastNama}"`)
+        for (const [nik, nama] of nikNameMap) {
+          const normNama = normalizeNameForMatch(nama)
+          if (normNama.includes(normalizedLastNama) || normalizedLastNama.includes(normNama)) {
+            lastNik = nik
+            console.warn(`[COPAS S2 Fallback] Fuzzy match: "${lastNama}" → NIK "${nik}"`)
+            break
+          }
+        }
+      }
+    }
 
     // Skip kalau NIK belum terisi atau tidak ada tanggal
     if (!lastNik || !tgl) continue
@@ -222,6 +474,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
 
   return { txns, debugRows }
 }
+
 
 // ─── Fetch SETTING ────────────────────────────────────────────────────────────
 // Sheet SETTING: A=SECTION, B=NAMA, C=AKTIF, D=TARGET_TYPE, E=TARGET_VALUE, F=UNIT, G=KETERANGAN
@@ -303,28 +556,42 @@ export interface TargetData {
   targetBasketSizeMonthly?: number  // kolom H — target basket size bulanan
 }
 
+function setTargetEntry(map: Map<string, TargetData>, key: string, entry: TargetData): void {
+  if (!key) return
+  if (map.has(key)) return
+  map.set(key, entry)
+}
+
 export async function fetchTargets(): Promise<Map<string, TargetData>> {
   try {
     console.warn('[TARGET] fetching...')
     const raw = await fetchCSV('TARGET')
+    const nikNameMapping = await fetchNikNameMapping()  // Get ATLAS DATABASE mapping for reverse lookup
+    const headers = (raw[0] ?? []).map(value => value.trim().toUpperCase())
+
+    const findTargetHeaderIndex = (patterns: RegExp[], fallbackIndex: number): number => {
+      const headerIndex = headers.findIndex(header => patterns.some(pattern => pattern.test(header)))
+      return headerIndex >= 0 ? headerIndex : fallbackIndex
+    }
+    
     console.warn('[TARGET] rows:', raw.length, '| tail 5 col0:', raw.slice(-5).map(r=>JSON.stringify(r[0])+'/'+JSON.stringify(r[1])).join(', '))
     // Log baris dengan NIK kosong (intern biasanya null di gviz)
     const emptyNikRows = raw.slice(1).filter(r => !c(r, 0) && c(r, 1))
     if (emptyNikRows.length > 0) console.warn('[TARGET] Baris NIK kosong (nama-only):', emptyNikRows.map(r=>JSON.stringify(c(r,1))).join(', '))
     const normN = (s: string) => s.toUpperCase().replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim()
     const map = new Map<string, TargetData>()
-    const nikIdx = getConfiguredColumnIndex('TARGET', 'TARGET_NIK', 0)
-    const namaIdx = getConfiguredColumnIndex('TARGET', 'TARGET_NAMA', 1)
-    const dailyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 2)
-    const monthlyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_MONTHLY', 3)
-    const trxDailyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_TRX_DAILY', 4)
-    const trxMonthlyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_TRX_MONTHLY', 5)
-    const basketSizeDailyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_BASKET_SIZE_DAILY', 6)
-    const basketSizeMonthlyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_BASKET_SIZE_MONTHLY', 7)
-    const jobTitleIdx = getConfiguredColumnIndex('TARGET', 'TARGET_JOB_TITLE', 8)
+    const nikIdx = findTargetHeaderIndex([/^NIK$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NIK', 0))
+    const namaIdx = findTargetHeaderIndex([/^NAMA$/i, /^NAME$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NAMA', 1))
+    const dailyIdx = findTargetHeaderIndex([/TARGET SALES DAILY/i, /TARGET HARIAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 2))
+    const monthlyIdx = findTargetHeaderIndex([/TARGET SALES BULAN/i, /TARGET SATU BULAN/i, /TARGET MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_MONTHLY', 3))
+    const trxDailyIdx = findTargetHeaderIndex([/TARGET TRANSAKSI DAILY/i, /TARGET TRX DAILY/i], getConfiguredColumnIndex('TARGET', 'TARGET_TRX_DAILY', 4))
+    const trxMonthlyIdx = findTargetHeaderIndex([/TARGET TRANSAKSI BULAN/i, /TARGET TRANSAKSI SATU BULAN/i, /TARGET TRX MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_TRX_MONTHLY', 5))
+    const basketSizeDailyIdx = findTargetHeaderIndex([/TARGET BASKET SIZE DAILY/i], getConfiguredColumnIndex('TARGET', 'TARGET_BASKET_SIZE_DAILY', 6))
+    const basketSizeMonthlyIdx = findTargetHeaderIndex([/TARGET BASKET SIZE BULAN/i, /TARGET BASKET SIZE SATU BULAN/i, /TARGET BASKET SIZE MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_BASKET_SIZE_MONTHLY', 7))
+    const jobTitleIdx = findTargetHeaderIndex([/JOB TITLE/i, /JABATAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_JOB_TITLE', 8))
 
     for (const row of raw.slice(1)) {
-      const nik  = c(row, nikIdx)
+      let nik  = c(row, nikIdx)
       const nama = c(row, namaIdx).replace(/^[A-Z]{2,3}-/i, '').trim()
       const daily          = numVal(c(row, dailyIdx))
       const monthly        = numVal(c(row, monthlyIdx)) || daily * 26
@@ -334,16 +601,33 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
       const targetBasketSizeMonthly = numVal(c(row, basketSizeMonthlyIdx)) || 0
       const jobTitle         = c(row, jobTitleIdx) || ''
       if (daily <= 0) continue
+      
+      // Jika NIK kosong di TARGET sheet, cari NIK dari ATLAS DATABASE menggunakan nama
+      if (!nik && nama && nikNameMapping.size > 0) {
+        const normalizedNama = normN(nama)
+        for (const [mappedNik, mappedNama] of nikNameMapping) {
+          if (normN(mappedNama) === normalizedNama) {
+            nik = mappedNik
+            console.warn(`[TARGET fallback] NAMA "${nama}" → NIK "${nik}" dari ATLAS`)
+            break
+          }
+        }
+      }
+      
       const entry: TargetData = { daily, monthly, nama, jobTitle,
         targetTrxDaily:   targetTrxDaily   || undefined,
         targetTrxMonthly: targetTrxMonthly || undefined,
         targetBasketSizeDaily: targetBasketSizeDaily || undefined,
         targetBasketSizeMonthly: targetBasketSizeMonthly || undefined,
       }
-      // Simpan by NIK (kalau NIK terbaca oleh gviz)
-      if (nik && /^[Ii]?\d{4,}$/.test(nik)) map.set(nik, entry)
+      // Simpan by NIK (kalau NIK terbaca oleh gviz atau sudah ditemukan dari fallback)
+      // Support: I01902 (I + 5 digits) atau 101902+ (4+ digits)
+      if (nik && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+        setTargetEntry(map, nik, entry)
+        setTargetEntry(map, canonicalNik(nik), entry)
+      }
       // Selalu simpan by NAMA sebagai fallback (nama biasanya terbaca meski NIK null)
-      if (nama) map.set(`NAMA:${normN(nama)}`, entry)
+      if (nama) setTargetEntry(map, `NAMA:${normN(nama)}`, entry)
     }
     return map
   } catch (e) {
@@ -497,16 +781,31 @@ function makeKPIs(
 
   const kpiSettings = settings.filter(s => s.section === 'KPI' && s.aktif)
   const katSettings = settings.filter(s => s.section === 'KATEGORI')
+  const normalizeKpiName = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim()
 
   // Hitung target dari sebuah setting row
-  function calcTarget(s: KPISetting): number {
+  function calcBaseTarget(s: KPISetting, sheetBase: number): number {
     switch (s.targetType) {
-      case 'sheet':      return s.nama === 'Basket Size' ? Math.max(1, targetBsBase) : targetTr
+      case 'sheet':      return Math.max(1, sheetBase)
       case 'per_trx':    return Math.max(1, Math.round(targetTr * s.targetValue))
       case 'pct_harian': return Math.max(1, Math.round(dailyTarget * s.targetValue * days))
       case 'per_hari':   return Math.max(1, Math.round(s.targetValue * days))
       case 'tetap':      return Math.max(1, s.targetValue)
     }
+  }
+
+  const targetUpt = 5
+  const targetQty = Math.max(1, Math.round(targetUpt * targetTr))
+  const targetAur = 200000
+
+  function calcTarget(s: KPISetting): number {
+    const normalizedName = normalizeKpiName(s.nama)
+    if (normalizedName === 'transaksi') return targetTr
+    if (normalizedName === 'qty item' || normalizedName === 'qty') return targetQty
+    if (normalizedName === 'aur') return targetAur
+    if (normalizedName === 'upt') return targetUpt
+    if (normalizedName === 'basket size') return Math.max(1, targetBsBase)
+    return calcBaseTarget(s, targetTr)
   }
 
   // Mapping nama KPI → nilai aktual dari EmpPerf
@@ -529,9 +828,9 @@ function makeKPIs(
     // fallback hardcoded jika SETTING belum ada
     kpis = [
       { label: 'Transaksi',   value: e.transaksi,  target: targetTr,                      unit: 'trx'  },
-      { label: 'Qty Item',    value: e.qty,         target: Math.max(1, targetTr * 5),     unit: 'item' },
-      { label: 'AUR',         value: e.aur,         target: Math.round(dailyTarget * 0.2), unit: 'Rp'   },
-      { label: 'UPT',         value: e.upt,         target: 5,                             unit: 'x'    },
+      { label: 'Qty Item',    value: e.qty,         target: targetQty,                     unit: 'item' },
+      { label: 'AUR',         value: e.aur,         target: targetAur,                     unit: 'Rp'   },
+      { label: 'UPT',         value: e.upt,         target: targetUpt,                     unit: 'x'    },
       { label: 'Basket Size', value: e.basketSize,  target: Math.max(1, targetBsBase),     unit: 'Rp'   },
       { label: 'New Member',  value: e.newMember,   target: Math.max(1, 2 * days),         unit: 'org'  },
     ]
@@ -585,17 +884,60 @@ function cleanNama(raw: string): string {
   return raw.replace(/^[A-Z]{2,3}-/i, '').trim()
 }
 
+function findTargetByNik(targets: Map<string, TargetData>, nik: string): TargetData | undefined {
+  // Coba exact match terlebih dahulu
+  const exact = targets.get(nik)
+  if (exact) return exact
+
+  const canonical = canonicalNik(nik)
+  const canonicalExact = targets.get(canonical)
+  if (canonicalExact) return canonicalExact
+
+  // Coba NIK matching untuk format variants (I01902 vs 101902)
+  for (const [key, value] of targets.entries()) {
+    if (key.startsWith('NAMA:')) continue
+    if (niksMatch(key, nik)) return value
+  }
+
+  return undefined
+}
+
 function buildRanking(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set()) {
-  const validNiksLower = new Set([...validNiks].map(n => n.toLowerCase()))
-  return perfs
-    .filter(e => validNiks.size === 0 || validNiksLower.has(e.nik.toLowerCase()))
+  const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
+  const filteredPerfs = perfs
+    .filter(e => validNiks.size === 0 || normalizedValidNiks.has(canonicalNik(e.nik).toLowerCase()))
+
+  const perfsByNik = new Map(filteredPerfs.map(entry => [canonicalNik(entry.nik).toLowerCase(), entry]))
+  const completedPerfs = [...filteredPerfs]
+
+  for (const key of normalizedValidNiks) {
+    const canonicalValidNik = key
+    if (perfsByNik.has(key)) continue
+
+    const targetData = findTargetByNik(targets, canonicalValidNik)
+    completedPerfs.push({
+      nik: canonicalValidNik,
+      nama: targetData?.nama ?? canonicalValidNik,
+      sales: 0,
+      qty: 0,
+      transaksi: 0,
+      newMember: 0,
+      categorySales: {},
+      categoryQty: {},
+      basketSize: 0,
+      upt: 0,
+      aur: 0,
+    })
+  }
+
+  return completedPerfs
     .sort((a, b) => {
-      const ta = (targets.get(a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
-      const tb = (targets.get(b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+      const ta = (findTargetByNik(targets, a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+      const tb = (findTargetByNik(targets, b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
       return (b.sales / tb) - (a.sales / ta)
     })
     .map((e, i) => {
-      const tData = targets.get(e.nik)
+      const tData = findTargetByNik(targets, e.nik)
       const tgt   = (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
       // Gunakan nama dari targets sheet jika nama transaksi kosong/tidak valid
       const rawNama = e.nama && e.nama.trim() && e.nama.trim().toUpperCase() !== 'NONAME'
@@ -617,6 +959,8 @@ export interface RawPerfResult {
   dailyDate: string
   dateFrom:  string
   dateTo:    string
+  teamTodayTrend: DailyTrend[]
+  teamMtdTrend:   DailyTrend[]
 }
 
 function normNik(nik: string): string {
@@ -625,7 +969,9 @@ function normNik(nik: string): string {
 
 export async function buildRawPerformance(currentNik: string, onLog?: (s: string) => void, validNiks: Set<string> = new Set()): Promise<RawPerfResult> {
   const log = (s: string) => { console.warn('[ATLAS RAW]', s); onLog?.(s) }
-  const normCurrent = normNik(currentNik)
+  // Normalize currentNik to canonical format (I01902 → 101902) so it matches transaction NIKs
+  const canonicalCurrent = canonicalNik(currentNik)
+  const normCurrent = normNik(canonicalCurrent)
 
   const [{ txns: rawTxns, debugRows }, skuMap, targets, memberEntries, settings] = await Promise.all([
     fetchRawTransactions(),
@@ -635,7 +981,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     fetchSettings(),
   ])
   log(`SETTING: ${settings.length} baris (KPI=${settings.filter(s=>s.section==='KPI').length}, KATEGORI=${settings.filter(s=>s.section==='KATEGORI').length})`)
-  log(`TARGET: ${targets.size} entri — NIK intern: ${['I01902','I01903','I01904'].map(n=>`${n}=${targets.has(n)?targets.get(n)!.daily:'❌'}`).join(', ')}`)
+  log(`TARGET: ${targets.size} entri — NIK intern: ${['I01902','I01903','I01904'].map(n=>{const f=findTargetByNik(targets,n);return`${n}=${f?f.daily:'❌'}`}).join(', ')}`)
 
   // Log raw structure
   debugRows.forEach(r => log(r))
@@ -689,17 +1035,25 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   // ── NIK diagnostics ─────────────────────────────────────────────────────
   const allNiks = [...new Set(parsedTxns.map(t => t.nik))]
   log(`NIK di data (${allNiks.length}): ${allNiks.join(', ')}`)
-  log(`NIK login: "${currentNik}"`)
+  log(`NIK login: "${currentNik}" (canonical: "${canonicalCurrent}")`)
   const nikMatch = parsedTxns.some(t => normNik(t.nik) === normCurrent)
   log(`NIK match: ${nikMatch ? 'YA ✅' : 'TIDAK ❌ — cek format NIK'}`)
 
   // ── Date diagnostics ────────────────────────────────────────────────────
   const todayStr = `${String(todayDD).padStart(2,'0')}/${String(todayMM).padStart(2,'0')}/${today.getFullYear()}`
-  const todayTxnsCount = parsedTxns.filter(t => t.date && sameDay(t.date, today)).length
+  const todayTxns = parsedTxns.filter(t => t.date && sameDay(t.date, today))
+  const todayTxnsCount = todayTxns.length
   log(`Transaksi hari ini (${todayStr}): ${todayTxnsCount} baris`)
 
-  const todayTxns = parsedTxns.filter(t => t.date && sameDay(t.date, today))
-  const dailyTxns = todayTxns
+  const fmt = (d: Date) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+  const fmtLabel = (d: Date) => `${d.getDate()} ${d.toLocaleString('id-ID', { month: 'short' })}`
+
+  let dailyTxns = todayTxns
+  if (todayTxns.length === 0) {
+    dailyTxns = []
+    log(`Tidak ada transaksi untuk tanggal ${fmt(today)}; daily view dikosongkan`) 
+  }
+
   // MTD = H-1: data s.d. kemarin agar angka MTD sudah final (bukan setengah hari)
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
   const mtdTxns   = parsedTxns.filter(t => t.date && sameMonth(t.date, today) && t.date <= yesterday)
@@ -707,6 +1061,32 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
 
   const dailyPerfs = aggregate(dailyTxns, skuMap)
   const mtdPerfs   = aggregate(mtdTxns,   skuMap)
+
+  const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
+
+  const teamDailyTarget = [...normalizedValidNiks].reduce((sum, nik) => {
+    const t = findTargetByNik(targets, nik)
+    return sum + (t?.daily ?? DEFAULT_DAILY_TARGET)
+  }, 0)
+
+  const validTeam = (t: RawTxn) => normalizedValidNiks.has(canonicalNik(t.nik).toLowerCase())
+  const teamTodayTotal = todayTxns.filter(validTeam).reduce((sum, t) => sum + t.totalValue, 0)
+
+  const teamMtdTxns = parsedTxns.filter(t =>
+    t.date && sameMonth(t.date, today) && t.date <= yesterday && validTeam(t)
+  )
+  const teamSalesByDay = new Map<string, number>()
+  for (const t of teamMtdTxns) {
+    if (!t.date) continue
+    const key = fmt(t.date)
+    teamSalesByDay.set(key, (teamSalesByDay.get(key) ?? 0) + t.totalValue)
+  }
+  const teamMtdTrend = [...teamSalesByDay.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, actual]) => {
+      const [dd, mm, yyyy] = key.split('/').map(Number)
+      return { date: fmtLabel(new Date(yyyy, mm - 1, dd)), actual, target: teamDailyTarget }
+    })
 
   const wdays = yesterday.getDate() // hari berjalan = kemarin
 
@@ -747,19 +1127,19 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   }
 
   // Find current user's perf
-  const emptyPerf = () => ({ nik: currentNik, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
-  const myDaily = dailyPerfs.find(e => normNik(e.nik) === normCurrent) ?? emptyPerf()
-  const myMTD   = mtdPerfs.find(e => normNik(e.nik) === normCurrent)   ?? emptyPerf()
+  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
+  const myDaily = dailyPerfs.find(e => niksMatch(e.nik, canonicalCurrent)) ?? dailyPerfs.find(e => normNik(e.nik) === normCurrent) ?? emptyPerf()
+  const myMTD   = mtdPerfs.find(e => niksMatch(e.nik, canonicalCurrent))   ?? mtdPerfs.find(e => normNik(e.nik) === normCurrent)   ?? emptyPerf()
 
   // Attach new member counts
-  myDaily.newMember = sumMember(memberEntries, currentNik, d => sameDay(d, today))
-  myMTD.newMember   = sumMember(memberEntries, currentNik, d => sameMonth(d, today) && d <= yesterday)
+  myDaily.newMember = sumMember(memberEntries, canonicalCurrent, d => sameDay(d, today))
+  myMTD.newMember   = sumMember(memberEntries, canonicalCurrent, d => sameMonth(d, today) && d <= yesterday)
 
   // Debug: show member entries that SHOULD belong to currentNik
   const myNamaInCopas = [...namaToNik.entries()].find(([,v]) => normNik(v) === normCurrent)?.[0] ?? '(tidak ada)'
-  log(`Nama di COPAS S2 untuk NIK ${currentNik}: "${myNamaInCopas}"`)
+  log(`Nama di COPAS S2 untuk NIK ${canonicalCurrent}: "${myNamaInCopas}"`)
   const relatedEntries = memberEntries.filter(e =>
-    e.byNik ? norm(e.nikOrNama) === norm(currentNik) : normNik(resolveNama(e.nikOrNama) ?? '') === normCurrent
+    e.byNik ? normNik(e.nikOrNama) === normNik(canonicalCurrent) : normNik(resolveNama(e.nikOrNama) ?? '') === normCurrent
   )
   log(`MEMBER entries untuk NIK ini: ${relatedEntries.length} — ${relatedEntries.map(e => `${e.nikOrNama}(${e.date?.toLocaleDateString('id-ID')})`).slice(0,5).join(', ')}`)
   log(`New Member today=${myDaily.newMember} MTD=${myMTD.newMember}`)
@@ -767,7 +1147,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   // Cari target: coba by NIK dulu, lalu by NAMA (fallback jika NIK null di gviz)
   const normN = (s: string) => s.toUpperCase().replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim()
   const myNamaForTarget = normN(myMTD.nama || myDaily.nama || '')
-  const byNik  = targets.get(currentNik)
+  const byNik  = findTargetByNik(targets, canonicalCurrent)
   const byNama = myNamaForTarget ? targets.get(`NAMA:${myNamaForTarget}`) : undefined
   // Fuzzy fallback: cari nama TARGET yang paling mirip (cocok sebagian)
   let byFuzzy: TargetData | undefined
@@ -789,31 +1169,35 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   const dailyAch = dailyTarget         > 0 ? parseFloat(((myDaily.sales / dailyTarget)          * 100).toFixed(1)) : 0
   const mtdAch   = mtdTargetProrated   > 0 ? parseFloat(((myMTD.sales   / mtdTargetProrated)    * 100).toFixed(1)) : 0
 
-  const fmt      = (d: Date) => `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
-  const fmtLabel = (d: Date) => `${d.getDate()} ${d.toLocaleString('id-ID', { month: 'short' })}`
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
 
   // ── Build daily trend: sum sales per day for currentNik, sorted by date ──
-  const myMtdTxns = mtdTxns.filter(t => normNik(t.nik) === normCurrent)
+  const myMtdTxns = mtdTxns.filter(t => niksMatch(t.nik, currentNik))
   const salesByDay = new Map<string, number>()
   for (const t of myMtdTxns) {
     if (!t.date) continue
     const key = fmt(t.date)
     salesByDay.set(key, (salesByDay.get(key) ?? 0) + t.totalValue)
   }
-  const dailyTrend = [...salesByDay.entries()]
+  const mtdTrend = [...salesByDay.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .map(([key, actual]) => {
       const [dd, mm, yyyy] = key.split('/').map(Number)
       return { date: fmtLabel(new Date(yyyy, mm - 1, dd)), actual, target: dailyTarget }
     })
 
-  log(`Trend harian: ${dailyTrend.length} hari data`)
+  const todayTrendEntry = todayTxns.length > 0
+    ? [{ date: fmtLabel(today), actual: myDaily.sales, target: dailyTarget }]
+    : [{ date: fmtLabel(today), actual: 0, target: dailyTarget }]
+
+  log(`Trend harian: ${mtdTrend.length} hari data`)
 
   return {
-    dailyDate: fmt(today),
-    dateFrom:  fmt(firstOfMonth),
-    dateTo:    fmt(yesterday),
+    dailyDate:      fmt(today),
+    dateFrom:       fmt(firstOfMonth),
+    dateTo:         fmt(yesterday),
+    teamTodayTrend: [{ date: fmt(today), actual: teamTodayTotal, target: teamDailyTarget }],
+    teamMtdTrend,
 
     todayPerf: {
       achievement: dailyAch,
@@ -823,7 +1207,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       workingDays: 1,
       kpis:        makeKPIs(myDaily, dailyTarget, false, 1, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(dailyPerfs, targets, 1, validNiks),
-      dailyTrend:  dailyTrend.length > 0 ? dailyTrend : [{ date: fmt(today), actual: myDaily.sales, target: dailyTarget }],
+      dailyTrend:  todayTrendEntry,
     },
 
     mtdPerf: {
@@ -835,7 +1219,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(mtdPerfs, targets, wdays, validNiks),
-      monthlyTrend: dailyTrend.length > 0 ? dailyTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
+      monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }
 }

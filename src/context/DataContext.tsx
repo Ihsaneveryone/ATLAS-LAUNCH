@@ -3,7 +3,7 @@ import { TODAY_PERFORMANCE, MTD_PERFORMANCE, YTD_PERFORMANCE, USERS as MOCK_USER
 import { fetchUsers } from '../services/sheetsApi'
 import { buildRawPerformance, fetchMenuConfig } from '../services/rawDataApi'
 import { fetchPencapaianToko, type TokoRow } from '../services/tokoApi'
-import type { User, PerformanceData } from '../data/mockData'
+import type { User, PerformanceData, DailyTrend } from '../data/mockData'
 
 export interface AtlasData {
   users:            User[]
@@ -11,6 +11,8 @@ export interface AtlasData {
   mtdPerf:          PerformanceData
   ytdPerf:          PerformanceData
   dailyDate:        string
+  teamTodayTrend:   DailyTrend[]
+  teamMtdTrend:     DailyTrend[]
   loading:          boolean
   error:            string | null
   usingLive:        boolean
@@ -27,6 +29,8 @@ export const DataContext = createContext<AtlasData>({
   mtdPerf:          MTD_PERFORMANCE,
   ytdPerf:          YTD_PERFORMANCE,
   dailyDate:        '',
+  teamTodayTrend:   [],
+  teamMtdTrend:     [],
   loading:          false,
   error:            null,
   usingLive:        false,
@@ -48,6 +52,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mtdPerf:    MTD_PERFORMANCE,
     ytdPerf:    YTD_PERFORMANCE,
     dailyDate:  '',
+    teamTodayTrend: [],
+    teamMtdTrend:   [],
     loading:    false,
     error:      null,
     usingLive:  false,
@@ -113,6 +119,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let todayPerf = TODAY_PERFORMANCE
     let mtdPerf   = MTD_PERFORMANCE
     let dailyDate = ''
+    let teamTodayTrend: DailyTrend[] = []
+    let teamMtdTrend: DailyTrend[] = []
     try {
       log('Mengolah data mentah COPAS S2…')
       // Hanya NIK dengan role 'user' yang masuk ranking — exclude admin & NIK anomali
@@ -121,6 +129,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       todayPerf = result.todayPerf
       mtdPerf   = result.mtdPerf
       dailyDate = result.dailyDate
+      teamTodayTrend = result.teamTodayTrend
+      teamMtdTrend = result.teamMtdTrend
     } catch (e: any) { log(`❌ Error: ${e?.message ?? e}`) }
 
     // ── PENCAPAIAN TOKO ───────────────────────────────────────────
@@ -140,6 +150,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       mtdPerf,
       ytdPerf:   YTD_PERFORMANCE,
       dailyDate,
+      teamTodayTrend,
+      teamMtdTrend,
       tokoRows,
       loading:   false,
       error:     null,

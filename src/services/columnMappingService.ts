@@ -90,13 +90,11 @@ export const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
   { id: 'TOKO_TRANSAKSI_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'transaksiDaily', columnLetter: 'E', columnIndex: 4, description: 'Daily Transactions (count)', dataType: 'number', optional: true, active: true, section: 'Daily' },
   { id: 'TOKO_TARGET_TRANSAKSI_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'targetTransaksiDaily', columnLetter: 'W', columnIndex: 22, description: 'Daily Transaction Target', dataType: 'number', optional: true, active: true, section: 'Daily' },
 
-  // New Members
-  { id: 'TOKO_NEW_MEMBER_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'newMemberDaily', columnLetter: 'F', columnIndex: 5, description: 'New Members (daily)', dataType: 'number', optional: true, active: true, section: 'Daily' },
-  { id: 'TOKO_TARGET_NEW_MEMBER_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'targetNewMemberDaily', columnLetter: 'AM', columnIndex: 38, description: 'New Members Daily Target', dataType: 'number', optional: true, active: true, section: 'Daily' },
-
   // Special Categories
-  { id: 'TOKO_INSTANT_UPGRADE_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'instantUpgradeDaily', columnLetter: 'G', columnIndex: 6, description: 'Instant Upgrade (count)', dataType: 'number', optional: true, active: true, section: 'Daily' },
-  { id: 'TOKO_PROTEKSI_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'proteksiDaily', columnLetter: 'H', columnIndex: 7, description: 'Proteksi Products (count)', dataType: 'number', optional: true, active: true, section: 'Daily' },
+  { id: 'TOKO_PROTEKSI_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'proteksiDaily', columnLetter: 'F', columnIndex: 5, description: 'Proteksi Products (count)', dataType: 'number', optional: true, active: true, section: 'Daily' },
+  { id: 'TOKO_NEW_MEMBER_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'newMemberDaily', columnLetter: 'G', columnIndex: 6, description: 'New Members (daily)', dataType: 'number', optional: true, active: true, section: 'Daily' },
+  { id: 'TOKO_INSTANT_UPGRADE_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'instantUpgradeDaily', columnLetter: 'H', columnIndex: 7, description: 'Instant Upgrade (count)', dataType: 'number', optional: true, active: true, section: 'Daily' },
+  { id: 'TOKO_TARGET_NEW_MEMBER_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'targetNewMemberDaily', columnLetter: 'AM', columnIndex: 38, description: 'New Members Daily Target', dataType: 'number', optional: true, active: true, section: 'Daily' },
   { id: 'TOKO_TARGET_PROTEKSI_DAILY', sheet: 'Pencapaian Toko', feature: 'Performance Toko', fieldName: 'targetProteksiDaily', columnLetter: 'AH', columnIndex: 33, description: 'Proteksi Daily Target', dataType: 'number', optional: true, active: true, section: 'Daily' },
 
   // Sales Channel
@@ -197,7 +195,6 @@ const COLUMN_MAPPING_SHEET = 'COLUMN_MAPPING'
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 let columnMappingsCache: ColumnMapping[] | null = null
 let columnMappingSyncStarted = false
-let columnMappingSyncTimer: number | undefined
 
 function parseCSV(text: string): string[][] {
   const rows: string[][] = []
@@ -336,7 +333,7 @@ export function startColumnMappingSync(): void {
   columnMappingSyncStarted = true
   void refreshColumnMappingsFromSheet()
 
-  columnMappingSyncTimer = window.setInterval(() => {
+  window.setInterval(() => {
     void refreshColumnMappingsFromSheet()
   }, 30_000)
 
@@ -352,6 +349,12 @@ export function startColumnMappingSync(): void {
  */
 export function getColumnMappings(): ColumnMapping[] {
   if (columnMappingsCache) return columnMappingsCache
+
+  if (typeof window === 'undefined') {
+    const defaults = normalizeColumnMappings(DEFAULT_COLUMN_MAPPINGS)
+    columnMappingsCache = defaults
+    return defaults
+  }
 
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY)
@@ -377,9 +380,12 @@ export function setColumnMappings(mappings: ColumnMapping[]): void {
   try {
     const normalized = normalizeColumnMappings(mappings)
     columnMappingsCache = normalized
+
+    if (typeof window === 'undefined') return
+
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
     window.dispatchEvent(new Event('atlas-column-mappings-changed'))
-    void writeColumnMappingsToSheet(normalized)
+    void writeColumnMappingsToSheet(normalized as unknown as Array<Record<string, unknown>>)
   } catch (e) {
     console.error('[ColumnMapping] Error writing to localStorage:', e)
   }

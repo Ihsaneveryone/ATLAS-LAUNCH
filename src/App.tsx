@@ -1,15 +1,16 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { DataProvider } from './context/DataContext'
 import { AdminSettingsProvider } from './context/AdminSettingsContext'
 import { useAtlasData } from './context/useAtlasData'
 import LoginPage from './components/LoginPage'
 import MenuPage from './components/MenuPage'
-import PerformanceSales from './components/PerformanceSales'
-import ForecastingInsentif from './components/ForecastingInsentif'
-import PencapaianToko from './components/PencapaianToko'
-import SpreadsheetGuide from './components/SpreadsheetGuide'
-import AdminDashboard from './components/AdminDashboard'
 import type { User } from './data/mockData'
+
+const PerformanceSales = lazy(() => import('./components/PerformanceSales'))
+const ForecastingInsentif = lazy(() => import('./components/ForecastingInsentif'))
+const PencapaianToko = lazy(() => import('./components/PencapaianToko'))
+const SpreadsheetGuide = lazy(() => import('./components/SpreadsheetGuide'))
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'))
 
 type Page = 'login' | 'menu' | 'performance' | 'forecasting' | 'toko' | 'spreadsheet' | 'admin'
 
@@ -31,12 +32,22 @@ function AppInner() {
 
   if (page === 'login' || !user) return <LoginPage onLogin={handleLogin} />
   if (page === 'menu') return <MenuPage user={user} onNavigate={p => setPage(p as Page)} onLogout={handleLogout} />
-  if (page === 'performance') return <PerformanceSales user={user} onBack={() => setPage('menu')} />
-  if (page === 'forecasting') return <ForecastingInsentif user={user} onBack={() => setPage('menu')} />
-  if (page === 'toko')        return <PencapaianToko       user={user} onBack={() => setPage('menu')} />
-  if (page === 'spreadsheet') return <SpreadsheetGuide user={user} onBack={() => setPage('menu')} />
-  if (page === 'admin') return <AdminDashboard user={user} onLogout={handleLogout} />
-  return null
+
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f0f4ff', color: '#64748b', fontWeight: 700 }}>
+          Memuat halaman...
+        </div>
+      }
+    >
+      {page === 'performance' ? <PerformanceSales user={user} onBack={() => setPage('menu')} /> : null}
+      {page === 'forecasting' ? <ForecastingInsentif user={user} onBack={() => setPage('menu')} /> : null}
+      {page === 'toko' ? <PencapaianToko user={user} onBack={() => setPage('menu')} /> : null}
+      {page === 'spreadsheet' ? <SpreadsheetGuide user={user} onBack={() => setPage('menu')} /> : null}
+      {page === 'admin' ? <AdminDashboard user={user} onLogout={handleLogout} /> : null}
+    </Suspense>
+  )
 }
 
 export default function App() {

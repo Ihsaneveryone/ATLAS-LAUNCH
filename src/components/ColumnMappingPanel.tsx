@@ -4,7 +4,6 @@ import {
   setColumnMappings,
   resetColumnMappings,
   getAvailableFeatures,
-  getAvailableSheets,
   getFeatureSheetMappings,
   getFeatureSections,
   getFeatureSectionMappings,
@@ -22,7 +21,6 @@ export default function ColumnMappingPanel() {
   const [editColumn, setEditColumn] = useState<string>('')
 
   const features = getAvailableFeatures()
-  const sheets = getAvailableSheets()
 
   useEffect(() => {
     setMappingsState(getColumnMappings())

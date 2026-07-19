@@ -1,6 +1,8 @@
 import { YTD_PERFORMANCE, USERS as MOCK_USERS, type User, type PerformanceData, type EmployeeRank, type KPIItem } from '../data/mockData'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
+let usersRequestInFlight: Promise<User[]> | null = null
+const IS_DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
 
 function sheetUrl(name: string, bust = false) {
   const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`
@@ -9,14 +11,14 @@ function sheetUrl(name: string, bust = false) {
 
 async function fetchCSV(sheetName: string, bustCache = false): Promise<string[][]> {
   const url = sheetUrl(sheetName, bustCache)
-  console.warn(`[ATLAS] Fetching: "${sheetName}"`, url)
+  if (IS_DEV) console.warn(`[ATLAS] Fetching: "${sheetName}"`, url)
   const res = await fetch(url, bustCache ? { cache: 'no-store' } : {})
   const text = await res.text()
-  console.warn(`[ATLAS] "${sheetName}" → status=${res.status}, length=${text.length}, preview:`, text.slice(0, 200))
+  if (IS_DEV) console.warn(`[ATLAS] "${sheetName}" → status=${res.status}, length=${text.length}`)
   if (!res.ok) throw new Error(`HTTP ${res.status} untuk sheet "${sheetName}"`)
   if (text.trimStart().startsWith('<!')) throw new Error(`Sheet "${sheetName}" mengembalikan halaman HTML — pastikan spreadsheet di-share "Anyone with the link can view" (bukan hanya link biasa)`)
   const rows = parseCSV(text)
-  console.warn(`[ATLAS] "${sheetName}" → ${rows.length} baris berhasil di-parse`)
+  if (IS_DEV) console.warn(`[ATLAS] "${sheetName}" → ${rows.length} baris berhasil di-parse`)
   return rows
 }
 
@@ -92,18 +94,26 @@ function ensureAdminFallback(users: User[]): User[] {
 }
 
 export async function fetchUsers(): Promise<User[]> {
-  const rows = await fetchCSV('USERS', true)
-  const users = rows.slice(1).filter(r => col(r, 0) || col(r, 1)).map(r => ({
-    nik:      col(r, ci('A')),
-    nama:     col(r, ci('B')),
-    role:     (col(r, ci('C')).toLowerCase() === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
-    jobTitle: col(r, ci('D')),
-    password: col(r, ci('E')),
-  })).filter(u => u.nama)
+  if (!usersRequestInFlight) {
+    usersRequestInFlight = (async () => {
+      const rows = await fetchCSV('USERS', true)
+      const users = rows.slice(1).filter(r => col(r, 0) || col(r, 1)).map(r => ({
+        nik:      col(r, ci('A')),
+        nama:     col(r, ci('B')),
+        role:     (col(r, ci('C')).toLowerCase() === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
+        jobTitle: col(r, ci('D')),
+        password: col(r, ci('E')),
+      })).filter(u => u.nama)
 
-  const withFallback = ensureAdminFallback(users)
-  console.warn('[USERS] Total:', withFallback.length, '| Tail 5 NIKs:', withFallback.slice(-5).map(u => `"${u.nik}"(pw:"${u.password}")`).join(', '))
-  return withFallback
+      const withFallback = ensureAdminFallback(users)
+      if (IS_DEV) console.warn('[USERS] Total:', withFallback.length)
+      return withFallback
+    })().finally(() => {
+      usersRequestInFlight = null
+    })
+  }
+
+  return usersRequestInFlight
 }
 
 // ─── DAILY SALES raw row ────────────────────────────────────────────────────
@@ -208,6 +218,8 @@ function buildRanking(rows: { nik: string; nama: string; jobTitle: string; actua
     }))
 }
 
+import { niksMatch } from './nik'
+
 function normNik(s: string): string {
   return (s ?? '').trim().toLowerCase()
 }
@@ -215,7 +227,7 @@ function normNik(s: string): string {
 export function buildTodayPerf(rows: DailySalesRow[], currentNik: string): PerformanceData {
   const safeRows = Array.isArray(rows) ? rows : []
   const nc = normNik(currentNik)
-  const my  = safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
+  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
   const tgt = my?.targetSales ?? 1
 
   const src     = my ?? { totalSales: 0, targetSales: 1, transaksi: 0, qtyItem: 0, aur: 0, upt: 0, basketSize: 0, proteksi: 0, instantUpgrade: 0, newMember: 0 }
@@ -248,7 +260,7 @@ export function buildTodayPerf(rows: DailySalesRow[], currentNik: string): Perfo
 export function buildMTDPerf(rows: MTDRow[], currentNik: string, dateFrom = '', dateTo = ''): PerformanceData {
   const safeRows = Array.isArray(rows) ? rows : []
   const nc = normNik(currentNik)
-  const my  = safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
+  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
   const src = my ?? { sales: 0, target: 1, transaksi: 0, basketSize: 0, proteksi: 0, newMember: 0, instantUpgrade: 0, total5Strategy: 0, offCuti: 0 }
 
   const actual  = src.sales

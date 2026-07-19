@@ -8,7 +8,7 @@ interface Props { user: User; onBack: () => void }
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b' }
 
-type SubPage = 'bersyarat' | 'tanpa_syarat' | 'sku'
+type SubPage = 'bersyarat' | 'tanpa_syarat' | 'toko' | 'proteksi' | 'boomsale' | 'receipt' | 'sku' | 'list'
 
 type SummaryType = SubPage
 
@@ -17,12 +17,45 @@ interface IncentiveSummaryItem {
   type: SummaryType
   achieved: number
   forecast: number
+  extra?: string
 }
 
 const SHEET_NAMES = {
   conditional: 'INSENTIF BERSYARAT',
   unconditional: 'INSENTIF TANPA SYARAT',
   sku: 'SKU INSENTIF',
+  syarat: 'SYARAT INSENTIF',
+  boomsale: 'INSENTIF BOOMSALE',
+  receipt: 'INSENTIF RECEIPT DEPT',
+  compare: 'COPAS S2',
+}
+
+const LIST_INSENTIF_MENU: Array<{ type: Exclude<SubPage, 'bersyarat' | 'tanpa_syarat' | 'list'>; name: string; description: string; icon: string }> = [
+  { type: 'proteksi', name: 'Insentif Proteksi', description: 'Daftar syarat proteksi.', icon: '🛡️' },
+  { type: 'boomsale', name: 'Insentif Produk Boomsale', description: 'Insentif produk boomsale.', icon: '💥' },
+  { type: 'receipt', name: 'Insentif Receipt Dept', description: 'Insentif receipt untuk departemen.', icon: '🧾' },
+  { type: 'sku', name: 'SKU Insentif Lainnya', description: 'SKU insentif tambahan.', icon: '📦' },
+]
+
+function normalizeText(value: string) {
+  return (value ?? '').trim().replace(/\s+/g, ' ')
+}
+
+function groupRowsByKey<T>(rows: T[], getKey: (row: T) => string) {
+  const grouped = new Map<string, T[]>()
+  rows.forEach(row => {
+    const key = getKey(row) || 'Umum'
+    const current = grouped.get(key) ?? []
+    current.push(row)
+    grouped.set(key, current)
+  })
+  return Array.from(grouped.entries()).sort(([left], [right]) => left.localeCompare(right, 'id-ID'))
+}
+
+function filterSyaratRowsByKeyword(rows: Array<NonNullable<ReturnType<typeof parseIncentiveSheets>['syarat']['rows']>[number]>, keyword: string) {
+  const normalizedKeyword = keyword.toLowerCase()
+  if (!normalizedKeyword) return rows
+  return rows.filter(row => [row.jenis, row.syarat, row.note].some(value => normalizeText(value).toLowerCase().includes(normalizedKeyword)))
 }
 
 function useIncentiveData() {
@@ -63,6 +96,10 @@ function useIncentiveData() {
           [SHEET_NAMES.conditional]: sheets[0] ?? [],
           [SHEET_NAMES.unconditional]: sheets[1] ?? [],
           [SHEET_NAMES.sku]: sheets[2] ?? [],
+          [SHEET_NAMES.syarat]: sheets[3] ?? [],
+          [SHEET_NAMES.boomsale]: sheets[4] ?? [],
+          [SHEET_NAMES.receipt]: sheets[5] ?? [],
+          [SHEET_NAMES.compare]: sheets[6] ?? [],
         })
         if (!cancelled) setData(parsed)
       } catch (error) {
@@ -108,7 +145,7 @@ function filterUserRows<T extends { nik?: string; nama?: string }>(rows: T[] | u
   const normalizedUserName = normalizeName(userName)
   if (!normalizedUserNik && !normalizedUserName) return rows ?? []
 
-  return (rows ?? []).filter(row => {
+  const result = (rows ?? []).filter(row => {
     const rowNik = normalizeNik(row.nik ?? '')
     const rowName = normalizeName(row.nama ?? '')
 
@@ -117,8 +154,15 @@ function filterUserRows<T extends { nik?: string; nama?: string }>(rows: T[] | u
 
     const nikMatches = cleanNik && cleanUserNik && (cleanNik === cleanUserNik || cleanNik.endsWith(cleanUserNik) || cleanUserNik.endsWith(cleanNik))
     const nameMatches = normalizedUserName && (rowName === normalizedUserName || rowName.includes(normalizedUserName) || normalizedUserName.includes(rowName))
-    return Boolean(nikMatches || nameMatches)
+    
+    // Prioritize NIK match: if NIK is provided and matches, include row
+    if (normalizedUserNik && nikMatches) return true
+    // Fallback to name match only if NIK is not provided or doesn't match
+    if (!normalizedUserNik || !cleanUserNik) return nameMatches
+    return false
   })
+  
+  return result
 }
 
 function ConditionalRowCard({ row, userNik }: { row: NonNullable<ReturnType<typeof parseIncentiveSheets>['conditional']['rows']>[number]; userNik: string }) {
@@ -158,7 +202,7 @@ function ConditionalRowCard({ row, userNik }: { row: NonNullable<ReturnType<type
               <div style={{ color: S.muted, fontSize: 11, marginBottom: 8, fontWeight: 700 }}>{item.label || 'Insentif'}</div>
               <div style={{ color: S.text, fontSize: 18, fontWeight: 800 }}>{formatRupiahFull(item.amount)}</div>
             </div>
-            <div style={{ color: item.status ? '#334155' : '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>{item.status || 'Belum ada status'}</div>
+            <div style={{ color: item.status ? '#334155' : '#64748b', fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>{item.status || 'Belum Ada Status'}</div>
           </div>
         ))}
       </div>
@@ -233,13 +277,136 @@ function SkuRowCard({ row }: { row: NonNullable<ReturnType<typeof parseIncentive
   )
 }
 
-function SummaryCard({ item, onClick }: { item: IncentiveSummaryItem; onClick: () => void }) {
-  const color = item.type === 'bersyarat' ? '#dc2626' : item.type === 'sku' ? '#059669' : '#4338ca'
-  const light = item.type === 'bersyarat' ? '#fef2f2' : item.type === 'sku' ? '#ecfdf5' : '#eef2ff'
-  const border = item.type === 'bersyarat' ? '#fecaca' : item.type === 'sku' ? '#bbf7d0' : '#c7d2fe'
-  const isSku = item.type === 'sku'
+function SyaratRowCard({ row }: { row: NonNullable<ReturnType<typeof parseIncentiveSheets>['syarat']['rows']>[number] }) {
+  const progressPercent = row.targetQty ? Math.min(100, ((row.acvValue ?? 0) / row.targetQty) * 100) : 0
 
-  const icon = isSku ? '📦' : item.type === 'bersyarat' ? '🔥' : '✨'
+  return (
+    <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: S.text }}>{row.jenis || 'Syarat Insentif'}</div>
+          <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{row.note || 'Tanpa catatan khusus'}</div>
+        </div>
+      </div>
+      <div style={{ color: S.text, fontSize: 14, lineHeight: 1.7 }}>{row.syarat || 'Tidak ada deskripsi syarat'}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ background: '#eef2ff', color: '#4338ca', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>ACV / Target</span>
+        <span style={{ background: '#ecfdf5', color: '#059669', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>{row.acvValue ?? 0} / {row.targetQty ?? 0}</span>
+      </div>
+      {row.targetQty ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: S.muted, fontSize: 12 }}>Pencapaian</span>
+            <span style={{ color: S.text, fontSize: 12, fontWeight: 700 }}>{progressPercent.toFixed(0)}%</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progressPercent}%`, background: 'linear-gradient(90deg, #2563eb, #38bdf8)', borderRadius: 999 }} />
+          </div>
+        </div>
+      ) : null}
+      {row.articleList.length ? (
+        <div style={{ color: S.sub, fontSize: 12, lineHeight: 1.6 }}>
+          Artikel: {row.articleList.join(' / ')}
+        </div>
+      ) : null}
+      <div style={{ color: S.text, fontWeight: 700, fontSize: 13 }}>Value per Qty: {formatRupiahFull(row.incentiveValuePerQty)}</div>
+    </div>
+  )
+}
+
+function BoomsaleRowCard({ row }: { row: NonNullable<ReturnType<typeof parseIncentiveSheets>['boomsale']['rows']>[number] }) {
+  const progressPercent = row.targetQty ? Math.min(100, ((row.actualQty ?? 0) / row.targetQty) * 100) : 0
+  const progressLabel = row.targetQty ? `${row.actualQty ?? 0} / ${row.targetQty}` : null
+  const incentiveLabel = row.incentiveIsPercentage ? `${row.incentivePercent}%` : 'Value'
+  const incentiveValue = row.incentiveIsPercentage ? row.incentiveValue : row.incentiveNominal || row.incentiveValue
+
+  return (
+    <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 20, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 10px 24px rgba(15, 23, 42, 0.05)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Artikel {row.artikel || '—'}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: S.text, lineHeight: 1.4 }}>{row.name || row.artikel}</div>
+          <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{row.departemen || 'Departemen tidak tersedia'}</div>
+        </div>
+        {row.imageUrl ? <img src={row.imageUrl} alt={row.name || row.artikel} style={{ width: 92, height: 92, objectFit: 'cover', borderRadius: 16, border: `1px solid ${S.border}`, background: '#f8fafc' }} /> : null}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <span style={{ background: '#eef2ff', color: '#4338ca', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>{row.category || 'Tanpa Kategori'}</span>
+        {progressLabel ? <span style={{ background: '#ecfdf5', color: '#059669', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>{progressLabel}</span> : null}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 12px', padding: '10px 12px', borderRadius: 14, background: '#f8fafc' }}>
+        <div style={{ color: S.muted, fontSize: 12 }}>Harga</div>
+        <div style={{ color: S.text, fontWeight: 700, textAlign: 'right' }}>{formatRupiahFull(row.price)}</div>
+        <div style={{ color: S.muted, fontSize: 12 }}>Insentif</div>
+        <div style={{ color: S.text, fontWeight: 700, textAlign: 'right' }}>{incentiveLabel}</div>
+        <div style={{ color: S.muted, fontSize: 12 }}>Value</div>
+        <div style={{ color: S.text, fontWeight: 700, textAlign: 'right' }}>{formatRupiahFull(incentiveValue)}</div>
+      </div>
+
+      {row.targetQty ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: S.muted, fontSize: 12 }}>Qty Penjualan Toko</span>
+            <span style={{ color: S.text, fontSize: 12, fontWeight: 700 }}>{progressLabel}</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progressPercent}%`, background: 'linear-gradient(90deg, #fb923c, #f97316)', borderRadius: 999 }} />
+          </div>
+        </div>
+      ) : null}
+
+      {row.remark ? <div style={{ color: S.sub, fontSize: 12, lineHeight: 1.6, padding: '8px 10px', borderRadius: 12, background: '#fff7ed' }}>{row.remark}</div> : null}
+    </div>
+  )
+}
+
+function ReceiptInfoTable({ rows, isMobile }: { rows: NonNullable<ReturnType<typeof parseIncentiveSheets>['receipt']['rows']>; isMobile: boolean }) {
+  return (
+    <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 16, overflow: 'hidden' }}>
+      <div style={{ padding: '16px 18px', borderBottom: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: S.text }}>Informasi Insentif Receipt Dept</div>
+          <div style={{ color: S.muted, fontSize: 12 }}>Menampilkan minimum receipt value dan persentase insentif per departemen.</div>
+        </div>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 520 : 680 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', borderBottom: `1px solid ${S.border}` }}>
+              {['No', 'Dept Group', 'Minimum Receipt Value', 'Incentive %'].map(header => (
+                <th key={header} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.no || row.departemen}-${index}`} style={{ borderBottom: `1px solid ${S.border}`, background: index % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                <td style={{ padding: '13px 16px', color: S.sub, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{row.no || index + 1}</td>
+                <td style={{ padding: '13px 16px', color: S.text, fontSize: 13, fontWeight: 700 }}>{row.departemen || 'Departemen Receipt'}</td>
+                <td style={{ padding: '13px 16px', color: S.text, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.targetValue)}</td>
+                <td style={{ padding: '13px 16px', color: '#0f172a', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{row.percentage.toFixed(2)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function SummaryCard({ item, onClick }: { item: IncentiveSummaryItem; onClick: () => void }) {
+  const isBersyarat = item.type === 'bersyarat'
+  const isSku = item.type === 'sku'
+  const isList = item.type === 'list'
+
+  const color = isBersyarat ? '#dc2626' : isSku ? '#059669' : isList ? '#0f5d95' : '#4338ca'
+  const light = isBersyarat ? '#fef2f2' : isSku ? '#ecfdf5' : isList ? '#eff6ff' : '#eef2ff'
+  const border = isBersyarat ? '#fecaca' : isSku ? '#bbf7d0' : isList ? '#bfdbfe' : '#c7d2fe'
+
+  const icon = isList ? '📋' : isSku ? '📦' : isBersyarat ? '🔥' : '✨'
+  const subtitle = isList ? 'Buka daftar submenu insentif' : isSku ? 'Detail SKU' : 'Ringkasan insentif'
 
   return (
     <button onClick={onClick} style={{ background: light, border: `1px solid ${border}`, borderRadius: 22, padding: '22px 24px', boxShadow: '0 10px 24px rgba(15,23,42,0.05)', transition: 'transform 0.18s, border-color 0.18s', cursor: 'pointer', textAlign: 'left', width: '100%' }}
@@ -252,32 +419,53 @@ function SummaryCard({ item, onClick }: { item: IncentiveSummaryItem; onClick: (
             <span style={{ width: 28, height: 28, borderRadius: 999, background: 'rgba(255,255,255,0.4)', display: 'grid', placeItems: 'center', fontSize: 14 }}>{icon}</span>
             <span>{item.name}</span>
           </div>
-          <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{isSku ? 'Detail SKU' : 'Ringkasan insentif'}</div>
+          <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{subtitle}</div>
         </div>
         <span style={{ color: S.muted, fontSize: 20 }}>›</span>
       </div>
-      {!isSku ? (
-        <div style={{ color: S.text, fontSize: 20, fontWeight: 800 }}>{formatRupiahFull(item.achieved)}</div>
-      ) : (
+      {isList ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ color: S.text, fontSize: 20, fontWeight: 800 }}>Cek Daftar Insentif Disini</div>
+            {item.extra ? <div style={{ color: S.muted, fontSize: 12 }}>{item.extra}</div> : null}
+          </div>
+      ) : isSku ? (
         <div style={{ marginTop: 8, color: S.muted, fontSize: 13 }}>Ringkasan tersedia — buka detail SKU</div>
+      ) : (
+        <div style={{ color: S.text, fontSize: 20, fontWeight: 800 }}>{formatRupiahFull(item.achieved)}</div>
       )}
       {isSku ? <div style={{ marginTop: 12, color: color, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Lihat detail SKU</div> : null}
     </button>
   )
 }
 
-function SubPageView({ type, data, user, isMobile, onBack: goBack }: { type: SubPage; data: ReturnType<typeof parseIncentiveSheets> | null; user: User; isMobile: boolean; onBack: () => void }) {
+function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPage }: { type: SubPage; data: ReturnType<typeof parseIncentiveSheets> | null; user: User; isMobile: boolean; onBack: () => void; onSelectSubPage: (type: Exclude<SubPage, 'list'>) => void }) {
   const [skuQuery, setSkuQuery] = useState('')
   const [skuSort, setSkuSort] = useState<'sku' | 'name'>('sku')
   const [skuOrder, setSkuOrder] = useState<'asc' | 'desc'>('asc')
+  const [boomsaleQuery, setBoomsaleQuery] = useState('')
+  const [boomsaleCategory, setBoomsaleCategory] = useState('all')
+  const [boomsaleDept, setBoomsaleDept] = useState('all')
 
   const isBersyarat = type === 'bersyarat'
   const isSku = type === 'sku'
-  const color = isBersyarat ? '#D93119' : isSku ? '#059669' : '#7c3aed'
-  const title = isBersyarat ? 'Insentif Bersyarat' : isSku ? 'SKU Insentif' : 'Insentif Tanpa Syarat'
-  const subtitle = isBersyarat ? 'Data individu dari sheet INSENTIF BERSYARAT' : isSku ? '' : 'Data individu dari sheet INSENTIF TANPA SYARAT'
+  const isList = type === 'list'
+  const isBoomsale = type === 'boomsale'
+  const isReceipt = type === 'receipt'
+  const isToko = type === 'toko'
+  const isProteksi = type === 'proteksi'
 
-  const rows = isBersyarat ? filterUserRows(data?.conditional.rows, user.nik, user.nama) : isSku ? data?.sku.rows : filterUserRows(data?.unconditional.rows, user.nik, user.nama)
+  const color = isBersyarat ? '#D93119' : isSku ? '#059669' : isBoomsale ? '#f97316' : isReceipt ? '#0f172a' : isProteksi ? '#0f9d58' : isToko ? '#1d4ed8' : '#7c3aed'
+  const title = isBersyarat ? 'Insentif Bersyarat' : isSku ? 'SKU Insentif' : isBoomsale ? 'Insentif Boomsale' : isReceipt ? 'Insentif Receipt Dept' : isProteksi ? 'Insentif Proteksi' : isToko ? 'Insentif Toko' : isList ? 'Daftar Insentif' : 'Insentif Tanpa Syarat'
+  const subtitle = isBersyarat ? 'Data individu dari sheet INSENTIF BERSYARAT' : isSku ? '' : isBoomsale ? 'Data sheet INSENTIF BOOMSALE' : isReceipt ? 'Data sheet INSENTIF RECEIPT DEPT' : isProteksi ? 'Syarat insentif proteksi dari sheet SYARAT INSENTIF' : isToko ? 'Syarat insentif toko dari sheet SYARAT INSENTIF' : isList ? 'Pilih kategori insentif dari submenu' : 'Data individu dari sheet INSENTIF TANPA SYARAT'
+
+  const syaratRows = data?.syarat.rows ?? []
+  const tokoRows = filterSyaratRowsByKeyword(syaratRows, 'toko')
+  const proteksiRows = filterSyaratRowsByKeyword(syaratRows, 'proteksi')
+  const boomsaleRows = data?.boomsale.rows ?? []
+  const receiptRows = data?.receipt.rows ?? []
+  const conditionalRows = filterUserRows(data?.conditional.rows, user.nik, user.nama)
+  const unconditionalRows = filterUserRows(data?.unconditional.rows, user.nik, user.nama)
+  const rows = isBersyarat ? conditionalRows : isSku ? data?.sku.rows ?? [] : isBoomsale ? boomsaleRows : isReceipt ? receiptRows : isProteksi ? proteksiRows : isToko ? tokoRows : unconditionalRows
 
   const skuRows = isSku ? (data?.sku.rows ?? []) : []
   const filteredSkuRows = skuRows.filter(row => {
@@ -291,6 +479,27 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack }: { type: Sub
     if (left === right) return 0
     return skuOrder === 'asc' ? (left < right ? -1 : 1) : (left > right ? -1 : 1)
   })
+
+  const syaratGroups = (isToko || isProteksi) ? groupRowsByKey(isProteksi ? proteksiRows : tokoRows, row => row.jenis || 'Jenis Insentif Lainnya') : []
+  const boomsaleCategoryOptions = useMemo(() => {
+    const categories = Array.from(new Set(boomsaleRows.map(row => (row.category || 'Tanpa Kategori').trim()).filter(Boolean)))
+    return categories.sort((a, b) => a.localeCompare(b, 'id-ID'))
+  }, [boomsaleRows])
+  const boomsaleDeptOptions = useMemo(() => {
+    const departments = Array.from(new Set(boomsaleRows.map(row => (row.departemen || '').trim()).filter(Boolean)))
+    return departments.sort((a, b) => a.localeCompare(b, 'id-ID'))
+  }, [boomsaleRows])
+  const filteredBoomsaleRows = useMemo(() => {
+    const query = boomsaleQuery.trim().toLowerCase()
+    return boomsaleRows.filter(row => {
+      const haystack = [row.artikel, row.name, row.departemen, row.category].join(' ').toLowerCase()
+      const matchesQuery = !query || haystack.includes(query)
+      const matchesCategory = boomsaleCategory === 'all' || (row.category || 'Tanpa Kategori') === boomsaleCategory
+      const matchesDept = boomsaleDept === 'all' || row.departemen === boomsaleDept
+      return matchesQuery && matchesCategory && matchesDept
+    })
+  }, [boomsaleRows, boomsaleQuery, boomsaleCategory, boomsaleDept])
+  const boomsaleGroups = isBoomsale ? groupRowsByKey(filteredBoomsaleRows, row => row.category || 'Tanpa Kategori') : []
 
   return (
     <div style={{ minHeight: '100vh', background: S.bg }}>
@@ -329,17 +538,84 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack }: { type: Sub
           </div>
         ) : null}
 
+        {isBoomsale ? (
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: isMobile ? 'stretch' : 'center' }}>
+            <input
+              value={boomsaleQuery}
+              onChange={event => setBoomsaleQuery(event.target.value)}
+              placeholder="Cari artikel, nama produk, departemen, atau kategori"
+              style={{ flex: 1, minWidth: 220, border: `1px solid ${S.border}`, borderRadius: 14, padding: '12px 14px', fontSize: 14, color: S.text, background: S.card }}
+            />
+            <select value={boomsaleCategory} onChange={event => setBoomsaleCategory(event.target.value)} style={{ minWidth: 180, border: `1px solid ${S.border}`, borderRadius: 14, padding: '12px 14px', fontSize: 14, color: S.text, background: S.card }}>
+              <option value="all">Semua kategori</option>
+              {boomsaleCategoryOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+            <select value={boomsaleDept} onChange={event => setBoomsaleDept(event.target.value)} style={{ minWidth: 180, border: `1px solid ${S.border}`, borderRadius: 14, padding: '12px 14px', fontSize: 14, color: S.text, background: S.card }}>
+              <option value="all">Semua departemen</option>
+              {boomsaleDeptOptions.map(option => <option key={option} value={option}>{option}</option>)}
+            </select>
+            {(boomsaleQuery || boomsaleCategory !== 'all' || boomsaleDept !== 'all') ? (
+              <button type="button" onClick={() => { setBoomsaleQuery(''); setBoomsaleCategory('all'); setBoomsaleDept('all') }} style={{ borderRadius: 14, border: `1px solid ${S.border}`, background: S.card, color: S.text, padding: '12px 14px', cursor: 'pointer' }}>Reset Filter</button>
+            ) : null}
+          </div>
+        ) : null}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {!rows?.length ? (
+          {!isList && !rows?.length ? (
             <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, color: '#92400e', fontSize: 13 }}>
               Data belum tersedia. Pastikan sheet memiliki data dan nama sheet sesuai.
             </div>
+          ) : isList ? (
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+              {LIST_INSENTIF_MENU.map(item => (
+                <button key={item.type} type="button" onClick={() => onSelectSubPage(item.type)}
+                  style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 18, padding: 18, textAlign: 'left', cursor: 'pointer', transition: 'transform 0.15s', display: 'flex', flexDirection: 'column', gap: 12 }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ width: 32, height: 32, borderRadius: 12, background: '#eef2ff', display: 'grid', placeItems: 'center', fontSize: 16 }}>{item.icon}</span>
+                    <div>
+                      <div style={{ color: S.text, fontWeight: 800, fontSize: 15 }}>{item.name}</div>
+                      <div style={{ color: S.muted, fontSize: 12 }}>{item.description}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : isToko || isProteksi ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {syaratGroups.map(([groupName, groupRows]) => (
+                <div key={groupName} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ color: S.text, fontSize: 14, fontWeight: 800 }}>{groupName}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {groupRows.map((row, index) => <SyaratRowCard key={`${row.jenis}-${index}`} row={row} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : isBoomsale ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {filteredBoomsaleRows.length === 0 ? (
+                <div style={{ padding: '16px 20px', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, color: '#9a2c00', fontSize: 13 }}>
+                  Tidak ada produk yang cocok dengan filter yang dipilih.
+                </div>
+              ) : boomsaleGroups.map(([categoryName, categoryRows]) => (
+                <div key={categoryName} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ color: S.text, fontSize: 14, fontWeight: 800 }}>{categoryName}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                    {categoryRows.map((row, index) => <BoomsaleRowCard key={`${row.artikel}-${index}`} row={row} />)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : isReceipt ? (
+            <ReceiptInfoTable rows={receiptRows} isMobile={isMobile} />
+          ) : isSku ? (
+            sortedSkuRows.map((row, index) => <SkuRowCard key={`${row.sku}-${index}`} row={row} />)
+          ) : isBersyarat ? (
+            conditionalRows.map((row, index) => <ConditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />)
           ) : (
-            (isBersyarat ? rows : isSku ? sortedSkuRows : rows).map((row, index) => {
-              if (isBersyarat) return <ConditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />
-              if (isSku) return <SkuRowCard key={`${(row as any).sku}-${index}`} row={row as any} />
-              return <UnconditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />
-            })
+            unconditionalRows.map((row, index) => <UnconditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />)
           )}
         </div>
       </main>
@@ -357,13 +633,9 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
 
     const conditionalRows = filterUserRows(data.conditional.rows, user.nik, user.nama)
     const unconditionalRows = filterUserRows(data.unconditional.rows, user.nik, user.nama)
-    const skuRows = data.sku.rows
-
     const conditionalAchieved = conditionalRows.reduce((sum, row) => sum + row.items.filter(item => isStatusFulfilled(item.status || '')).reduce((subSum, item) => subSum + item.amount, 0), 0)
     const conditionalPotential = conditionalRows.reduce((sum, row) => sum + row.items.filter(item => !isStatusFulfilled(item.status || '')).reduce((subSum, item) => subSum + item.amount, 0), 0)
     const unconditionalAchieved = unconditionalRows.reduce((sum, row) => sum + row.value, 0)
-    const skuAchieved = 0
-    const skuForecast = 0
 
     return [
       {
@@ -379,10 +651,11 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
         forecast: 0,
       },
       {
-        name: 'SKU Insentif',
-        type: 'sku',
-        achieved: skuAchieved,
-        forecast: skuForecast,
+        name: 'Daftar Insentif',
+        type: 'list',
+        achieved: 5,
+        forecast: 0,
+        extra: 'Submenu: Toko, Proteksi, Boomsale, Receipt, SKU Lainnya',
       },
     ]
   }, [data, user.nik, user.nama])
@@ -391,13 +664,13 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
   summary.find(item => item.type === 'bersyarat')?.forecast ?? 0
 
 const totalAchieved = summary
-  .filter(item => item.type !== 'sku')
+  .filter(item => item.type !== 'sku' && item.type !== 'list')
   .reduce((sum, item) => sum + item.achieved, 0)
 
 const totalProjected = totalAchieved + totalPotential
 
   if (subPage) {
-    return <SubPageView type={subPage} data={data} user={user} isMobile={isMobile} onBack={() => setSubPage(null)} />
+    return <SubPageView type={subPage} data={data} user={user} isMobile={isMobile} onBack={() => setSubPage(null)} onSelectSubPage={setSubPage} />
   }
 
   return (
@@ -412,9 +685,9 @@ const totalProjected = totalAchieved + totalPotential
             onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = S.muted }}
           >← Menu</button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%', justifyContent: isMobile ? 'flex-start' : 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ color: S.text, fontWeight: 700, fontSize: 14 }}>Forecasting Insentif</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', width: '100%', justifyContent: isMobile ? 'flex-start' : 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ color: S.text, fontWeight: 700, fontSize: 14 }}>FORECASTING INSENTIF</span>
             <span style={{ color: S.muted, fontSize: 12 }}>{user.nama}</span>
           </div>
         </div>

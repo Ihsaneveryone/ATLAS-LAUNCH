@@ -86,7 +86,7 @@ function SectionTitle({ title, sub }: { title: string; sub?: string }) {
 interface Props { user: User; onLogout: () => void }
 
 export default function AdminDashboard({ user, onLogout }: Props) {
-  const { todayPerf, mtdPerf, loading, dailyDate, reload, users, reloadMenuConfig, menuConfig } = useAtlasData()
+  const { todayPerf, mtdPerf, loading, dailyDate, teamTodayTrend, teamMtdTrend, reload, users, reloadMenuConfig, menuConfig } = useAtlasData()
   const { settings, updateTargetFormula, updateLayout } = useAdminSettings()
   const [page, setPage]             = useState<NavPage>('today')
   const [ytdAll, setYtdAll]         = useState<YTDEmployee[]>([])
@@ -145,11 +145,17 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       }).sort((a, b) => b.achievement - a.achievement).map((r, i) => ({ ...r, rank: i + 1 }))
 
   const teamTotal  = ranking.reduce((s, r) => s + r.value, 0)
+  const teamTarget = ranking.reduce((s, r) => s + (r.target ?? 0), 0)
+  const teamAchievement = teamTarget > 0 ? parseFloat(((teamTotal / teamTarget) * 100).toFixed(1)) : 0
   const avgAch     = ranking.length ? ranking.reduce((s, r) => s + r.achievement, 0) / ranking.length : 0
-  const above100   = ranking.filter(r => r.achievement >= 100).length
-  const below80    = ranking.filter(r => r.achievement < 80).length
   const top        = ranking[0]
   const bottom     = ranking[ranking.length - 1]
+
+  const teamTrend = page === 'today'
+    ? teamTodayTrend
+    : page === 'mtd'
+      ? teamMtdTrend
+      : (mtdPerf.monthlyTrend ?? mtdPerf.dailyTrend ?? [])
 
   // Hanya karyawan terdaftar (role=user) yang masuk YTD
   const totalKaryawan = users.filter(u => u.role === 'user').length
@@ -166,7 +172,6 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const zoneOrder   = ['hijau', 'biru', 'kuning', 'oranye', 'pink', 'merah']
 
   const primaryColor = layout.primaryColor || S.red
-  const accentColor = layout.accentColor || '#2563eb'
   const cardRadius = layout.cardRadius || 18
   const NAV = [
     { key: 'today'     as NavPage, label: 'Today',      icon: '📅', sub: dailyDate    },
@@ -295,9 +300,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             {/* Summary stats */}
             {layout.showSummaryCards && <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12 }}>
               <StatCard label="Total Penjualan Tim" value={formatRupiah(teamTotal)} sub={`${ranking.length} personil`} accent={primaryColor} icon="💰" />
-              <StatCard label="Avg Achievement" value={`${avgAch.toFixed(1)}%`} sub="rata-rata tim" accent={acPct(avgAch)} icon="📈" />
-              <StatCard label="Capai Target" value={String(above100)} sub={`≥100% dari ${ranking.length} orang`} accent="#16a34a" icon="✅" />
-              <StatCard label="Perlu Perhatian" value={String(below80)} sub="di bawah 80%" accent="#dc2626" icon="⚠️" />
+              <StatCard label="Target Tim" value={formatRupiah(teamTarget)} sub={page === 'today' ? 'target harian total' : 'target MTD total'} accent="#0f766e" icon="🎯" />
+              <StatCard label="Achievement Tim" value={`${teamAchievement.toFixed(1)}%`} sub="total hasil / total target" accent={acPct(teamAchievement)} icon="📈" />
+              <StatCard label="Rata-rata Personil" value={`${avgAch.toFixed(1)}%`} sub="achievement rata-rata" accent={acPct(avgAch)} icon="👥" />
             </div>}
 
             {/* Top & needs attention */}
@@ -332,8 +337,12 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
             {/* Trend chart */}
             {layout.showTrendChart && (() => {
-              const trend = page === 'today' ? (todayPerf.dailyTrend ?? []) : (mtdPerf.monthlyTrend ?? mtdPerf.dailyTrend ?? [])
-              if (trend.length < 2) return null
+              const trend = page === 'today'
+                ? teamTrend
+                : page === 'mtd'
+                  ? teamMtdTrend
+                  : (mtdPerf.monthlyTrend ?? mtdPerf.dailyTrend ?? [])
+              if (trend.length < 1) return null
               return (
                 <div style={{ background: S.panel, border: `1.5px solid ${S.border}`, borderRadius: 18, padding: isMobile ? '16px' : '20px 24px', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
                   <SectionTitle title={page === 'today' ? 'Trend Harian Tim' : page === 'mtd' ? 'Trend MTD Tim' : 'Trend Bulanan Tim'} sub="total penjualan vs target" />
@@ -656,7 +665,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                 <label style={{ fontSize: 12, fontWeight: 700, color: S.text }}>Mode pencapaian</label>
                 <select
                   value={targetFormula.achievementMode}
-                  onChange={e => updateTargetFormula({ achievementMode: e.target.value as AdminSettings['targetFormula']['achievementMode'] })}
+                  onChange={e => updateTargetFormula({ achievementMode: e.target.value as 'actual_vs_target' | 'daily_prorated' })}
                   style={{ padding: '10px 12px', borderRadius: 10, border: `1px solid ${S.border}` }}
                 >
                   <option value="actual_vs_target">Actual vs Target</option>

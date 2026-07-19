@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
 import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { USERS as MOCK_USERS, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
@@ -33,30 +34,55 @@ export default function LoginPage({ onLogin }: Props) {
   const [showPw, setShowPw]     = useState(false)
   const [focused, setFocused]   = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError('')
-    setLoading(true)
-    // Selalu fetch user terbaru dari sheet agar user baru langsung bisa login
-    let freshUsers = USERS
-    try {
-      const fetched = await fetchUsers()
-      if (fetched.length > 0) freshUsers = fetched
-    } catch { /* fallback ke cached */ }
-    const normNik = (s: string) => s.trim().toLowerCase()
-    const inputNik = normNik(nik)
-    const authCandidates = [...freshUsers]
+  const passwordManagerIgnoreProps = {
+    'data-lpignore': 'true',
+    'data-1p-ignore': 'true',
+    'data-bwignore': 'true',
+    'data-form-type': 'other',
+  } as const
+
+  const passwordMaskStyle = {
+    WebkitTextSecurity: showPw ? 'none' : 'disc',
+  } as CSSProperties & { WebkitTextSecurity: 'none' | 'disc' }
+
+  const normNik = (s: string) => s.trim().toLowerCase()
+  const normPw = (s: string) => s.trim().toLowerCase()
+
+  const buildAuthCandidates = (users: User[]) => {
+    const authCandidates = [...users]
     const fallbackAdmin = MOCK_USERS.find(u => u.role === 'admin')
     if (fallbackAdmin && !authCandidates.some(u => normNik(u.nik) === normNik(fallbackAdmin.nik))) {
       authCandidates.unshift(fallbackAdmin)
     }
-    console.warn('[LOGIN] Input NIK:', JSON.stringify(nik), '→ norm:', JSON.stringify(inputNik))
-    console.warn('[LOGIN] Total users:', authCandidates.length)
+    return authCandidates
+  }
+
+  const findAuthenticatedUser = (users: User[], inputNik: string, inputPassword: string) => {
+    const authCandidates = buildAuthCandidates(users)
     const match = authCandidates.find(u => normNik(u.nik) === inputNik)
-    console.warn('[LOGIN] Match:', match ? `NIK="${match.nik}" pw="${match.password}"` : 'TIDAK DITEMUKAN')
-    if (match) console.warn('[LOGIN] pw check:', JSON.stringify(match.password), '===', JSON.stringify(password), '→', match.password === password)
-    const normPw = (s: string) => s.trim().toLowerCase()
-    const user = match && normPw(match.password) === normPw(password) ? match : undefined
+    return match && normPw(match.password) === inputPassword ? match : undefined
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    const inputNik = normNik(nik)
+    const inputPassword = normPw(password)
+
+    // Fast path: use already loaded users so returning users/admins can enter immediately.
+    let user = findAuthenticatedUser(USERS, inputNik, inputPassword)
+
+    // Slow path only when cached data does not match, so newly added users can still log in.
+    if (!user) {
+      try {
+        const fetched = await fetchUsers()
+        if (fetched.length > 0) user = findAuthenticatedUser(fetched, inputNik, inputPassword)
+      } catch {
+        // fallback to cached auth result above
+      }
+    }
+
     if (user) { trackLogin(user.nik, user.nama).catch(() => {}); onLogin(user) } else {
       setError('NIK atau password salah. Silakan coba lagi.')
       setLoading(false)
@@ -114,14 +140,16 @@ export default function LoginPage({ onLogin }: Props) {
             <p style={{ color: '#94a3b8', fontSize: 14 }}>Masuk dengan NIK dan password Anda</p>
           </div>
 
-          <form onSubmit={handleSubmit} autoComplete="off" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form onSubmit={handleSubmit} autoComplete="off" {...passwordManagerIgnoreProps} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* NIK */}
             <div>
               <label style={{ display: 'block', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>NIK Karyawan</label>
               <input
                 type="text" value={nik} onChange={e => setNik(e.target.value)} required
-                autoComplete="off" placeholder="Masukkan NIK Anda"
+                name="atlas-nik"
+                autoComplete="off" inputMode="numeric" placeholder="Masukkan NIK Anda"
                 onFocus={() => setFocused('nik')} onBlur={() => setFocused(null)}
+                {...passwordManagerIgnoreProps}
                 style={{
                   width: '100%', padding: '13px 16px', borderRadius: 12, fontSize: 15, outline: 'none',
                   background: ring('nik') ? '#fff' : '#f8faff',
@@ -138,15 +166,19 @@ export default function LoginPage({ onLogin }: Props) {
               <label style={{ display: 'block', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Password</label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} required
+                  type="text" value={password} onChange={e => setPassword(e.target.value)} required
+                  name="atlas-access-code"
                   autoComplete="new-password" placeholder="Masukkan password"
+                  autoCapitalize="none" autoCorrect="off" spellCheck={false}
                   onFocus={() => setFocused('pw')} onBlur={() => setFocused(null)}
+                  {...passwordManagerIgnoreProps}
                   style={{
                     width: '100%', padding: '13px 48px 13px 16px', borderRadius: 12, fontSize: 15, outline: 'none',
                     background: ring('pw') ? '#fff' : '#f8faff',
                     border: `1.5px solid ${ring('pw') ? '#D93119' : '#dde3f0'}`,
                     color: '#1e293b', transition: 'all 0.18s',
                     boxShadow: ring('pw') ? '0 0 0 3px rgba(217,49,25,0.1)' : 'none',
+                    ...passwordMaskStyle,
                     boxSizing: 'border-box',
                   }}
                 />

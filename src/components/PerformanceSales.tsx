@@ -129,7 +129,6 @@ export default function PerformanceSales({ user, onBack }: Props) {
   const targetFormula = settings.targetFormula
   const layout = settings.layout
   const primaryColor = layout.primaryColor || '#D93119'
-  const accentColor = layout.accentColor || '#2563eb'
   const cardRadius = layout.cardRadius || 18
 
   const monthlyTarget = mtdPerf.target > 0
@@ -180,7 +179,7 @@ export default function PerformanceSales({ user, onBack }: Props) {
     target: todayTarget,
     achievement: todayTarget > 0 ? parseFloat(((todayPerf.actual / todayTarget) * 100).toFixed(1)) : 0,
   }
-  const mtdTarget = mtdPerf.targetMTD > 0 ? mtdPerf.targetMTD : monthlyTarget
+  const mtdTarget = (mtdPerf.targetMTD ?? 0) > 0 ? (mtdPerf.targetMTD ?? 0) : monthlyTarget
   const mtdData: PerformanceData = {
     ...mtdPerf,
     target: mtdTarget,

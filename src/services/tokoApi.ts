@@ -2,12 +2,6 @@ import { getConfiguredColumnIndex } from './columnMappingService'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 
-function ci(col: string): number {
-  col = col.toUpperCase()
-  if (col.length === 1) return col.charCodeAt(0) - 65
-  return (col.charCodeAt(0) - 64) * 26 + (col.charCodeAt(1) - 65)
-}
-
 function parseCSV(text: string): string[][] {
   const rows: string[][] = []
   for (const line of text.split('\n')) {
@@ -84,10 +78,12 @@ export async function fetchPencapaianToko(): Promise<TokoRow[]> {
   const targetTrafficIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_TRAFFIC_DAILY', 17)
   const transaksiIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TRANSAKSI_DAILY', 4)
   const targetTransaksiIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_TRANSAKSI_DAILY', 22)
-  const newMemberIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_NEW_MEMBER_DAILY', 5)
+  // Hard override per user requirement: daily F=Proteksi, G=New Member, H=Instant Upgrade.
+  // Do not read these three from shared column mapping because legacy remote overrides can swap them.
+  const proteksiIdx = 5
+  const newMemberIdx = 6
+  const instantUpgradeIdx = 7
   const targetNewMemberIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_NEW_MEMBER_DAILY', 38)
-  const instantUpgradeIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_INSTANT_UPGRADE_DAILY', 6)
-  const proteksiIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_PROTEKSI_DAILY', 7)
   const targetProteksiIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_PROTEKSI_DAILY', 33)
   const salesOnlineIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_SALES_ONLINE_DAILY', 16)
   const targetOnlineIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_ONLINE_DAILY', 15)
@@ -112,42 +108,42 @@ export async function fetchPencapaianToko(): Promise<TokoRow[]> {
   // Debug: log semua baris dengan kolom B & U untuk cek date vs trafficMTD
   const dataRows = raw.slice(3).filter(r => g(r, dateIdx))
   dataRows.forEach((r, i) => {
-    const b = g(r, ci('B')), u = g(r, ci('U')), t = g(r, ci('T'))
+    const b = g(r, dateIdx), u = g(r, trafficMTDIdx), t = g(r, targetTrafficMTDIdx)
     if (u || i < 15) console.warn(`[TOKO ROW ${i+1}] date=${b} | T(tgtTrafficMTD)=${t} | U(trafficMTD)=${u}`)
   })
   // Data mulai baris ke-4 (index 3)
   return dataRows.map(r => ({
-    date:             g(r, ci('B')),
-    salesDaily:       n(g(r, ci('J'))),
-    targetDaily:      n(g(r, ci('I'))),
-    traffic:          n(g(r, ci('D'))),
-    targetTraffic:    n(g(r, ci('R'))),
-    transaksi:        n(g(r, ci('E'))),
-    targetTransaksi:  n(g(r, ci('W'))),
-    newMember:        n(g(r, ci('F'))),
-    targetNewMember:  n(g(r, ci('AM'))),
-    instantUpgrade:   n(g(r, ci('G'))),
-    proteksi:         n(g(r, ci('H'))),
-    targetProteksi:   n(g(r, ci('AH'))),
-    salesOnline:      n(g(r, ci('Q'))),
-    targetOnline:     n(g(r, ci('P'))),
-    salesOffline:     n(g(r, ci('O'))),
-    basketSize:       n(g(r, ci('AC'))),
-    targetBasketSize: n(g(r, ci('AB'))),
-    salesMTD:            n(g(r, ci('M'))),
-    targetMTD:           n(g(r, ci('L'))),
-    trafficMTD:          n(g(r, ci('U'))),
-    targetTrafficMTD:    n(g(r, ci('T'))),
-    transaksiMTD:        n(g(r, ci('Z'))),
-    targetTransaksiMTD:  n(g(r, ci('Y'))),
-    proteksiMTD:         n(g(r, ci('AK'))),
-    targetProteksiMTD:   n(g(r, ci('AJ'))),
-    newMemberMTD:        n(g(r, ci('AP'))),
-    targetNewMemberMTD:  n(g(r, ci('AO'))),
-    basketSizeMTD:       n(g(r, ci('AF'))),
-    targetBasketSizeMTD: n(g(r, ci('AE'))),
-    salesOnlineMTD:      n(g(r, ci('AX'))),
-    targetOnlineMTD:     n(g(r, ci('AW'))),
+    date:             g(r, dateIdx),
+    salesDaily:       n(g(r, salesDailyIdx)),
+    targetDaily:      n(g(r, targetDailyIdx)),
+    traffic:          n(g(r, trafficIdx)),
+    targetTraffic:    n(g(r, targetTrafficIdx)),
+    transaksi:        n(g(r, transaksiIdx)),
+    targetTransaksi:  n(g(r, targetTransaksiIdx)),
+    newMember:        n(g(r, newMemberIdx)),
+    targetNewMember:  n(g(r, targetNewMemberIdx)),
+    instantUpgrade:   n(g(r, instantUpgradeIdx)),
+    proteksi:         n(g(r, proteksiIdx)),
+    targetProteksi:   n(g(r, targetProteksiIdx)),
+    salesOnline:      n(g(r, salesOnlineIdx)),
+    targetOnline:     n(g(r, targetOnlineIdx)),
+    salesOffline:     n(g(r, salesOfflineIdx)),
+    basketSize:       n(g(r, basketSizeIdx)),
+    targetBasketSize: n(g(r, targetBasketSizeIdx)),
+    salesMTD:            n(g(r, salesMTDIdx)),
+    targetMTD:           n(g(r, targetMTDIdx)),
+    trafficMTD:          n(g(r, trafficMTDIdx)),
+    targetTrafficMTD:    n(g(r, targetTrafficMTDIdx)),
+    transaksiMTD:        n(g(r, transaksiMTDIdx)),
+    targetTransaksiMTD:  n(g(r, targetTransaksiMTDIdx)),
+    proteksiMTD:         n(g(r, proteksiMTDIdx)),
+    targetProteksiMTD:   n(g(r, targetProteksiMTDIdx)),
+    newMemberMTD:        n(g(r, newMemberMTDIdx)),
+    targetNewMemberMTD:  n(g(r, targetNewMemberMTDIdx)),
+    basketSizeMTD:       n(g(r, basketSizeMTDIdx)),
+    targetBasketSizeMTD: n(g(r, targetBasketSizeMTDIdx)),
+    salesOnlineMTD:      n(g(r, salesOnlineMTDIdx)),
+    targetOnlineMTD:     n(g(r, targetOnlineMTDIdx)),
   }))
 }
 
