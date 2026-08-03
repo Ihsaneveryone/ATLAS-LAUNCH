@@ -4,6 +4,7 @@ import { formatRupiah, formatRupiahFull, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { fetchAllYTD, type YTDEmployee } from '../services/rawDataApi'
+import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
 import { getTrackerUrl, setTrackerUrl, writeMenuConfigToSheet } from '../services/loginTracker'
 import { getMenuSettings, setMenuSetting } from './MenuPage'
 import { useAdminSettings } from '../context/AdminSettingsContext'
@@ -13,7 +14,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 
-type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'setting'
+type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'dept' | 'setting'
 type SortKey = 'nama' | 'jobTitle' | 'sales' | 'achievement' | 'transaksi' | 'upt' | 'qty' | 'basketSize' | 'aur' | 'newMember'
 type SortOrder = 'asc' | 'desc'
 
@@ -93,6 +94,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [page, setPage]             = useState<NavPage>('today')
   const [ytdAll, setYtdAll]         = useState<YTDEmployee[]>([])
   const [ytdLoading, setYtdLoading] = useState(false)
+  const [deptSbd, setDeptSbd]       = useState<DeptPeriodData | null>(null)
+  const [deptMtd, setDeptMtd]       = useState<DeptPeriodData | null>(null)
+  const [deptLoading, setDeptLoading] = useState(false)
+  const [deptLoaded, setDeptLoaded]   = useState(false)
   const [trackerUrl, setTrackerUrlState] = useState(getTrackerUrl)
   const [trackerSaved, setTrackerSaved]  = useState(false)
   const [menuCfg, setMenuCfg] = useState(getMenuSettings)
@@ -109,6 +114,14 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     setYtdLoading(true)
     fetchAllYTD().then(d => { setYtdAll(d); setYtdLoading(false) })
   }, [])
+
+  useEffect(() => {
+    if (page !== 'dept' || deptLoaded) return
+    setDeptLoading(true)
+    fetchPencapaianDept()
+      .then(r => { setDeptSbd(r.sbd); setDeptMtd(r.mtd); setDeptLoaded(true) })
+      .finally(() => setDeptLoading(false))
+  }, [page, deptLoaded])
 
   useEffect(() => {
     const handleMappingsChanged = () => {
@@ -243,6 +256,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     { key: 'mtd'       as NavPage, label: 'MTD',        icon: '📊', sub: 'Berjalan'   },
     { key: 'fullmonth' as NavPage, label: 'Full Month', icon: '📆', sub: 'Target Penuh'},
     { key: 'ytd'       as NavPage, label: 'YTD',        icon: '🎯', sub: 'Tahunan'    },
+    { key: 'dept'      as NavPage, label: 'Departemen', icon: '🏬', sub: 'SBD & MTD'   },
     { key: 'setting'   as NavPage, label: 'Pengaturan', icon: '⚙️',  sub: 'Konfigurasi' },
   ]
 
@@ -706,6 +720,78 @@ export default function AdminDashboard({ user, onLogout }: Props) {
         )}
 
         </>} {/* end konten laporan */}
+
+        {/* ── Tab: Departemen ─────────────────────────────────────────── */}
+        {page === 'dept' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: S.text }}>Pencapaian Departemen</div>
+            {deptLoading && <div style={{ textAlign: 'center', padding: 60, color: S.muted }}>⟳ Memuat data departemen…</div>}
+            {!deptLoading && [{ data: deptSbd, title: 'SBD (Sales By Day)', accent: '#D93119', subtitle: deptSbd?.date ? `Tanggal ${deptSbd.date}` : 'Data harian' }, { data: deptMtd, title: 'MTD Dept', accent: '#0e7490', subtitle: 'Akumulasi bulan berjalan' }].map(({ data, title, accent, subtitle }) => {
+              if (!data) return <div key={title} style={{ background: S.panel, border: `1.5px solid ${S.border}`, borderRadius: 18, padding: 24, color: S.muted }}>Data {title} belum tersedia.</div>
+              return (
+                <div key={title} style={{ background: S.panel, border: `1.5px solid ${S.border}`, borderRadius: 18, padding: isMobile ? 16 : 24, borderTop: `4px solid ${accent}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4 }}>{title}</div>
+                      <div style={{ fontSize: isMobile ? 22 : 28, fontWeight: 900, color: S.text }}>{formatRupiahFull(data.total)}</div>
+                      <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{subtitle}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: accent, textTransform: 'uppercase' }}>Zona Aktif</div>
+                      <div style={{ fontSize: 32, fontWeight: 900, color: S.text }}>{data.zones.length}</div>
+                      {data.achievement && <div style={{ fontSize: 12, fontWeight: 700, color: acPct(data.achievement) }}>{data.achievement.toFixed(1)}%</div>}
+                    </div>
+                  </div>
+                  {data.target && data.target > 0 && (
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: S.muted, marginBottom: 4 }}>
+                        <span>Target: {formatRupiahFull(data.target)}</span>
+                        <span>{data.achievement?.toFixed(1)}%</span>
+                      </div>
+                      <div style={{ height: 8, background: S.border, borderRadius: 999, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(data.achievement ?? 0, 100)}%`, background: accent, borderRadius: 999 }} />
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3,1fr)', gap: 12 }}>
+                    {data.zones.map((zone, zi) => {
+                      const zc = [{ bg: '#fef3f0', border: '#fde1d8' }, { bg: '#f0f4fd', border: '#d8e4fd' }, { bg: '#f0fdf4', border: '#d1fce1' }][zi % 3]
+                      const pct = zone.target && zone.target > 0 ? (zone.value / zone.target) * 100 : data.total > 0 ? (zone.value / data.total) * 100 : 0
+                      return (
+                        <div key={zone.zone} style={{ background: zc.bg, border: `1px solid ${zc.border}`, borderRadius: 14, padding: 14, minWidth: 0, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 9, fontWeight: 800, color: accent, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Zona</div>
+                              <div style={{ fontSize: 13, fontWeight: 800, color: S.text, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{zone.zone}</div>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 8 }}>
+                              <div style={{ fontSize: 13, fontWeight: 900, color: S.text }}>{formatRupiahFull(zone.value)}</div>
+                              {zone.achievement && <div style={{ fontSize: 10, fontWeight: 700, color: acPct(zone.achievement) }}>{zone.achievement.toFixed(1)}%</div>}
+                            </div>
+                          </div>
+                          <div style={{ height: 5, background: zc.border, borderRadius: 999, overflow: 'hidden', marginBottom: 10 }}>
+                            <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: accent, borderRadius: 999 }} />
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {zone.departments.map(dept => (
+                              <div key={dept.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                                <div style={{ fontSize: 10, color: S.sub, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{dept.label}</div>
+                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 800, color: S.text }}>{formatRupiah(dept.value)}</div>
+                                  {dept.achievement != null && <div style={{ fontSize: 9, color: acPct(dept.achievement) }}>{dept.achievement.toFixed(0)}%</div>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* ── Tab: Pengaturan ─────────────────────────────────────────── */}
         {page === 'setting' && (
