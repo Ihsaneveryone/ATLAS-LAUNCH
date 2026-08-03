@@ -14,6 +14,8 @@ import {
 } from 'recharts'
 
 type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'setting'
+type SortKey = 'nama' | 'jobTitle' | 'sales' | 'achievement' | 'transaksi' | 'upt' | 'qty' | 'basketSize' | 'aur' | 'newMember'
+type SortOrder = 'asc' | 'desc'
 
 const S = {
   bg: '#f0f4ff', panel: '#fff', card: '#f8faff',
@@ -86,7 +88,7 @@ function SectionTitle({ title, sub }: { title: string; sub?: string }) {
 interface Props { user: User; onLogout: () => void }
 
 export default function AdminDashboard({ user, onLogout }: Props) {
-  const { todayPerf, mtdPerf, loading, dailyDate, teamTodayTrend, teamMtdTrend, reload, users, reloadMenuConfig, menuConfig } = useAtlasData()
+  const { todayPerf, mtdPerf, loading, dailyDate, reload, users, reloadMenuConfig, menuConfig, teamTodayTrend, teamMtdTrend, teamTodayEmployees, teamMtdEmployees } = useAtlasData()
   const { settings, updateTargetFormula, updateLayout } = useAdminSettings()
   const [page, setPage]             = useState<NavPage>('today')
   const [ytdAll, setYtdAll]         = useState<YTDEmployee[]>([])
@@ -94,6 +96,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [trackerUrl, setTrackerUrlState] = useState(getTrackerUrl)
   const [trackerSaved, setTrackerSaved]  = useState(false)
   const [menuCfg, setMenuCfg] = useState(getMenuSettings)
+  const [jobFilter, setJobFilter] = useState('all')
+  const [sortKey, setSortKey] = useState<SortKey>('achievement')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const isMobile = useMobile()
 
   // Declare these early to avoid temporal dead zone issues
@@ -151,11 +156,71 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const top        = ranking[0]
   const bottom     = ranking[ranking.length - 1]
 
-  const teamTrend = page === 'today'
-    ? teamTodayTrend
+  const fullMonthEmployeeRows = teamMtdEmployees
+    .map(row => {
+      const targetSales = Math.round(row.targetSales * fmScale)
+      const targetTrx = Math.round(row.targetTransaksi * fmScale)
+      const targetBs = Math.round(row.targetBasketSize * fmScale)
+      return {
+        ...row,
+        targetSales,
+        targetTransaksi: targetTrx,
+        targetBasketSize: targetBs,
+        achievement: targetSales > 0 ? parseFloat(((row.sales / targetSales) * 100).toFixed(1)) : 0,
+      }
+    })
+    .sort((a, b) => b.achievement - a.achievement || b.sales - a.sales)
+    .map((row, i) => ({ ...row, rank: i + 1 }))
+
+  const employeeRows = page === 'today'
+    ? teamTodayEmployees
     : page === 'mtd'
-      ? teamMtdTrend
-      : (mtdPerf.monthlyTrend ?? mtdPerf.dailyTrend ?? [])
+      ? teamMtdEmployees
+      : fullMonthEmployeeRows
+
+  const jobTitleOptions = Array.from(new Set(employeeRows.map(row => row.jobTitle || 'Tanpa Jabatan'))).sort((a, b) => a.localeCompare(b, 'id'))
+
+  useEffect(() => {
+    if (jobFilter !== 'all' && !jobTitleOptions.includes(jobFilter)) {
+      setJobFilter('all')
+    }
+  }, [jobFilter, jobTitleOptions])
+
+  const filteredEmployeeRows = employeeRows.filter(row => {
+    if (jobFilter === 'all') return true
+    return (row.jobTitle || 'Tanpa Jabatan') === jobFilter
+  })
+
+  const sortedEmployeeRows = [...filteredEmployeeRows].sort((a, b) => {
+    if (sortKey === 'nama' || sortKey === 'jobTitle') {
+      const av = (sortKey === 'nama' ? a.nama : (a.jobTitle || 'Tanpa Jabatan')).toLowerCase()
+      const bv = (sortKey === 'nama' ? b.nama : (b.jobTitle || 'Tanpa Jabatan')).toLowerCase()
+      const cmp = av.localeCompare(bv, 'id')
+      return sortOrder === 'asc' ? cmp : -cmp
+    }
+    const av = a[sortKey]
+    const bv = b[sortKey]
+    const cmp = Number(av) - Number(bv)
+    return sortOrder === 'asc' ? cmp : -cmp
+  }).map((row, i) => ({ ...row, rank: i + 1 }))
+
+  const applySort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortKey(key)
+    const textKey = key === 'nama' || key === 'jobTitle'
+    setSortOrder(textKey ? 'asc' : 'desc')
+  }
+
+  const totalTrx = filteredEmployeeRows.reduce((sum, row) => sum + row.transaksi, 0)
+  const avgUpt = filteredEmployeeRows.length > 0
+    ? filteredEmployeeRows.reduce((sum, row) => sum + row.upt, 0) / filteredEmployeeRows.length
+    : 0
+  const avgAur = filteredEmployeeRows.length > 0
+    ? filteredEmployeeRows.reduce((sum, row) => sum + row.aur, 0) / filteredEmployeeRows.length
+    : 0
 
   // Hanya karyawan terdaftar (role=user) yang masuk YTD
   const totalKaryawan = users.filter(u => u.role === 'user').length
@@ -338,7 +403,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             {/* Trend chart */}
             {false && (() => {
               const trend = page === 'today'
-                ? teamTrend
+                ? teamTodayTrend
                 : page === 'mtd'
                   ? teamMtdTrend
                   : (mtdPerf.monthlyTrend ?? mtdPerf.dailyTrend ?? [])
@@ -378,62 +443,129 @@ export default function AdminDashboard({ user, onLogout }: Props) {
               )
             })()}
 
+            {/* Ringkasan operasional tim */}
+            {layout.showRankingTable && <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)', gap: 10 }}>
+              <StatCard label="Total TRX Tim" value={totalTrx.toLocaleString('id-ID')} sub="akumulasi personil" accent="#0f766e" icon="🧾" />
+              <StatCard label="Rata-rata UPT" value={avgUpt.toFixed(1)} sub="item per transaksi" accent="#7c3aed" icon="📦" />
+              <StatCard label="Rata-rata AUR" value={formatRupiah(Math.round(avgAur))} sub="nilai rata-rata item" accent="#b45309" icon="💳" />
+            </div>}
+
             {/* Full detail table */}
             {layout.showRankingTable && <div style={{ background: S.panel, border: `1.5px solid ${S.border}`, borderRadius: `${cardRadius}px`, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
               <div style={{ padding: '12px 20px', borderBottom: `1px solid ${S.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <SectionTitle title="Seluruh Personil" sub={page === 'today' ? dailyDate : page === 'mtd' ? 'vs target berjalan' : 'vs target penuh bulan ini'} />
+                <SectionTitle title="Summary Semua Karyawan" sub={page === 'today' ? `${dailyDate} · monitor detail harian` : page === 'mtd' ? 'monitor akumulasi bulan berjalan' : 'monitor posisi menuju target full month'} />
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {[
-                    { label: 'Biru ≥100%', c: '#2563eb', bg: '#eff6ff', count: ranking.filter(r=>r.achievement>=100).length },
-                    { label: 'Hijau ≥95%', c: '#16a34a', bg: '#f0fdf4', count: ranking.filter(r=>r.achievement>=95&&r.achievement<100).length },
-                    { label: 'Kuning ≥90%', c: '#ca8a04', bg: '#fefce8', count: ranking.filter(r=>r.achievement>=90&&r.achievement<95).length },
-                    { label: 'Pink ≥80%', c: '#db2777', bg: '#fdf2f8', count: ranking.filter(r=>r.achievement>=80&&r.achievement<90).length },
-                    { label: 'Merah <80%', c: '#dc2626', bg: '#fff1f2', count: ranking.filter(r=>r.achievement<80).length },
+                    { label: 'Biru ≥100%', c: '#2563eb', bg: '#eff6ff', count: filteredEmployeeRows.filter(r => r.achievement >= 100).length },
+                    { label: 'Hijau ≥95%', c: '#16a34a', bg: '#f0fdf4', count: filteredEmployeeRows.filter(r => r.achievement >= 95 && r.achievement < 100).length },
+                    { label: 'Kuning ≥90%', c: '#ca8a04', bg: '#fefce8', count: filteredEmployeeRows.filter(r => r.achievement >= 90 && r.achievement < 95).length },
+                    { label: 'Pink ≥80%', c: '#db2777', bg: '#fdf2f8', count: filteredEmployeeRows.filter(r => r.achievement >= 80 && r.achievement < 90).length },
+                    { label: 'Merah <80%', c: '#dc2626', bg: '#fff1f2', count: filteredEmployeeRows.filter(r => r.achievement < 80).length },
                   ].filter(b => b.count > 0).map(b => (
                     <span key={b.label} style={{ fontSize: 10, fontWeight: 700, color: b.c, background: b.bg, padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>{b.label}: {b.count}</span>
                   ))}
                 </div>
               </div>
+              <div style={{ padding: '10px 20px', borderBottom: `1px solid ${S.border}`, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: '#fbfdff' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: S.sub }}>Filter Jabatan</span>
+                <select
+                  value={jobFilter}
+                  onChange={e => setJobFilter(e.target.value)}
+                  style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${S.border}`, fontSize: 12, color: S.text, background: '#fff' }}
+                >
+                  <option value="all">Semua Jabatan ({employeeRows.length})</option>
+                  {jobTitleOptions.map(job => {
+                    const count = employeeRows.filter(row => (row.jobTitle || 'Tanpa Jabatan') === job).length
+                    return <option key={job} value={job}>{job} ({count})</option>
+                  })}
+                </select>
+                <span style={{ fontSize: 11, color: S.muted }}>Sort aktif: {sortKey} ({sortOrder})</span>
+                <span style={{ fontSize: 11, color: S.muted }}>Tampil: {sortedEmployeeRows.length} personil</span>
+              </div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1280 }}>
                   <thead>
                     <tr style={{ background: S.bg, borderBottom: `1px solid ${S.border}` }}>
-                      {['#','Nama & NIK','Jabatan','Target','Aktual Sales','Sisa Gap','Achievement'].map(h => (
-                        <th key={h} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
+                      <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>#</th>
+                      <th onClick={() => applySort('nama')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        Nama & NIK {sortKey === 'nama' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('jobTitle')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        Jabatan {sortKey === 'jobTitle' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('sales')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        Sales {sortKey === 'sales' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('achievement')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        Ach {sortKey === 'achievement' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('transaksi')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        TRX {sortKey === 'transaksi' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('upt')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        UPT {sortKey === 'upt' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('qty')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        Qty {sortKey === 'qty' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('basketSize')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        BS {sortKey === 'basketSize' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('aur')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        AUR {sortKey === 'aur' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th onClick={() => applySort('newMember')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+                        New Member {sortKey === 'newMember' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
-                    {ranking.map((r, i) => {
-                      const color  = acPct(r.achievement)
-                      const gap    = (r.target ?? 0) - r.value
-                      const medals = ['🥇','🥈','🥉']
+                    {sortedEmployeeRows.map((r, i) => {
+                      const color = acPct(r.achievement)
+                      const medals = ['🥇', '🥈', '🥉']
+                      const salesGap = r.targetSales - r.sales
+                      const trxGap = r.targetTransaksi - r.transaksi
                       return (
-                        <tr key={r.nik} style={{ borderBottom: `1px solid ${S.border}`, background: r.value === 0 ? '#fff8f8' : i % 2 === 0 ? '#fff' : S.bg }}>
+                        <tr key={r.nik} style={{ borderBottom: `1px solid ${S.border}`, background: i % 2 === 0 ? '#fff' : S.bg }}>
                           <td style={{ padding: '11px 14px', fontSize: 14, textAlign: 'center', minWidth: 36 }}>
                             {medals[i] ?? <span style={{ color: S.muted, fontSize: 11, fontWeight: 700 }}>#{r.rank}</span>}
                           </td>
-                          <td style={{ padding: '11px 14px' }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: S.text, whiteSpace: 'nowrap' }}>{r.nama}</div>
+                          <td style={{ padding: '11px 14px', minWidth: 180 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>{r.nama}</div>
                             <div style={{ fontSize: 10, color: S.muted, fontFamily: 'monospace', marginTop: 1 }}>{r.nik}</div>
                           </td>
-                          <td style={{ padding: '11px 14px', fontSize: 11, color: S.sub, whiteSpace: 'nowrap' }}>{r.jobTitle}</td>
-                          <td style={{ padding: '11px 14px', fontSize: 12, color: S.muted, whiteSpace: 'nowrap' }}>{r.target ? formatRupiah(r.target) : '—'}</td>
-                          <td style={{ padding: '11px 14px' }}>
-                            <div style={{ fontSize: 13, fontWeight: 800, color: r.value === 0 ? '#dc2626' : S.text, whiteSpace: 'nowrap' }}>
-                              {r.value === 0 ? <span style={{ fontSize: 10, background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: 5, fontWeight: 700 }}>Belum ada transaksi</span> : formatRupiahFull(r.value)}
+                          <td style={{ padding: '11px 14px', fontSize: 11, color: S.sub, whiteSpace: 'nowrap' }}>{r.jobTitle || '—'}</td>
+                          <td style={{ padding: '11px 14px', minWidth: 180 }}>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: S.text, whiteSpace: 'nowrap' }}>{formatRupiahFull(r.sales)}</div>
+                            <div style={{ fontSize: 10, color: S.muted, marginTop: 1, whiteSpace: 'nowrap' }}>
+                              Tgt {formatRupiah(r.targetSales)} · {salesGap > 0 ? `Gap ${formatRupiah(salesGap)}` : `+${formatRupiah(Math.abs(salesGap))}`}
                             </div>
                           </td>
-                          <td style={{ padding: '11px 14px', fontSize: 12, fontWeight: 700, color: gap > 0 ? '#dc2626' : '#16a34a', whiteSpace: 'nowrap' }}>
-                            {r.target ? (gap > 0 ? `−${formatRupiah(gap)}` : `+${formatRupiah(Math.abs(gap))}`) : '—'}
-                          </td>
-                          <td style={{ padding: '11px 14px', minWidth: 160 }}>
+                          <td style={{ padding: '11px 14px', minWidth: 150 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <div style={{ flex: 1, height: 7, background: '#e8edf8', borderRadius: 4, overflow: 'hidden', minWidth: 50 }}>
                                 <div style={{ height: '100%', width: `${Math.min(r.achievement, 100)}%`, background: color, borderRadius: 4, transition: 'width 0.8s ease' }} />
                               </div>
                               <span style={{ background: bgPct(r.achievement), color, fontWeight: 800, fontSize: 12, padding: '3px 9px', borderRadius: 7, flexShrink: 0, whiteSpace: 'nowrap' }}>{r.achievement.toFixed(1)}%</span>
                             </div>
+                          </td>
+                          <td style={{ padding: '11px 14px', minWidth: 120 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>{r.transaksi.toLocaleString('id-ID')}</div>
+                            <div style={{ fontSize: 10, color: trxGap > 0 ? '#dc2626' : '#16a34a' }}>
+                              Tgt {r.targetTransaksi.toLocaleString('id-ID')} · {trxGap > 0 ? `-${trxGap.toLocaleString('id-ID')}` : `+${Math.abs(trxGap).toLocaleString('id-ID')}`}
+                            </div>
+                          </td>
+                          <td style={{ padding: '11px 14px', fontSize: 12, fontWeight: 700, color: acPct(r.upt * 20) }}>{r.upt.toFixed(1)}x</td>
+                          <td style={{ padding: '11px 14px', fontSize: 12, color: S.sub }}>{r.qty.toLocaleString('id-ID')}</td>
+                          <td style={{ padding: '11px 14px', minWidth: 140 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: S.text }}>{formatRupiah(r.basketSize)}</div>
+                            <div style={{ fontSize: 10, color: S.muted }}>Tgt {formatRupiah(r.targetBasketSize)}</div>
+                          </td>
+                          <td style={{ padding: '11px 14px', fontSize: 12, fontWeight: 700, color: S.text }}>{formatRupiah(r.aur)}</td>
+                          <td style={{ padding: '11px 14px' }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: r.newMember > 0 ? '#0e7490' : S.muted, background: r.newMember > 0 ? '#ecfeff' : '#f8fafc', border: `1px solid ${r.newMember > 0 ? '#a5f3fc' : S.border}`, borderRadius: 999, padding: '3px 8px' }}>
+                              {r.newMember.toLocaleString('id-ID')}
+                            </span>
                           </td>
                         </tr>
                       )

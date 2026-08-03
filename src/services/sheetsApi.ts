@@ -1,4 +1,4 @@
-import { YTD_PERFORMANCE, USERS as MOCK_USERS, type User, type PerformanceData, type EmployeeRank, type KPIItem } from '../data/mockData'
+import { YTD_PERFORMANCE, type User, type PerformanceData, type EmployeeRank, type KPIItem } from '../data/mockData'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 let usersRequestInFlight: Promise<User[]> | null = null
@@ -68,30 +68,6 @@ function ci(letter: string): number {
 
 // ─── USERS sheet ────────────────────────────────────────────────────────────
 // A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD (data from row 2)
-function ensureAdminFallback(users: User[]): User[] {
-  const fallbackAdmin = MOCK_USERS.find(u => u.role === 'admin')
-  if (!fallbackAdmin) return users
-
-  const existingAdminIndex = users.findIndex(u => {
-    const sameNik = (u.nik || '').trim().toLowerCase() === (fallbackAdmin.nik || '').trim().toLowerCase()
-    return sameNik || u.role === 'admin'
-  })
-
-  if (existingAdminIndex >= 0) {
-    const current = users[existingAdminIndex]
-    users[existingAdminIndex] = {
-      ...current,
-      nik: current.nik || fallbackAdmin.nik,
-      nama: current.nama || fallbackAdmin.nama,
-      role: 'admin',
-      jobTitle: current.jobTitle || fallbackAdmin.jobTitle,
-      password: fallbackAdmin.password, // always use the app's defined admin password, not from sheet
-    }
-    return users
-  }
-
-  return [fallbackAdmin, ...users]
-}
 
 export async function fetchUsers(): Promise<User[]> {
   if (!usersRequestInFlight) {
@@ -105,9 +81,8 @@ export async function fetchUsers(): Promise<User[]> {
         password: col(r, ci('E')),
       })).filter(u => u.nama)
 
-      const withFallback = ensureAdminFallback(users)
-      if (IS_DEV) console.warn('[USERS] Total:', withFallback.length)
-      return withFallback
+      if (IS_DEV) console.warn('[USERS] Total:', users.length)
+      return users
     })().finally(() => {
       usersRequestInFlight = null
     })

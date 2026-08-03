@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
-import { USERS as MOCK_USERS, type User } from '../data/mockData'
+import type { User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { fetchUsers } from '../services/sheetsApi'
 import { trackLogin } from '../services/loginTracker'
@@ -25,7 +25,7 @@ function EyeIcon({ open }: { open: boolean }) {
 
 export default function LoginPage({ onLogin }: Props) {
   const { users: liveUsers } = useAtlasData()
-  const USERS = liveUsers.length > 0 ? liveUsers : MOCK_USERS
+  const USERS = liveUsers
 
   const [nik, setNik]           = useState('')
   const [password, setPassword] = useState('')
@@ -48,18 +48,8 @@ export default function LoginPage({ onLogin }: Props) {
   const normNik = (s: string) => s.trim().toLowerCase()
   const normPw = (s: string) => s.trim().toLowerCase()
 
-  const buildAuthCandidates = (users: User[]) => {
-    const authCandidates = [...users]
-    const fallbackAdmin = MOCK_USERS.find(u => u.role === 'admin')
-    if (fallbackAdmin && !authCandidates.some(u => normNik(u.nik) === normNik(fallbackAdmin.nik))) {
-      authCandidates.unshift(fallbackAdmin)
-    }
-    return authCandidates
-  }
-
   const findAuthenticatedUser = (users: User[], inputNik: string, inputPassword: string) => {
-    const authCandidates = buildAuthCandidates(users)
-    const match = authCandidates.find(u => normNik(u.nik) === inputNik)
+    const match = users.find(u => normNik(u.nik) === inputNik)
     return match && normPw(match.password) === inputPassword ? match : undefined
   }
 

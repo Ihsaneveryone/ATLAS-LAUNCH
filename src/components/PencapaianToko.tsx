@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiahFull, formatRupiah, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow, todayTokoRow, type TokoRow } from '../services/tokoApi'
+import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -11,7 +12,7 @@ import {
 
 interface Props { user: User; onBack: () => void }
 
-type Tab = 'today' | 'mtd' | 'fullmonth' | 'trend'
+type Tab = 'today' | 'mtd' | 'fullmonth' | 'trend' | 'dept'
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b', red: '#D93119' }
 
@@ -22,6 +23,10 @@ function clr(p: number) {
   if (p >= 90)  return '#f59e0b' // yellow
   if (p >= 80)  return '#ec4899' // pink
   return '#D93119'              // red
+}
+function formatAchievement(pctValue: number) {
+  if (!Number.isFinite(pctValue) || pctValue <= 0) return '0.0%'
+  return `${pctValue.toFixed(1)}%`
 }
 function fmtVal(n: number, unit: string) {
   if (unit === 'Rp') return formatRupiah(n)
@@ -355,21 +360,181 @@ function TrendView({ rows }: { rows: TokoRow[] }) {
   )
 }
 
+function DeptMetricRow({ label, value, target, zoneTotal }: { label: string; value: number; target?: number; zoneTotal?: number }) {
+  const pct = target && target > 0 ? (value / target) * 100 : zoneTotal && zoneTotal > 0 ? (value / zoneTotal) * 100 : 0
+  const color = pct >= 100 ? '#2563eb' : pct >= 95 ? '#059669' : pct >= 90 ? '#f59e0b' : pct >= 80 ? '#ec4899' : '#D93119'
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+        <div style={{ color: S.text, fontSize: 12, fontWeight: 700, lineHeight: 1.35 }}>{label}</div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ color: S.text, fontSize: 12, fontWeight: 800 }}>{formatRupiah(value)}</div>
+          <div style={{ color: target && target > 0 ? color : S.muted, fontSize: 10, fontWeight: 700 }}>{formatAchievement(pct)}</div>
+        </div>
+      </div>
+      <div style={{ height: 7, background: '#e8edf8', borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 999, transition: 'width 0.8s ease' }} />
+      </div>
+        {target && target > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 5, fontSize: 10, color: S.muted }}>
+            <span>Target {formatRupiah(target)}</span>
+            <span>{pct.toFixed(1)}%</span>
+          </div>
+        )}
+    </div>
+  )
+}
+
+function DeptPeriodCard({ title, subtitle, data, accent }: { title: string; subtitle: string; data: DeptPeriodData | null; accent: string }) {
+  const isMobile = useMobile()
+  if (!data) {
+    return (
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '18px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        <div style={{ color: S.text, fontSize: 16, fontWeight: 800, marginBottom: 4 }}>{title}</div>
+        <div style={{ color: S.muted, fontSize: 12 }}>{subtitle}</div>
+        <div style={{ marginTop: 18, color: S.muted, fontSize: 13 }}>Data belum tersedia.</div>
+      </div>
+    )
+  }
+
+  const zoneCount = data.zones.length
+  const topZone = data.zones[0]
+
+  return (
+    <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '18px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderTop: `4px solid ${accent}` }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ color: S.muted, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
+          <div style={{ color: S.text, fontSize: isMobile ? 20 : 26, fontWeight: 900, letterSpacing: '-0.02em' }}>{formatRupiahFull(data.total)}</div>
+          <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{subtitle}</div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ color: accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Zona Aktif</div>
+          <div style={{ color: S.text, fontSize: 28, fontWeight: 900 }}>{zoneCount}</div>
+          {topZone && <div style={{ color: S.muted, fontSize: 11 }}>Top: {topZone.zone}</div>}
+        </div>
+      </div>
+
+      {typeof data.target === 'number' && data.target > 0 && (
+        <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 14, background: '#f8fbff', border: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</div>
+            <div style={{ color: S.text, fontSize: 15, fontWeight: 800 }}>{formatRupiahFull(data.target)}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pencapaian</div>
+              <div style={{ color: accent, fontSize: 18, fontWeight: 900 }}>{formatAchievement(data.achievement ?? 0)}</div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 12 }}>
+        {data.zones.map(zone => {
+          const zonePct = zone.target && zone.target > 0 ? (zone.value / zone.target) * 100 : data.total > 0 ? (zone.value / data.total) * 100 : 0
+          return (
+            <div key={zone.zone} style={{ background: '#fbfdff', border: `1px solid ${S.border}`, borderRadius: 16, padding: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                <div>
+                  <div style={{ color: accent, fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>Zona</div>
+                  <div style={{ color: S.text, fontSize: 15, fontWeight: 800, lineHeight: 1.3 }}>{zone.zone}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ color: S.text, fontSize: 16, fontWeight: 900 }}>{formatRupiahFull(zone.value)}</div>
+                  <div style={{ color: zone.target && zone.target > 0 ? accent : S.muted, fontSize: 11, fontWeight: 700 }}>{formatAchievement(zonePct)}</div>
+                </div>
+              </div>
+              <div style={{ height: 8, background: '#e8edf8', borderRadius: 999, overflow: 'hidden', marginBottom: 12 }}>
+                <div style={{ height: '100%', width: `${Math.min(zonePct, 100)}%`, background: accent, borderRadius: 999, transition: 'width 0.8s ease' }} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {zone.departments.map(item => (
+                  <DeptMetricRow key={item.label} label={item.label} value={item.value} target={item.target} zoneTotal={zone.value} />
+                ))}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function DeptView({ sbd, mtd, loading, error }: { sbd: DeptPeriodData | null; mtd: DeptPeriodData | null; loading: boolean; error: string | null }) {
+  const isMobile = useMobile()
+  if (loading) {
+    return <div style={{ textAlign: 'center', color: S.muted, fontSize: 14, padding: 40 }}>⟳ Memuat data departemen…</div>
+  }
+
+  if (error && !sbd && !mtd) {
+    return (
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '18px' : '24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 10 }}>🏷️</div>
+        <div style={{ color: S.text, fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Data departemen belum bisa dibaca</div>
+        <div style={{ color: S.muted, fontSize: 13 }}>{error}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+        <DeptPeriodCard
+          title="Pencapaian Sales SBD Dept"
+          subtitle={sbd?.date ? `Tanggal ${sbd.date}` : 'Data harian terbaru'}
+          data={sbd}
+          accent="#D93119"
+        />
+        <DeptPeriodCard
+          title="Pencapaian Sales MTD Dept"
+          subtitle="Akumulasi bulan berjalan"
+          data={mtd}
+          accent="#0e7490"
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function PencapaianToko({ user, onBack }: Props) {
   const { tokoRows, loading } = useAtlasData()
   const [tab, setTab] = useState<Tab>('today')
+  const [deptLoading, setDeptLoading] = useState(false)
+  const [deptError, setDeptError] = useState<string | null>(null)
+  const [deptSbd, setDeptSbd] = useState<DeptPeriodData | null>(null)
+  const [deptMtd, setDeptMtd] = useState<DeptPeriodData | null>(null)
   const isMobile  = useMobile()
   const todayRow     = todayTokoRow(tokoRows)   // TODAY & Full Month → data hari ini
   const latest       = latestTokoRow(tokoRows)  // MTD → H-1
   const workingDays  = latest    ? parseDayNum(latest.date)    : Math.max(1, new Date().getDate() - 1) // H-1
   const todayWDays   = todayRow  ? parseDayNum(todayRow.date)  : new Date().getDate()                  // hari ini
 
+  useEffect(() => {
+    let cancelled = false
+    setDeptLoading(true)
+    setDeptError(null)
+    fetchPencapaianDept()
+      .then(result => {
+        if (cancelled) return
+        setDeptSbd(result.sbd)
+        setDeptMtd(result.mtd)
+        setDeptLoading(false)
+      })
+      .catch(err => {
+        if (cancelled) return
+        setDeptError(err instanceof Error ? err.message : String(err))
+        setDeptLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [])
+
   const tabs: { key: Tab; label: string }[] = [
     { key: 'today',     label: 'Today'      },
     { key: 'mtd',       label: 'MTD'        },
     { key: 'fullmonth', label: 'Full Month' },
     { key: 'trend',     label: 'Trend'      },
+    { key: 'dept',      label: 'Departemen' },
   ]
 
   return (
@@ -414,7 +579,8 @@ export default function PencapaianToko({ user, onBack }: Props) {
             {tab === 'today'     && todayRow           && <TodayView     row={todayRow}/>}
             {tab === 'mtd'       && latest             && <MTDView       row={latest}   workingDays={workingDays}/>}
             {tab === 'fullmonth' && todayRow            && <FullMonthView row={todayRow} workingDays={todayWDays}/>}
-            {tab === 'trend'     && tokoRows.length > 0 && <TrendView     rows={tokoRows}/>}
+            {tab === 'trend'     && tokoRows.length > 0 && <TrendView     rows={tokoRows}/>} 
+            {tab === 'dept'      && <DeptView sbd={deptSbd} mtd={deptMtd} loading={deptLoading} error={deptError} />}
           </>
         )}
       </main>

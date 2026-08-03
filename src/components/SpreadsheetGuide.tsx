@@ -20,14 +20,14 @@ interface ColDef { col: string; header: string; type: string; contoh: string; de
 const COLUMNS: Record<SheetKey, ColDef[]> = {
   users: [
     { col: 'A', header: 'NIK',      type: 'Text',          contoh: '191924',          desc: 'Nomor Induk Karyawan (Primary Key login)' },
-    { col: 'B', header: 'NAMA',     type: 'Text',          contoh: 'Muhammad Ihsar',  desc: 'Nama lengkap karyawan' },
+    { col: 'B', header: 'NAMA',     type: 'Text',          contoh: 'KARYAWAN A',      desc: 'Nama lengkap karyawan' },
     { col: 'C', header: 'ROLE',     type: 'admin / user',  contoh: 'admin',           desc: '"admin" untuk manajer, "user" untuk karyawan' },
     { col: 'D', header: 'JOBTITLE', type: 'Text',          contoh: 'Manajer',         desc: 'Jabatan karyawan (Manajer, Sales, SPV, CCR, dll)' },
     { col: 'E', header: 'PASSWORD', type: 'Text',          contoh: '123456',          desc: 'Password login karyawan' },
   ],
   daily: [
     { col: 'A',  header: 'NIK',            type: 'Text',    contoh: '187856',      desc: 'NIK karyawan — harus sama dengan sheet USERS' },
-    { col: 'B',  header: 'NAMA',           type: 'Text',    contoh: 'MONICA',      desc: 'Nama karyawan' },
+    { col: 'B',  header: 'NAMA',           type: 'Text',    contoh: 'KARYAWAN A',  desc: 'Nama karyawan' },
     { col: 'C',  header: 'JOB TITLE',      type: 'Text',    contoh: 'Sales',       desc: 'Jabatan karyawan' },
     { col: 'F',  header: 'TOTAL SALES',    type: 'Number',  contoh: '13500000',    desc: 'Total nilai penjualan hari itu (Rupiah)' },
     { col: 'G',  header: 'TARGET SALES',   type: 'Number',  contoh: '15000000',    desc: 'Target penjualan harian (Rupiah)' },
@@ -42,7 +42,7 @@ const COLUMNS: Record<SheetKey, ColDef[]> = {
   ],
   mtd: [
     { col: 'A',  header: 'NIK',             type: 'Text',    contoh: '187856',  desc: 'NIK karyawan' },
-    { col: 'B',  header: 'NAMA',            type: 'Text',    contoh: 'MONICA',  desc: 'Nama karyawan' },
+    { col: 'B',  header: 'NAMA',            type: 'Text',    contoh: 'KARYAWAN A', desc: 'Nama karyawan' },
     { col: 'C',  header: 'JOB TITLE',       type: 'Text',    contoh: 'Sales',   desc: 'Jabatan karyawan' },
     { col: 'E',  header: 'SALES',           type: 'Number',  contoh: '118965000', desc: 'Total sales bulan berjalan (Rupiah)' },
     { col: 'F',  header: 'TARGET',          type: 'Number',  contoh: '165000000', desc: 'Target sales bulanan (Rupiah)' },
@@ -59,20 +59,20 @@ const COLUMNS: Record<SheetKey, ColDef[]> = {
 
 const SAMPLES: Record<SheetKey, string[][]> = {
   users: [
-    ['191924', 'Muhammad Ihsar', 'admin', 'Manajer',        '123456'],
-    ['187856', 'MONICA',         'user',  'Sales',          '654321'],
-    ['176413', 'Rahmadiame',     'user',  'Sales Advisor',  'azko123'],
-    ['113230', 'Riaji Kantoro',  'user',  'Sales Advisor',  'azko123'],
+    ['191924', 'KARYAWAN A', 'admin', 'Manajer',       '123456'],
+    ['187856', 'KARYAWAN B', 'user',  'Sales',         '654321'],
+    ['176413', 'KARYAWAN C', 'user',  'Sales Advisor', 'azko123'],
+    ['113230', 'KARYAWAN D', 'user',  'Sales Advisor', 'azko123'],
   ],
   daily: [
-    ['187856', 'MONICA', 'Sales', '13500000', '15000000', '23', '48', '273125', '2.1', '570000', '8', '3', '5'],
-    ['176413', 'Rahmadiame', 'Sales Advisor', '18500000', '15000000', '30', '62', '298387', '2.1', '616666', '12', '5', '7'],
-    ['113230', 'Riaji Kantoro', 'Sales Advisor', '16200000', '15000000', '27', '55', '294545', '2.0', '600000', '10', '4', '6'],
+    ['187856', 'KARYAWAN B', 'Sales', '13500000', '15000000', '23', '48', '273125', '2.1', '570000', '8', '3', '5'],
+    ['176413', 'KARYAWAN C', 'Sales Advisor', '18500000', '15000000', '30', '62', '298387', '2.1', '616666', '12', '5', '7'],
+    ['113230', 'KARYAWAN D', 'Sales Advisor', '16200000', '15000000', '27', '55', '294545', '2.0', '600000', '10', '4', '6'],
   ],
   mtd: [
-    ['187856', 'MONICA', 'Sales', '118965000', '165000000', '198', '600750', '62', '38', '22', '112', '1'],
-    ['176413', 'Rahmadiame', 'Sales Advisor', '145200000', '165000000', '242', '599173', '78', '45', '30', '138', '0'],
-    ['113230', 'Riaji Kantoro', 'Sales Advisor', '168400000', '165000000', '270', '623703', '91', '52', '36', '156', '0'],
+    ['187856', 'KARYAWAN B', 'Sales', '118965000', '165000000', '198', '600750', '62', '38', '22', '112', '1'],
+    ['176413', 'KARYAWAN C', 'Sales Advisor', '145200000', '165000000', '242', '599173', '78', '45', '30', '138', '0'],
+    ['113230', 'KARYAWAN D', 'Sales Advisor', '168400000', '165000000', '270', '623703', '91', '52', '36', '156', '0'],
   ],
   ytd: [],
 }

@@ -1,9 +1,26 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import { TODAY_PERFORMANCE, MTD_PERFORMANCE, YTD_PERFORMANCE, USERS as MOCK_USERS } from '../data/mockData'
+import { YTD_PERFORMANCE } from '../data/mockData'
 import { fetchUsers } from '../services/sheetsApi'
+import type { TeamEmployeeSummary } from '../services/rawDataApi'
 import { buildRawPerformance, fetchMenuConfig } from '../services/rawDataApi'
 import { fetchPencapaianToko, type TokoRow } from '../services/tokoApi'
-import type { User, PerformanceData, DailyTrend } from '../data/mockData'
+import type { User, PerformanceData, DailyTrend, KPIItem } from '../data/mockData'
+
+function emptyPerformance(workingDays = 1): PerformanceData {
+  const safeDays = Math.max(workingDays, 1)
+  return {
+    achievement: 0,
+    target: 0,
+    targetMTD: 0,
+    actual: 0,
+    acv: 0,
+    workingDays: safeDays,
+    kpis: [] as KPIItem[],
+    ranking: [],
+    dailyTrend: [],
+    monthlyTrend: [],
+  }
+}
 
 export interface AtlasData {
   users:            User[]
@@ -13,6 +30,8 @@ export interface AtlasData {
   dailyDate:        string
   teamTodayTrend:   DailyTrend[]
   teamMtdTrend:     DailyTrend[]
+  teamTodayEmployees: TeamEmployeeSummary[]
+  teamMtdEmployees: TeamEmployeeSummary[]
   loading:          boolean
   error:            string | null
   usingLive:        boolean
@@ -24,13 +43,15 @@ export interface AtlasData {
 }
 
 export const DataContext = createContext<AtlasData>({
-  users:            MOCK_USERS,
-  todayPerf:        TODAY_PERFORMANCE,
-  mtdPerf:          MTD_PERFORMANCE,
+  users:            [],
+  todayPerf:        emptyPerformance(1),
+  mtdPerf:          emptyPerformance(1),
   ytdPerf:          YTD_PERFORMANCE,
   dailyDate:        '',
   teamTodayTrend:   [],
   teamMtdTrend:     [],
+  teamTodayEmployees: [],
+  teamMtdEmployees: [],
   loading:          false,
   error:            null,
   usingLive:        false,
@@ -47,13 +68,15 @@ export function useAtlasData() {
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Omit<AtlasData, 'reload' | 'reloadMenuConfig'>>({
-    users:      MOCK_USERS,
-    todayPerf:  TODAY_PERFORMANCE,
-    mtdPerf:    MTD_PERFORMANCE,
+    users:      [],
+    todayPerf:  emptyPerformance(1),
+    mtdPerf:    emptyPerformance(1),
     ytdPerf:    YTD_PERFORMANCE,
     dailyDate:  '',
     teamTodayTrend: [],
     teamMtdTrend:   [],
+    teamTodayEmployees: [],
+    teamMtdEmployees: [],
     loading:    false,
     error:      null,
     usingLive:  false,
@@ -105,7 +128,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     // ── USERS ────────────────────────────────────────────────────
-    let liveUsers = MOCK_USERS
+    let liveUsers: User[] = []
     try {
       log('Mengambil data users…')
       const fetched = await fetchUsers()
@@ -116,11 +139,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     // ── RAW DATA (COPAS S2) ───────────────────────────────────────
-    let todayPerf = TODAY_PERFORMANCE
-    let mtdPerf   = MTD_PERFORMANCE
+    let todayPerf = emptyPerformance(1)
+    let mtdPerf   = emptyPerformance(1)
     let dailyDate = ''
     let teamTodayTrend: DailyTrend[] = []
     let teamMtdTrend: DailyTrend[] = []
+    let teamTodayEmployees: TeamEmployeeSummary[] = []
+    let teamMtdEmployees: TeamEmployeeSummary[] = []
+    let rawPerfError: string | null = null
     try {
       log('Mengolah data mentah COPAS S2…')
       // Hanya NIK dengan role 'user' yang masuk ranking — exclude admin & NIK anomali
@@ -131,7 +157,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       dailyDate = result.dailyDate
       teamTodayTrend = result.teamTodayTrend
       teamMtdTrend = result.teamMtdTrend
-    } catch (e: any) { log(`❌ Error: ${e?.message ?? e}`) }
+      teamTodayEmployees = result.teamTodayEmployees
+      teamMtdEmployees = result.teamMtdEmployees
+    } catch (e: any) {
+      const msg = e?.message ?? String(e)
+      rawPerfError = `Gagal ambil data performa spreadsheet: ${msg}`
+      log(`❌ Error: ${msg}`)
+    }
 
     // ── PENCAPAIAN TOKO ───────────────────────────────────────────
     let tokoRows: TokoRow[] = []
@@ -141,7 +173,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       log(`✅ Pencapaian Toko: ${tokoRows.length} baris`)
     } catch (e: any) { log(`❌ Pencapaian Toko gagal: ${e?.message ?? e}`) }
 
-    const anyLive = liveUsers !== MOCK_USERS || todayPerf !== TODAY_PERFORMANCE || mtdPerf !== MTD_PERFORMANCE
+    const anyLive = liveUsers.length > 0 || todayPerf.actual > 0 || mtdPerf.actual > 0
     const ts = new Date().toLocaleTimeString('id-ID')
     setData(prev => ({
       ...prev,
@@ -152,11 +184,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       dailyDate,
       teamTodayTrend,
       teamMtdTrend,
+      teamTodayEmployees,
+      teamMtdEmployees,
       tokoRows,
       loading:   false,
-      error:     null,
+      error:     rawPerfError,
       usingLive: anyLive,
-      debugLog:  [...prev.debugLog, `[${ts}] ${anyLive ? '✅ Selesai (live)' : '⚠ Selesai (mock)'}`],
+      debugLog:  [...prev.debugLog, `[${ts}] ${anyLive ? '✅ Selesai (live)' : '⚠ Selesai (fallback kosong)'}`],
     }))
   }, [log])
 

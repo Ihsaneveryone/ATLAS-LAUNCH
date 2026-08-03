@@ -234,8 +234,8 @@ async function fetchNikNameMapping(): Promise<Map<string, string>> {
     // This ensures the parser can associate sales rows (even if A is empty)
     // to the correct numeric NIK used throughout the app.
     const hardcoded: Record<string, string> = {
-      'KR-I PUTU ADI SUARTAMA': '101902', // I01902
-      'KR-FATKHUN NIMAH': '101903',       // I01903
+      'GWEN MALIKA': '101902', // I01902
+      'ADITYA PUTRA': '101903',       // I01903
       'MOCH.ROZIAN NAUFAL': '101904',     // I01904
     }
     for (const [name, nik] of Object.entries(hardcoded)) {
@@ -952,6 +952,87 @@ function buildRanking(perfs: EmpPerf[], targets: Map<string, TargetData>, workin
     })
 }
 
+export interface TeamEmployeeSummary {
+  rank: number
+  nik: string
+  nama: string
+  jobTitle: string
+  sales: number
+  targetSales: number
+  achievement: number
+  transaksi: number
+  targetTransaksi: number
+  trafficEst: number
+  qty: number
+  upt: number
+  aur: number
+  basketSize: number
+  targetBasketSize: number
+  newMember: number
+}
+
+function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set()): TeamEmployeeSummary[] {
+  const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
+  const filteredPerfs = perfs
+    .filter(e => validNiks.size === 0 || normalizedValidNiks.has(canonicalNik(e.nik).toLowerCase()))
+
+  const perfsByNik = new Map(filteredPerfs.map(entry => [canonicalNik(entry.nik).toLowerCase(), entry]))
+  const completedPerfs = [...filteredPerfs]
+
+  for (const key of normalizedValidNiks) {
+    if (perfsByNik.has(key)) continue
+    const targetData = findTargetByNik(targets, key)
+    completedPerfs.push({
+      nik: key,
+      nama: targetData?.nama ?? key,
+      sales: 0,
+      qty: 0,
+      transaksi: 0,
+      newMember: 0,
+      categorySales: {},
+      categoryQty: {},
+      basketSize: 0,
+      upt: 0,
+      aur: 0,
+    })
+  }
+
+  const rows = completedPerfs.map(e => {
+    const tData = findTargetByNik(targets, e.nik)
+    const dailyTarget = tData?.daily ?? DEFAULT_DAILY_TARGET
+    const targetSales = dailyTarget * workingDays
+    const trxDailyBase = tData?.targetTrxDaily ?? Math.max(1, Math.round(dailyTarget / 450_000))
+    const targetTransaksi = Math.max(1, trxDailyBase * workingDays)
+    const targetBasketSize = Math.max(1, tData?.targetBasketSizeDaily ?? Math.round(dailyTarget * 0.7))
+    const rawNama = e.nama && e.nama.trim() && e.nama.trim().toUpperCase() !== 'NONAME'
+      ? e.nama
+      : (tData?.nama ?? e.nik)
+
+    return {
+      rank: 0,
+      nik: e.nik,
+      nama: cleanNama(rawNama),
+      jobTitle: tData?.jobTitle ?? '',
+      sales: e.sales,
+      targetSales,
+      achievement: targetSales > 0 ? parseFloat(((e.sales / targetSales) * 100).toFixed(1)) : 0,
+      transaksi: e.transaksi,
+      targetTransaksi,
+      trafficEst: e.transaksi,
+      qty: e.qty,
+      upt: e.upt,
+      aur: e.aur,
+      basketSize: e.basketSize,
+      targetBasketSize,
+      newMember: e.newMember,
+    }
+  })
+
+  return rows
+    .sort((a, b) => b.achievement - a.achievement || b.sales - a.sales)
+    .map((row, i) => ({ ...row, rank: i + 1 }))
+}
+
 // ─── Public builders ──────────────────────────────────────────────────────────
 
 export interface RawPerfResult {
@@ -962,6 +1043,8 @@ export interface RawPerfResult {
   dateTo:    string
   teamTodayTrend: DailyTrend[]
   teamMtdTrend:   DailyTrend[]
+  teamTodayEmployees: TeamEmployeeSummary[]
+  teamMtdEmployees: TeamEmployeeSummary[]
 }
 
 function normNik(nik: string): string {
@@ -1118,10 +1201,10 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     for (const entry of entries) {
       if (!entry.date || !dateFilter(entry.date)) continue
       if (entry.byNik) {
-        if (norm(entry.nikOrNama) === norm(nik)) total += entry.count
+        if (niksMatch(entry.nikOrNama, nik)) total += entry.count
       } else {
         const resolvedNik = resolveNama(entry.nikOrNama)
-        if (resolvedNik === nik) total += entry.count
+        if (resolvedNik && niksMatch(resolvedNik, nik)) total += entry.count
       }
     }
     return total
@@ -1144,6 +1227,13 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   )
   log(`MEMBER entries untuk NIK ini: ${relatedEntries.length} — ${relatedEntries.map(e => `${e.nikOrNama}(${e.date?.toLocaleDateString('id-ID')})`).slice(0,5).join(', ')}`)
   log(`New Member today=${myDaily.newMember} MTD=${myMTD.newMember}`)
+
+  for (const perf of dailyPerfs) {
+    perf.newMember = sumMember(memberEntries, perf.nik, d => sameDay(d, today))
+  }
+  for (const perf of mtdPerfs) {
+    perf.newMember = sumMember(memberEntries, perf.nik, d => sameMonth(d, today) && d <= yesterday)
+  }
 
   // Cari target: coba by NIK dulu, lalu by NAMA (fallback jika NIK null di gviz)
   const normN = (s: string) => s.toUpperCase().replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim()
@@ -1199,6 +1289,8 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     dateTo:         fmt(yesterday),
     teamTodayTrend: [{ date: fmt(today), actual: teamTodayTotal, target: teamDailyTarget }],
     teamMtdTrend,
+    teamTodayEmployees: buildTeamEmployeeSummary(dailyPerfs, targets, 1, validNiks),
+    teamMtdEmployees: buildTeamEmployeeSummary(mtdPerfs, targets, wdays, validNiks),
 
     todayPerf: {
       achievement: dailyAch,
