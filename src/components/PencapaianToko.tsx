@@ -459,7 +459,7 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
           ]
           const zoneColor = zoneColors[zoneIndex % zoneColors.length]
           return (
-            <div key={zone.zone} style={{ background: zoneColor.bg, border: `1px solid ${zoneColor.border}`, borderRadius: isMobile ? 12 : 16, padding: isMobile ? '10px' : '14px' }}>
+            <div key={zone.zone} style={{ background: zoneColor.bg, border: `1px solid ${zoneColor.border}`, borderRadius: isMobile ? 12 : 16, padding: isMobile ? '10px' : '14px', minWidth: 0, overflow: 'hidden' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: isMobile ? 6 : 8, marginBottom: isMobile ? 8 : 10 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ color: accent, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: isMobile ? 3 : 3 }}>Zona</div>
