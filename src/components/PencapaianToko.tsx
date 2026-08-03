@@ -366,19 +366,19 @@ function DeptMetricRow({ label, value, target, zoneTotal }: { label: string; val
   const color = pct >= 100 ? '#2563eb' : pct >= 95 ? '#059669' : pct >= 90 ? '#f59e0b' : pct >= 80 ? '#ec4899' : '#D93119'
 
   return (
-    <div style={{ marginTop: isMobile ? 8 : 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 10, marginBottom: isMobile ? 4 : 6 }}>
-        <div style={{ color: S.text, fontSize: isMobile ? 11 : 12, fontWeight: 700, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
+    <div style={{ marginTop: isMobile ? 6 : 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: isMobile ? 6 : 10, marginBottom: isMobile ? 3 : 6 }}>
+        <div style={{ color: S.text, fontSize: isMobile ? 10 : 12, fontWeight: 700, lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</div>
         <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
-          <div style={{ color: S.text, fontSize: isMobile ? 11 : 12, fontWeight: 800 }}>{formatRupiah(value)}</div>
-          <div style={{ color: target && target > 0 ? color : S.muted, fontSize: isMobile ? 9 : 10, fontWeight: 700 }}>{formatAchievement(pct)}</div>
+          <div style={{ color: S.text, fontSize: isMobile ? 10 : 12, fontWeight: 800 }}>{formatRupiah(value)}</div>
+          <div style={{ color: target && target > 0 ? color : S.muted, fontSize: isMobile ? 8 : 10, fontWeight: 700 }}>{formatAchievement(pct)}</div>
         </div>
       </div>
-      <div style={{ height: 6, background: '#e8edf8', borderRadius: 999, overflow: 'hidden' }}>
+      <div style={{ height: isMobile ? 5 : 6, background: '#e8edf8', borderRadius: 999, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${Math.min(pct, 100)}%`, background: color, borderRadius: 999, transition: 'width 0.8s ease' }} />
       </div>
         {target && target > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginTop: 4, fontSize: isMobile ? 9 : 10, color: S.muted, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4, marginTop: isMobile ? 3 : 4, fontSize: isMobile ? 8 : 10, color: S.muted, overflow: 'hidden' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Target {formatRupiah(target)}</span>
             <span style={{ minWidth: 'fit-content' }}>{pct.toFixed(1)}%</span>
           </div>
@@ -435,12 +435,12 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
       )}
 
       {!hideTarget && typeof data.target === 'number' && data.target > 0 && (
-        <div style={{ marginBottom: isMobile ? 14 : 18, padding: isMobile ? '10px 12px' : '12px 14px', borderRadius: 14, background: '#f8fbff', border: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: isMobile ? 14 : 18, padding: isMobile ? '10px 12px' : '12px 14px', borderRadius: 14, background: '#f8fbff', border: `1px solid ${S.border}`, display: isMobile ? 'grid' : 'flex', gridTemplateColumns: isMobile ? '1fr auto' : undefined, justifyContent: isMobile ? undefined : 'space-between', gap: isMobile ? 12 : 12, flexWrap: isMobile ? undefined : 'wrap' }}>
           <div>
             <div style={{ color: S.muted, fontSize: isMobile ? 9 : 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</div>
             <div style={{ color: S.text, fontSize: isMobile ? 13 : 15, fontWeight: 800 }}>{formatRupiahFull(data.target)}</div>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ textAlign: isMobile ? 'right' : 'right' }}>
             <div style={{ color: S.muted, fontSize: isMobile ? 9 : 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Pencapaian</div>
               <div style={{ color: accent, fontSize: isMobile ? 16 : 18, fontWeight: 900 }}>{formatAchievement(data.achievement ?? 0)}</div>
           </div>
@@ -451,18 +451,18 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
         {data.zones.map(zone => {
           const zonePct = zone.target && zone.target > 0 ? (zone.value / zone.target) * 100 : data.total > 0 ? (zone.value / data.total) * 100 : 0
           return (
-            <div key={zone.zone} style={{ background: '#fbfdff', border: `1px solid ${S.border}`, borderRadius: 16, padding: isMobile ? '12px' : '14px' }}>
+            <div key={zone.zone} style={{ background: '#fbfdff', border: `1px solid ${S.border}`, borderRadius: isMobile ? 12 : 16, padding: isMobile ? '10px' : '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: isMobile ? 6 : 8, marginBottom: isMobile ? 8 : 10 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ color: accent, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 3 }}>Zona</div>
-                  <div style={{ color: S.text, fontSize: isMobile ? 13 : 15, fontWeight: 800, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{zone.zone}</div>
+                  <div style={{ color: accent, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: isMobile ? 3 : 3 }}>Zona</div>
+                  <div style={{ color: S.text, fontSize: isMobile ? 13 : 15, fontWeight: 800, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{zone.zone}</div>
                 </div>
-                <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
-                  <div style={{ color: S.text, fontSize: isMobile ? 14 : 16, fontWeight: 900 }}>{formatRupiahFull(zone.value)}</div>
+                <div style={{ textAlign: 'right', minWidth: 'fit-content', paddingLeft: isMobile ? 8 : 0 }}>
+                  <div style={{ color: S.text, fontSize: isMobile ? 13 : 16, fontWeight: 900 }}>{formatRupiahFull(zone.value)}</div>
                   <div style={{ color: zone.target && zone.target > 0 ? accent : S.muted, fontSize: isMobile ? 10 : 11, fontWeight: 700 }}>{formatAchievement(zonePct)}</div>
                 </div>
               </div>
-              <div style={{ height: 7, background: '#e8edf8', borderRadius: 999, overflow: 'hidden', marginBottom: isMobile ? 10 : 12 }}>
+              <div style={{ height: isMobile ? 6 : 7, background: '#e8edf8', borderRadius: 999, overflow: 'hidden', marginBottom: isMobile ? 10 : 12 }}>
                 <div style={{ height: '100%', width: `${Math.min(zonePct, 100)}%`, background: accent, borderRadius: 999, transition: 'width 0.8s ease' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 6 : 8 }}>
