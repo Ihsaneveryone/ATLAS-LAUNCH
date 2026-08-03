@@ -262,9 +262,9 @@ function buildTargetValues(row: string[] | null | undefined): number[] | undefin
 function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undefined {
   if (!row) return undefined
   const targets: number[] = []
-  // Read from columns V (22), W (23), X (24), ... AQ (33) for SBD flat targets
+  // Read from columns V (21), W (22), X (23), ... AQ (42) for SBD flat targets
   for (let index = 0; index < DEPT_NODES.length; index++) {
-    targets.push(n(g(row, 22 + index)))
+    targets.push(n(g(row, 21 + index)))
   }
   return targets
 }
