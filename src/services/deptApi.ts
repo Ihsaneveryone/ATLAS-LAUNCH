@@ -256,6 +256,16 @@ function buildTargetValues(row: string[] | null | undefined): number[] | undefin
   return targets
 }
 
+function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undefined {
+  if (!row) return undefined
+  const targets: number[] = []
+  // Read from columns V (22), W (23), X (24), ... AQ (33) for SBD flat targets
+  for (let index = 0; index < DEPT_NODES.length; index++) {
+    targets.push(n(g(row, 22 + index)))
+  }
+  return targets
+}
+
 export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Pencapaian Dept')}&_t=${Date.now()}`
   const res = await fetch(url, { cache: 'no-store' })
@@ -274,13 +284,15 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
 
   const mtdDateRows = raw.slice(2, 33)
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
-  const sbdTargetRow = sbdDateInfo ? findRowByDay(mtdDateRows, sbdDateInfo.day) ?? latestTargetRow : latestTargetRow
-  const sbdTargetValues = buildTargetValues(sbdTargetRow?.row)
+  
+  // SBD uses flat targets from columns V3:AQ3 and shows TODAY label
+  const sbdFlatTargetRow = mtdDateRows[0] ?? null
+  const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
 
   const sbd = sbdDateInfo
     ? buildPeriodData(
-        sbdDateInfo.date,
+        'TODAY',
         sbdLabels,
         sbdDataRows.map(row => g(row, sbdDateInfo.index)),
         sbdTargetValues,
