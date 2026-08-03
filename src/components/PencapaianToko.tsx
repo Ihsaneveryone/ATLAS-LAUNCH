@@ -449,10 +449,17 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? 10 : 12 }}>
-        {data.zones.map(zone => {
+        {data.zones.map((zone, zoneIndex) => {
           const zonePct = zone.target && zone.target > 0 ? (zone.value / zone.target) * 100 : data.total > 0 ? (zone.value / data.total) * 100 : 0
+          // Different background colors for each zone
+          const zoneColors = [
+            { bg: '#fef3f0', border: '#fde1d8' }, // Hobbies & Lifestyle - warm coral
+            { bg: '#f0f4fd', border: '#d8e4fd' }, // Home Improvement - cool blue
+            { bg: '#f0fdf4', border: '#d1fce1' }, // Home Living - soft green
+          ]
+          const zoneColor = zoneColors[zoneIndex % zoneColors.length]
           return (
-            <div key={zone.zone} style={{ background: '#fbfdff', border: `1px solid ${S.border}`, borderRadius: isMobile ? 12 : 16, padding: isMobile ? '10px' : '14px' }}>
+            <div key={zone.zone} style={{ background: zoneColor.bg, border: `1px solid ${zoneColor.border}`, borderRadius: isMobile ? 12 : 16, padding: isMobile ? '10px' : '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: isMobile ? 6 : 8, marginBottom: isMobile ? 8 : 10 }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ color: accent, fontSize: isMobile ? 9 : 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: isMobile ? 3 : 3 }}>Zona</div>
@@ -463,7 +470,7 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
                   <div style={{ color: zone.target && zone.target > 0 ? accent : S.muted, fontSize: isMobile ? 10 : 11, fontWeight: 700 }}>{formatAchievement(zonePct)}</div>
                 </div>
               </div>
-              <div style={{ height: isMobile ? 6 : 7, background: '#e8edf8', borderRadius: 999, overflow: 'hidden', marginBottom: isMobile ? 10 : 12 }}>
+              <div style={{ height: isMobile ? 6 : 7, background: zoneColor.border, borderRadius: 999, overflow: 'hidden', marginBottom: isMobile ? 10 : 12 }}>
                 <div style={{ height: '100%', width: `${Math.min(zonePct, 100)}%`, background: accent, borderRadius: 999, transition: 'width 0.8s ease' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 6 : 8 }}>
