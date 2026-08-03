@@ -80,4 +80,34 @@ describe('resolveScanResult', () => {
     expect(result.skuMatch).toBeNull()
     expect(result.boomsaleMatch).toBeNull()
   })
+
+  it('matches barcode with prefix to article number', () => {
+    const data: ParsedIncentiveData = {
+      conditional: { rows: [], totalTarget: 0, totalAchieved: 0 },
+      unconditional: { rows: [], totalTarget: 0, totalAchieved: 0 },
+      sku: {
+        rows: [
+          {
+            sku: '10584724',
+            name: 'Sandwich Maker 1 Slice',
+            requirement: 'Beli 5 unit',
+            incentiveValue: 75000,
+            per: 'unit',
+            imageUrl: '',
+          },
+        ],
+        totalTarget: 0,
+        totalAchieved: 0,
+      },
+      syarat: { rows: [] },
+      boomsale: { rows: [] },
+      receipt: { rows: [] },
+    }
+
+    const result = resolveScanResult('1C110584724', data)
+
+    expect(result.isIncentive).toBe(true)
+    expect(result.skuMatch?.sku).toBe('10584724')
+    expect(result.skuMatch?.name).toBe('Sandwich Maker 1 Slice')
+  })
 })
