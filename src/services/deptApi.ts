@@ -166,12 +166,14 @@ function buildPeriodData(date: string | undefined, labels: string[], values: str
   const zones: DeptPeriodZone[] = DEPT_GROUPS.map(group => {
     const zoneDepartments = departments.slice(group.start + 1, group.end)
     const zoneValue = zoneDepartments.reduce((sum, item) => sum + item.value, 0)
-    const zoneTarget = zoneDepartments.reduce((sum, item) => sum + (item.target ?? 0), 0)
+    // Use zone header target directly, not sum of department targets
+    const zoneRow = departments[group.start]
+    const zoneTarget = zoneRow?.target
     return {
       zone: group.zone,
       value: zoneValue,
-      target: zoneTarget > 0 ? zoneTarget : undefined,
-      achievement: zoneTarget > 0 ? parseFloat(((zoneValue / zoneTarget) * 100).toFixed(1)) : undefined,
+      target: zoneTarget && zoneTarget > 0 ? zoneTarget : undefined,
+      achievement: zoneTarget && zoneTarget > 0 ? parseFloat(((zoneValue / zoneTarget) * 100).toFixed(1)) : undefined,
       departments: zoneDepartments,
     }
   })
@@ -291,9 +293,13 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
 
+  // Format today's date as DD-MM-YYYY
+  const today = new Date()
+  const todayFormatted = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`
+  
   const sbd = sbdDateInfo
     ? buildPeriodData(
-        'TODAY',
+        todayFormatted,
         sbdLabels,
         sbdDataRows.map(row => g(row, sbdDateInfo.index)),
         sbdTargetValues,
