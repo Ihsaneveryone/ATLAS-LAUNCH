@@ -1,8 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiahFull, type User } from '../data/mockData'
 import { parseIncentiveSheets } from '../services/incentiveParser'
+import { resolveScanResult } from '../services/incentiveScanner'
 import { useMobile } from '../hooks/useMobile'
+
+interface BarcodeDetectorInstance {
+  detect(source: CanvasImageSource | Blob): Promise<Array<{ rawValue: string }>>
+}
+
+declare global {
+  interface Window {
+    BarcodeDetector?: new (options?: { formats?: string[] }) => BarcodeDetectorInstance
+  }
+}
 
 interface Props { user: User; onBack: () => void }
 
@@ -438,6 +449,221 @@ function SummaryCard({ item, onClick }: { item: IncentiveSummaryItem; onClick: (
   )
 }
 
+function ScanArticlePanel({ data, isMobile }: { data: ReturnType<typeof parseIncentiveSheets> | null; isMobile: boolean }) {
+  const [manualCode, setManualCode] = useState('')
+  const [scanResult, setScanResult] = useState<ReturnType<typeof resolveScanResult> | null>(null)
+  const [cameraStatus, setCameraStatus] = useState('Siap untuk scan barcode produk')
+  const [isCameraOpen, setIsCameraOpen] = useState(false)
+  const [cameraSupported, setCameraSupported] = useState(true)
+  const [isScanning, setIsScanning] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const detectorRef = useRef<BarcodeDetectorInstance | null>(null)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if ('BarcodeDetector' in window) {
+      try {
+        detectorRef.current = new window.BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'qr_code', 'upc_a', 'upc_e'] })
+      } catch {
+        detectorRef.current = null
+      }
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraSupported(false)
+      setCameraStatus('Browser ini belum mendukung kamera. Anda bisa memasukkan kode manual.')
+    }
+  }, [])
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach(track => track.stop())
+    streamRef.current = null
+    setIsCameraOpen(false)
+    setIsScanning(false)
+  }
+
+  const openCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraSupported(false)
+      setCameraStatus('Browser ini belum mendukung kamera. Anda bisa memasukkan kode manual.')
+      return
+    }
+
+    if (!detectorRef.current) {
+      setCameraSupported(false)
+      setCameraStatus('Browser ini belum mendukung deteksi barcode. Anda bisa memasukkan kode manual.')
+      return
+    }
+
+    setCameraSupported(true)
+    setCameraStatus('Membuka kamera...')
+    setIsScanning(true)
+    setIsCameraOpen(true)
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => undefined)
+      }
+      setCameraStatus('Arahkan kamera ke barcode produk...')
+    } catch {
+      stopCamera()
+      setCameraStatus('Kamera tidak bisa dibuka. Coba masukkan kode manual.')
+    }
+  }
+
+  useEffect(() => {
+    if (!isCameraOpen || !videoRef.current || !detectorRef.current) return
+
+    let cancelled = false
+    let timeoutId: number | undefined
+
+    const detectLoop = async () => {
+      if (cancelled || !isCameraOpen || !videoRef.current) return
+
+      const video = videoRef.current
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          try {
+            const detected = await detectorRef.current?.detect(canvas)
+            const code = detected?.[0]?.rawValue?.trim()
+            if (code) {
+              setManualCode(code)
+              const result = resolveScanResult(code, data)
+              setScanResult(result)
+              setCameraStatus(result.summary)
+              stopCamera()
+              return
+            }
+          } catch {
+            // ignore frame errors and continue scanning
+          }
+        }
+      }
+
+      if (!cancelled && isCameraOpen) {
+        timeoutId = window.setTimeout(detectLoop, 900)
+      }
+    }
+
+    void detectLoop()
+
+    return () => {
+      cancelled = true
+      if (timeoutId) window.clearTimeout(timeoutId)
+    }
+  }, [isCameraOpen, data])
+
+  const handleManualCheck = () => {
+    const code = manualCode.trim()
+    if (!code) {
+      setScanResult(null)
+      setCameraStatus('Masukkan kode atau pindai barcode terlebih dahulu.')
+      return
+    }
+    const result = resolveScanResult(code, data)
+    setScanResult(result)
+    setCameraStatus(result.summary)
+  }
+
+  return (
+    <div style={{ borderRadius: 24, padding: isMobile ? '18px 16px' : '22px 24px', background: '#ffffff', border: '1px solid #e8edf8', boxShadow: '0 16px 36px rgba(15, 23, 42, 0.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 16 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ color: '#4338ca', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 6 }}>Scan Artikel</div>
+          <div style={{ color: S.text, fontSize: 18, fontWeight: 800 }}>Cek apakah produk ini punya insentif</div>
+          <div style={{ color: S.muted, fontSize: 13, marginTop: 6 }}>Pindai barcode lewat kamera atau masukkan kode manual. Hasil akan menunjukkan SKU, kategori, syarat, dan nilai insentif bila ada.</div>
+        </div>
+        <div style={{ width: 46, height: 46, borderRadius: 14, background: '#eef2ff', display: 'grid', placeItems: 'center', fontSize: 22 }}>📷</div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 10, marginBottom: 12 }}>
+        <input
+          value={manualCode}
+          onChange={event => setManualCode(event.target.value)}
+          placeholder="Masukkan SKU / artikel / barcode"
+          style={{ flex: 1, border: `1px solid ${S.border}`, borderRadius: 14, padding: '12px 14px', fontSize: 14, color: S.text, background: '#f8fafc' }}
+        />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" onClick={handleManualCheck} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Cek Kode</button>
+          {isCameraOpen ? (
+            <button type="button" onClick={stopCamera} style={{ borderRadius: 14, border: `1px solid ${S.border}`, background: S.card, color: S.text, padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Stop Kamera</button>
+          ) : (
+            <button type="button" onClick={() => { void openCamera() }} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#4338ca', color: '#fff', padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Buka Kamera</button>
+          )}
+        </div>
+      </div>
+
+      {!cameraSupported ? (
+        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 12, background: '#fffbeb', color: '#92400e', fontSize: 12, border: '1px solid #fde68a' }}>
+          Browser Anda belum mendukung scan kamera. Anda tetap bisa menulis kode manual untuk cek insentif.
+        </div>
+      ) : null}
+
+      <div style={{ marginBottom: 12, color: S.muted, fontSize: 12, fontWeight: 600 }}>{cameraStatus}</div>
+
+      <div style={{ borderRadius: 18, overflow: 'hidden', border: `1px solid ${S.border}`, background: '#f8fafc', minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+        {isCameraOpen ? (
+          <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', maxHeight: 280, objectFit: 'cover', background: '#0f172a' }} />
+        ) : (
+          <div style={{ color: S.muted, padding: '24px 16px', textAlign: 'center', fontSize: 14 }}>Preview kamera akan tampil di sini setelah Anda menyalakan kamera.</div>
+        )}
+      </div>
+
+      {scanResult ? (
+        <div style={{ borderRadius: 18, padding: '14px 16px', border: scanResult.isIncentive ? '1px solid #bbf7d0' : '1px solid #fde68a', background: scanResult.isIncentive ? '#f0fdf9' : '#fffbeb' }}>
+          <div style={{ color: scanResult.isIncentive ? '#15803d' : '#92400e', fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
+            {scanResult.isIncentive ? 'Produk ini terdaftar sebagai insentif' : 'Produk ini belum terdaftar sebagai insentif'}
+          </div>
+          <div style={{ color: S.text, fontSize: 14, fontWeight: 700, marginBottom: 6 }}>{scanResult.summary}</div>
+
+          {scanResult.skuMatch ? (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ color: S.text, fontWeight: 800 }}>{scanResult.skuMatch.name}</div>
+              <div style={{ color: S.sub, fontSize: 13 }}>SKU: {scanResult.skuMatch.sku}</div>
+              <div style={{ color: S.sub, fontSize: 13 }}>Syarat: {scanResult.skuMatch.requirement || '—'}</div>
+              <div style={{ color: '#7c3aed', fontWeight: 800 }}>{formatRupiahFull(scanResult.skuMatch.incentiveValue)} {scanResult.skuMatch.per ? `per ${scanResult.skuMatch.per}` : ''}</div>
+            </div>
+          ) : null}
+
+          {scanResult.boomsaleMatch ? (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ color: S.text, fontWeight: 800 }}>{scanResult.boomsaleMatch.name}</div>
+              <div style={{ color: S.sub, fontSize: 13 }}>Artikel: {scanResult.boomsaleMatch.artikel}</div>
+              <div style={{ color: S.sub, fontSize: 13 }}>Kategori: {scanResult.boomsaleMatch.category || '—'}</div>
+              <div style={{ color: S.sub, fontSize: 13 }}>Departemen: {scanResult.boomsaleMatch.departemen || '—'}</div>
+              <div style={{ color: '#ea580c', fontWeight: 800 }}>{scanResult.boomsaleMatch.incentivePercent}% / {formatRupiahFull(scanResult.boomsaleMatch.incentiveValue)}</div>
+            </div>
+          ) : null}
+
+          {scanResult.matchingSyaratRows.length ? (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ color: S.text, fontWeight: 800, marginBottom: 6 }}>Syarat terkait</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {scanResult.matchingSyaratRows.map((row, index) => (
+                  <div key={`${row.jenis}-${index}`} style={{ borderRadius: 12, padding: '10px 12px', background: '#fff', border: `1px solid ${S.border}` }}>
+                    <div style={{ color: S.text, fontWeight: 700 }}>{row.jenis}</div>
+                    <div style={{ color: S.sub, fontSize: 12, marginTop: 4 }}>{row.syarat}</div>
+                    {row.note ? <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>{row.note}</div> : null}
+                    <div style={{ color: '#7c3aed', fontSize: 12, fontWeight: 700, marginTop: 4 }}>{formatRupiahFull(row.incentiveValuePerQty)} per qty</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPage }: { type: SubPage; data: ReturnType<typeof parseIncentiveSheets> | null; user: User; isMobile: boolean; onBack: () => void; onSelectSubPage: (type: Exclude<SubPage, 'list'>) => void }) {
   const [skuQuery, setSkuQuery] = useState('')
   const [skuSort, setSkuSort] = useState<'sku' | 'name'>('sku')
@@ -737,16 +963,19 @@ const totalProjected = totalAchieved + totalPotential
           </div>
         </div>
 
-        <div>
-          <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Ringkasan per Tipe Insentif</div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-            {loading ? (
-              <div style={{ gridColumn: '1 / -1', padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, color: '#92400e', fontSize: 13 }}>
-                Memuat data insentif dari sheet...
-              </div>
-            ) : summary.map(item => (
-              <SummaryCard key={item.type} item={item} onClick={() => setSubPage(item.type)} />
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <ScanArticlePanel data={data} isMobile={isMobile} />
+          <div>
+            <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Ringkasan per Tipe Insentif</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              {loading ? (
+                <div style={{ gridColumn: '1 / -1', padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, color: '#92400e', fontSize: 13 }}>
+                  Memuat data insentif dari sheet...
+                </div>
+              ) : summary.map(item => (
+                <SummaryCard key={item.type} item={item} onClick={() => setSubPage(item.type)} />
+              ))}
+            </div>
           </div>
         </div>
       </main>
