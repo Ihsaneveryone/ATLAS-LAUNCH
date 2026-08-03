@@ -282,8 +282,8 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbdHeaderRow = raw[80] ?? []
   const sbdDataRows = raw.slice(81, 103)
   const sbdLabels = sbdDataRows.map(row => g(row, 1))
-  const sbdDateInfo = findLatestDateColumn(sbdHeaderRow)
-  const mtdSalesDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? sbdDateInfo
+  const sbdDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
+  const mtdSalesDateInfo = sbdDateInfo
 
   const mtdDateRows = raw.slice(2, 33)
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
