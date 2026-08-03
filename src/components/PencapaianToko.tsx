@@ -504,7 +504,7 @@ function DeptView({ sbd, mtd, loading, error }: { sbd: DeptPeriodData | null; mt
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <DeptPeriodCard
           title="Pencapaian Sales SBD Dept"
           subtitle={sbd?.date ? `Tanggal ${sbd.date}` : 'Data harian terbaru'}
