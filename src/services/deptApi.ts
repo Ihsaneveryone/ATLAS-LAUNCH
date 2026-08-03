@@ -178,8 +178,9 @@ function buildPeriodData(date: string | undefined, labels: string[], values: str
 
   const leafDepartments = departments.filter(item => item.kind !== 'zone')
   const total = leafDepartments.reduce((sum, item) => sum + item.value, 0)
-  const target = leafDepartments.some(item => typeof item.target === 'number')
-    ? leafDepartments.reduce((sum, item) => sum + (item.target ?? 0), 0)
+  // Calculate target from zones only (not from individual departments)
+  const target = zones.some(zone => typeof zone.target === 'number')
+    ? zones.reduce((sum, zone) => sum + (zone.target ?? 0), 0)
     : undefined
   return {
     date,
