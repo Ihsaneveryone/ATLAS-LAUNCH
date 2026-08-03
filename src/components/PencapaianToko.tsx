@@ -386,7 +386,7 @@ function DeptMetricRow({ label, value, target, zoneTotal }: { label: string; val
   )
 }
 
-function DeptPeriodCard({ title, subtitle, data, accent }: { title: string; subtitle: string; data: DeptPeriodData | null; accent: string }) {
+function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: string; subtitle: string; data: DeptPeriodData | null; accent: string; hideTarget?: boolean }) {
   const isMobile = useMobile()
   if (!data) {
     return (
@@ -416,7 +416,7 @@ function DeptPeriodCard({ title, subtitle, data, accent }: { title: string; subt
         </div>
       </div>
 
-      {typeof data.target === 'number' && data.target > 0 && (
+      {!hideTarget && typeof data.target === 'number' && data.target > 0 && (
         <div style={{ marginBottom: 18, padding: '12px 14px', borderRadius: 14, background: '#f8fbff', border: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div>
             <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Target</div>
@@ -478,7 +478,14 @@ function DeptView({ sbd, mtd, loading, error }: { sbd: DeptPeriodData | null; mt
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+        <DeptPeriodCard
+          title="Pencapaian Sales SBD Dept"
+          subtitle={sbd?.date ? `Tanggal ${sbd.date}` : 'Data harian terbaru'}
+          data={sbd}
+          accent="#D93119"
+          hideTarget={true}
+        />
         <DeptPeriodCard
           title="Pencapaian Sales MTD Dept"
           subtitle="Akumulasi bulan berjalan"
