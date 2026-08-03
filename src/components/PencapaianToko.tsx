@@ -405,18 +405,19 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
   return (
     <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '14px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderTop: `4px solid ${accent}` }}>
       {isMobile ? (
-        // Mobile Layout
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 14 }}>
-          <div>
-            <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
-            <div style={{ color: S.text, fontSize: 18, fontWeight: 900, letterSpacing: '-0.02em' }}>{formatRupiahFull(data.total)}</div>
-            <div style={{ color: S.muted, fontSize: 11, marginTop: 4 }}>{subtitle}</div>
+        // Mobile Layout - Horizontal & Compact
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: S.muted, fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 2 }}>{title}</div>
+              <div style={{ color: S.text, fontSize: 16, fontWeight: 900, letterSpacing: '-0.02em' }}>{formatRupiahFull(data.total)}</div>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
+              <div style={{ color: accent, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em' }}>Zona</div>
+              <div style={{ color: S.text, fontSize: 20, fontWeight: 900 }}>{zoneCount}</div>
+            </div>
           </div>
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ color: accent, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Zona Aktif</div>
-            <div style={{ color: S.text, fontSize: 24, fontWeight: 900 }}>{zoneCount}</div>
-            {topZone && <div style={{ color: S.muted, fontSize: 10 }}>Top: {topZone.zone}</div>}
-          </div>
+          <div style={{ fontSize: 10, color: S.muted, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>{subtitle}{topZone && ` • Top: ${topZone.zone}`}</div>
         </div>
       ) : (
         // Desktop Layout
