@@ -400,7 +400,7 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
   }
 
   const zoneCount = data.zones.length
-  const topZone = data.zones[0]
+  const topZone = data.zones.length > 0 ? [...data.zones].sort((a, b) => b.value - a.value)[0] : null
 
   return (
     <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '14px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderTop: `4px solid ${accent}` }}>
