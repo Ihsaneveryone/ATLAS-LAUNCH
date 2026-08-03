@@ -404,18 +404,35 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
 
   return (
     <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '14px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', borderTop: `4px solid ${accent}` }}>
-      <div style={{ display: isMobile ? 'flex' : 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: isMobile ? 14 : 12, marginBottom: isMobile ? 14 : 18 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: S.muted, fontSize: isMobile ? 10 : 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
-          <div style={{ color: S.text, fontSize: isMobile ? 18 : 26, fontWeight: 900, letterSpacing: '-0.02em' }}>{formatRupiahFull(data.total)}</div>
-          <div style={{ color: S.muted, fontSize: isMobile ? 11 : 12, marginTop: 4 }}>{subtitle}</div>
+      {isMobile ? (
+        // Mobile Layout
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 14 }}>
+          <div>
+            <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
+            <div style={{ color: S.text, fontSize: 18, fontWeight: 900, letterSpacing: '-0.02em' }}>{formatRupiahFull(data.total)}</div>
+            <div style={{ color: S.muted, fontSize: 11, marginTop: 4 }}>{subtitle}</div>
+          </div>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ color: accent, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Zona Aktif</div>
+            <div style={{ color: S.text, fontSize: 24, fontWeight: 900 }}>{zoneCount}</div>
+            {topZone && <div style={{ color: S.muted, fontSize: 10 }}>Top: {topZone.zone}</div>}
+          </div>
         </div>
-        <div style={{ textAlign: 'right', minWidth: 'fit-content' }}>
-          <div style={{ color: accent, fontSize: isMobile ? 11 : 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 4 }}>Zona Aktif</div>
-          <div style={{ color: S.text, fontSize: isMobile ? 24 : 28, fontWeight: 900 }}>{zoneCount}</div>
-          {topZone && <div style={{ color: S.muted, fontSize: isMobile ? 10 : 11 }}>Top: {topZone.zone}</div>}
+      ) : (
+        // Desktop Layout
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'start', gap: 24, marginBottom: 18 }}>
+          <div>
+            <div style={{ color: S.muted, fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>{title}</div>
+            <div style={{ color: S.text, fontSize: 26, fontWeight: 900, letterSpacing: '-0.02em', marginBottom: 8 }}>{formatRupiahFull(data.total)}</div>
+            <div style={{ color: S.muted, fontSize: 12 }}>{subtitle}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ color: accent, fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>Zona Aktif</div>
+            <div style={{ color: S.text, fontSize: 32, fontWeight: 900 }}>{zoneCount}</div>
+            {topZone && <div style={{ color: S.muted, fontSize: 12, marginTop: 4 }}>Top: {topZone.zone}</div>}
+          </div>
         </div>
-      </div>
+      )}
 
       {!hideTarget && typeof data.target === 'number' && data.target > 0 && (
         <div style={{ marginBottom: isMobile ? 14 : 18, padding: isMobile ? '10px 12px' : '12px 14px', borderRadius: 14, background: '#f8fbff', border: `1px solid ${S.border}`, display: 'flex', justifyContent: 'space-between', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
