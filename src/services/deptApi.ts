@@ -146,7 +146,25 @@ export interface DeptPeriodData {
 export interface DeptPerformanceData {
   sbd: DeptPeriodData | null
   mtd: DeptPeriodData | null
+  trend: DeptTrendData
 }
+
+export interface DeptTrendPoint {
+  date: string
+  day: number
+  deptValues: number[]
+  deptAchievements: number[]
+}
+
+export interface DeptTrendData {
+  labels: string[]
+  points: DeptTrendPoint[]
+}
+
+const LEAF_DEPT_INDEXES = DEPT_NODES
+  .map((node, index) => ({ node, index }))
+  .filter(({ node }) => node.kind === 'dept')
+  .map(({ index }) => index)
 
 function buildPeriodData(date: string | undefined, labels: string[], values: string[], targetsByIndex?: number[]): DeptPeriodData {
   const departments: DeptMetric[] = labels.map((label, index) => {
@@ -269,6 +287,37 @@ function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undef
   return targets
 }
 
+function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], mtdDateRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
+  const labels = LEAF_DEPT_INDEXES.map(index => {
+    const sourceLabel = g(sbdDataRows[index] ?? [], 1)
+    return sourceLabel || DEPT_NODES[index]?.label || `Dept ${index + 1}`
+  })
+
+  const points: DeptTrendPoint[] = []
+  for (let col = 2; col <= 32; col++) {
+    const date = g(sbdHeaderRow, col)
+    const day = parseDay(date)
+    if (!day) continue
+
+    const deptValues = LEAF_DEPT_INDEXES.map(index => n(g(sbdDataRows[index] ?? [], col)))
+    const totalSales = deptValues.reduce((sum, value) => sum + value, 0)
+    if (totalSales <= 0) continue
+
+    const targetRow = findRowByDay(mtdDateRows, day)
+    const targetsByIndex = buildTargetValues(targetRow?.row) ?? sbdTargetsByIndex
+    const deptAchievements = LEAF_DEPT_INDEXES.map((index, leafIndex) => {
+      const target = targetsByIndex?.[index] ?? 0
+      if (target <= 0) return 0
+      const value = deptValues[leafIndex]
+      return parseFloat(((value / target) * 100).toFixed(1))
+    })
+
+    points.push({ date, day, deptValues, deptAchievements })
+  }
+
+  return { labels, points }
+}
+
 export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Pencapaian Dept')}&_t=${Date.now()}`
   const res = await fetch(url, { cache: 'no-store' })
@@ -276,7 +325,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   if (!res.ok || text.trimStart().startsWith('<!')) throw new Error('Sheet "Pencapaian Dept" tidak bisa dibaca')
 
   const raw = parseCSV(text)
-  if (raw.length < 40) return { sbd: null, mtd: null }
+  if (raw.length < 40) return { sbd: null, mtd: null, trend: { labels: [], points: [] } }
 
   // Sales harian: baris 81 = tanggal, baris 82:103 = nama zone/dept + sales harian
   const sbdHeaderRow = raw[80] ?? []
@@ -292,6 +341,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbdFlatTargetRow = mtdDateRows[0] ?? null
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
+  const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, mtdDateRows, sbdTargetValues)
 
   // Format today's date as DD-MM-YYYY
   const today = new Date()
@@ -326,5 +376,5 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
       )
     : null
 
-  return { sbd, mtd }
+  return { sbd, mtd, trend }
 }

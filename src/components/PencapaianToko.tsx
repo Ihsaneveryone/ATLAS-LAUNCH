@@ -4,7 +4,7 @@ import { formatRupiahFull, formatRupiah, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow, todayTokoRow, type TokoRow } from '../services/tokoApi'
-import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
+import { fetchPencapaianDept, type DeptPeriodData, type DeptTrendData } from '../services/deptApi'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -486,7 +486,122 @@ function DeptPeriodCard({ title, subtitle, data, accent, hideTarget }: { title: 
   )
 }
 
-function DeptView({ sbd, mtd, loading, error }: { sbd: DeptPeriodData | null; mtd: DeptPeriodData | null; loading: boolean; error: string | null }) {
+function DeptTrendCard({ trend }: { trend: DeptTrendData | null }) {
+  const isMobile = useMobile()
+  const [deptIndex, setDeptIndex] = useState(0)
+  const [metric, setMetric] = useState<'achievement' | 'sales'>('achievement')
+
+  const hasData = !!trend && trend.labels.length > 0 && trend.points.length > 0
+  const safeIndex = hasData ? Math.min(deptIndex, trend!.labels.length - 1) : 0
+
+  useEffect(() => {
+    if (!trend || trend.labels.length === 0) return
+    if (deptIndex >= trend.labels.length) setDeptIndex(0)
+  }, [deptIndex, trend])
+
+  if (!hasData) {
+    return (
+      <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '16px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        <div style={{ color: S.text, fontSize: 15, fontWeight: 800, marginBottom: 6 }}>Trend Pencapaian Departemen</div>
+        <div style={{ color: S.muted, fontSize: 12 }}>Data trend per tanggal belum tersedia.</div>
+      </div>
+    )
+  }
+
+  const selectedDept = trend.labels[safeIndex]
+  const chartData = trend.points.map(point => ({
+    day: point.day,
+    date: point.date,
+    sales: point.deptValues[safeIndex] ?? 0,
+    achievement: point.deptAchievements[safeIndex] ?? 0,
+  }))
+
+  const latest = chartData[chartData.length - 1]
+  const latestAch = latest?.achievement ?? 0
+  const latestSales = latest?.sales ?? 0
+
+  return (
+    <div style={{ background: S.card, border: `1px solid ${S.border}`, borderRadius: 20, padding: isMobile ? '16px' : '24px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <div>
+          <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Departemen</div>
+          <div style={{ color: S.text, fontSize: 16, fontWeight: 900 }}>Trend per Tanggal</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => setMetric('achievement')}
+            style={{ padding: '6px 12px', borderRadius: 999, border: `1.5px solid ${metric === 'achievement' ? '#D93119' : S.border}`, background: metric === 'achievement' ? '#D93119' : '#fff', color: metric === 'achievement' ? '#fff' : S.sub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+          >
+            % Pencapaian
+          </button>
+          <button
+            onClick={() => setMetric('sales')}
+            style={{ padding: '6px 12px', borderRadius: 999, border: `1.5px solid ${metric === 'sales' ? '#0e7490' : S.border}`, background: metric === 'sales' ? '#0e7490' : '#fff', color: metric === 'sales' ? '#fff' : S.sub, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Sales Aktual
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 10, alignItems: 'end', marginBottom: 14 }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 11, color: S.muted, fontWeight: 700 }}>Pilih Departemen</span>
+          <select
+            value={safeIndex}
+            onChange={e => setDeptIndex(Number(e.target.value))}
+            style={{ padding: '8px 10px', borderRadius: 10, border: `1px solid ${S.border}`, fontSize: 12, color: S.text, background: '#fff' }}
+          >
+            {trend.labels.map((label, idx) => (
+              <option key={label} value={idx}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <div style={{ textAlign: isMobile ? 'left' : 'right' }}>
+          <div style={{ color: S.muted, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>Update Terakhir</div>
+          <div style={{ color: S.text, fontSize: 12, fontWeight: 700 }}>{selectedDept}</div>
+          <div style={{ color: metric === 'achievement' ? clr(latestAch) : '#0e7490', fontSize: 12, fontWeight: 800 }}>
+            {metric === 'achievement' ? `${latestAch.toFixed(1)}%` : formatRupiah(latestSales)}
+          </div>
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={isMobile ? 240 : 280}>
+        <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
+          <XAxis dataKey="day" tick={{ fontSize: 11, fill: S.muted }} tickLine={false} />
+          <YAxis
+            tick={{ fontSize: 11, fill: S.muted }}
+            tickLine={false}
+            axisLine={false}
+            width={54}
+            tickFormatter={metric === 'achievement' ? (v) => `${v}%` : fmt}
+          />
+          <Tooltip
+            formatter={(value, name) => {
+              if (name === 'achievement') return [`${Number(value).toFixed(1)}%`, '% Pencapaian']
+              return [formatRupiah(Number(value)), 'Sales Aktual']
+            }}
+            labelFormatter={(label) => {
+              const point = chartData.find(item => item.day === Number(label))
+              return point ? `Hari ${label} (${point.date})` : `Hari ${label}`
+            }}
+          />
+          {metric === 'achievement' && <ReferenceLine y={100} stroke="#16a34a" strokeDasharray="4 3" />}
+          <Line
+            type="monotone"
+            dataKey={metric}
+            stroke={metric === 'achievement' ? '#D93119' : '#0e7490'}
+            strokeWidth={2.5}
+            dot={{ r: 3, fill: metric === 'achievement' ? '#D93119' : '#0e7490' }}
+            activeDot={{ r: 5 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function DeptView({ sbd, mtd, trend, loading, error }: { sbd: DeptPeriodData | null; mtd: DeptPeriodData | null; trend: DeptTrendData | null; loading: boolean; error: string | null }) {
   const isMobile = useMobile()
   if (loading) {
     return <div style={{ textAlign: 'center', color: S.muted, fontSize: 14, padding: 40 }}>⟳ Memuat data departemen…</div>
@@ -518,6 +633,7 @@ function DeptView({ sbd, mtd, loading, error }: { sbd: DeptPeriodData | null; mt
           data={mtd}
           accent="#0e7490"
         />
+        <DeptTrendCard trend={trend} />
       </div>
     </div>
   )
@@ -531,6 +647,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
   const [deptError, setDeptError] = useState<string | null>(null)
   const [deptSbd, setDeptSbd] = useState<DeptPeriodData | null>(null)
   const [deptMtd, setDeptMtd] = useState<DeptPeriodData | null>(null)
+  const [deptTrend, setDeptTrend] = useState<DeptTrendData | null>(null)
   const isMobile  = useMobile()
   const todayRow     = todayTokoRow(tokoRows)   // TODAY & Full Month → data hari ini
   const latest       = latestTokoRow(tokoRows)  // MTD → H-1
@@ -546,6 +663,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
         if (cancelled) return
         setDeptSbd(result.sbd)
         setDeptMtd(result.mtd)
+        setDeptTrend(result.trend)
         setDeptLoading(false)
       })
       .catch(err => {
@@ -607,7 +725,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
             {tab === 'mtd'       && latest             && <MTDView       row={latest}   workingDays={workingDays}/>}
             {tab === 'fullmonth' && todayRow            && <FullMonthView row={todayRow} workingDays={todayWDays}/>}
             {tab === 'trend'     && tokoRows.length > 0 && <TrendView     rows={tokoRows}/>} 
-            {tab === 'dept'      && <DeptView sbd={deptSbd} mtd={deptMtd} loading={deptLoading} error={deptError} />}
+            {tab === 'dept'      && <DeptView sbd={deptSbd} mtd={deptMtd} trend={deptTrend} loading={deptLoading} error={deptError} />}
           </>
         )}
       </main>
