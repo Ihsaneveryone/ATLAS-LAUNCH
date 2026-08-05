@@ -74,6 +74,7 @@ export function resolveScanResult(scannedCode: string, data: ParsedIncentiveData
     syarat: { rows: [] },
     boomsale: { rows: [] },
     receipt: { rows: [] },
+    sales: { rows: [] },
   }
 
   // Try to match against article variants (handles barcode prefixes)
@@ -94,7 +95,7 @@ export function resolveScanResult(scannedCode: string, data: ParsedIncentiveData
   const isIncentive = Boolean(skuMatch || boomsaleMatch || matchingSyaratRows.length)
 
   const summary = isIncentive
-    ? `${skuMatch ? 'SKU terdeteksi sebagai insentif.' : boomsaleMatch ? 'Artikel boomsale terdeteksi.' : 'Kode cocok dengan syarat insentif.'}`
+    ? `${skuMatch ? 'SKU terdeteksi sebagai insentif.' : boomsaleMatch ? 'Produk insentif bulan ini terdeteksi.' : 'Kode cocok dengan syarat insentif.'}`
     : 'Kode tidak terdaftar dalam daftar insentif saat ini.'
 
   return {

@@ -128,6 +128,26 @@ describe('parseIncentiveSheets', () => {
     })
   })
 
+  it('accumulates boomsale actual qty from multiple compare rows with same artikel', () => {
+    const sheets = {
+      'INSENTIF BOOMSALE': [
+        ['Artikel', 'Departemen', 'Nama Produk', 'Harga E', 'Harga F', 'Persentase', 'Nominal', 'Target Qty', 'Remark', 'Kategori', 'Gambar'],
+        ['', 'Electrical', 'A300', 'Blender', '450000', '3', '', '', '', '', '', '', '', '10', '', 'Traffic Puller', 'https://example.com/blender.jpg'],
+      ],
+      'COMPARE DATA COPAS S2': [
+        ['NIK', 'Nama', 'Tanggal', 'Receipt', 'Artikel', 'Deskripsi', 'Kode', 'Qty'],
+        ['97721', 'CHOIRIYAH', '01-08-2026', 'R001', 'A300', 'Blender', 'AP', '2'],
+        ['97721', 'CHOIRIYAH', '01-08-2026', 'R002', 'A300', 'Blender', 'AP', '3'],
+      ],
+    }
+
+    const result = parseIncentiveSheets(sheets)
+    expect(result.boomsale.rows[0]).toMatchObject({
+      artikel: 'A300',
+      actualQty: 5,
+    })
+  })
+
   it('parses syarat insentif rows with target qty, article list and acv from compare sheet', () => {
     const sheets = {
       'SYARAT INSENTIF': [
@@ -187,5 +207,28 @@ describe('parseIncentiveSheets', () => {
       expect.objectContaining({ no: '1', departemen: 'ELECTRICAL', targetValue: 40000000, percentage: 1 }),
       expect.objectContaining({ no: '2', departemen: 'LIGHTING', targetValue: 20000000, percentage: 2 }),
     ])
+  })
+
+  it('parses sales product name from description column instead of user name column', () => {
+    const sheets = {
+      'COMPARE DATA COPAS S2': [
+        ['NIK', 'Nama', 'Tanggal', 'Receipt', 'Artikel', 'Deskripsi', 'Kode', 'Qty'],
+        ['191924', 'CHOIRIYAH', '01-08-2026', '12345', '10654818', 'WATER PURIFIER A7 UF', 'A7UF', '8'],
+      ],
+      'INSENTIF BOOMSALE': [
+        ['Artikel', 'Departemen', 'Nama Produk', 'Harga E', 'Harga F', 'Persentase', 'Nominal', 'Target Qty', 'Remark', 'Kategori', 'Gambar'],
+      ],
+    }
+
+    const result = parseIncentiveSheets(sheets)
+
+    expect(result.sales.rows).toHaveLength(1)
+    expect(result.sales.rows[0]).toMatchObject({
+      nik: '191924',
+      nama: 'CHOIRIYAH',
+      artikel: '10654818',
+      productName: 'WATER PURIFIER A7 UF',
+      qty: 8,
+    })
   })
 })

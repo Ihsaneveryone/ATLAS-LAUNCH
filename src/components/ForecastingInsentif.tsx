@@ -19,7 +19,9 @@ interface Props { user: User; onBack: () => void }
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b' }
 
-type SubPage = 'bersyarat' | 'tanpa_syarat' | 'toko' | 'proteksi' | 'boomsale' | 'receipt' | 'sku' | 'list'
+const CURRENT_MONTH_NAME = new Intl.DateTimeFormat('id-ID', { month: 'long' }).format(new Date()).toUpperCase()
+
+type SubPage = 'bersyarat' | 'tanpa_syarat' | 'toko' | 'lainnya' | 'boomsale' | 'receipt' | 'sku' | 'list'
 
 type SummaryType = SubPage
 
@@ -42,14 +44,34 @@ const SHEET_NAMES = {
 }
 
 const LIST_INSENTIF_MENU: Array<{ type: Exclude<SubPage, 'bersyarat' | 'tanpa_syarat' | 'list'>; name: string; description: string; icon: string }> = [
-  { type: 'proteksi', name: 'Insentif Proteksi', description: 'Daftar syarat proteksi.', icon: '🛡️' },
-  { type: 'boomsale', name: 'Insentif Produk Boomsale', description: 'Insentif produk boomsale.', icon: '💥' },
-  { type: 'receipt', name: 'Insentif Receipt Dept', description: 'Insentif receipt untuk departemen.', icon: '🧾' },
+  { type: 'lainnya', name: 'Insentif Lainnya', description: 'Proteksi, syarat lainnya, dan receipt dept.', icon: '🧩' },
+  { type: 'boomsale', name: 'Produk Insentif Bulan Ini', description: 'Daftar produk insentif bulan ini.', icon: '💥' },
   { type: 'sku', name: 'SKU Insentif Lainnya', description: 'SKU insentif tambahan.', icon: '📦' },
 ]
 
 function normalizeText(value: string) {
   return (value ?? '').trim().replace(/\s+/g, ' ')
+}
+
+function normalizeLookup(value: string) {
+  return normalizeText(value).toLowerCase().replace(/[^a-z0-9]+/g, '')
+}
+
+function isLikelySameCode(leftValue: string, rightValue: string) {
+  const left = normalizeLookup(leftValue)
+  const right = normalizeLookup(rightValue)
+  if (!left || !right) return false
+  if (left === right) return true
+
+  const minLength = Math.min(left.length, right.length)
+  if (minLength >= 6 && (left.includes(right) || right.includes(left))) return true
+
+  const leftDigits = left.replace(/\D+/g, '')
+  const rightDigits = right.replace(/\D+/g, '')
+  if (!leftDigits || !rightDigits) return false
+  if (leftDigits === rightDigits) return true
+  const minDigitLength = Math.min(leftDigits.length, rightDigits.length)
+  return minDigitLength >= 6 && (leftDigits.endsWith(rightDigits) || rightDigits.endsWith(leftDigits))
 }
 
 function groupRowsByKey<T>(rows: T[], getKey: (row: T) => string) {
@@ -217,6 +239,93 @@ function ConditionalRowCard({ row, userNik }: { row: NonNullable<ReturnType<type
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function SoldIncentiveRecapCard({ rows, isMobile }: { rows: Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>; isMobile: boolean }) {
+  const groupedRows = useMemo(() => {
+    const grouped = new Map<string, Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>>()
+    rows.forEach(row => {
+      const key = normalizeText(row.category || 'Tanpa Kategori') || 'Tanpa Kategori'
+      const current = grouped.get(key) ?? []
+      current.push(row)
+      grouped.set(key, current)
+    })
+    return Array.from(grouped.entries())
+      .sort(([left], [right]) => left.localeCompare(right, 'id-ID'))
+      .map(([category, items]) => ({ category, items }))
+  }, [rows])
+
+  return (
+    <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 16, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ color: '#0f172a', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Rekap Produk Insentif Terjual</div>
+          <div style={{ color: S.muted, fontSize: 12 }}>Menampilkan produk insentif yang sudah dijual oleh user.</div>
+        </div>
+        <div style={{ background: '#eff6ff', color: '#1d4ed8', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>
+          {rows.length} produk
+        </div>
+      </div>
+
+      {!rows.length ? (
+        <div style={{ padding: '14px 16px', background: '#f8fafc', border: `1px solid ${S.border}`, borderRadius: 12, color: S.sub, fontSize: 13 }}>
+          Belum ada produk insentif terjual untuk user ini pada data COPAS S2.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {groupedRows.map(group => (
+            <div key={group.category} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ color: S.text, fontSize: 14, fontWeight: 800 }}>{group.category}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
+                {group.items.map(item => {
+                  const resolvedTarget = item.storeTargetQty ?? item.targetQty
+                  const resolvedActual = item.storeQty ?? 0
+                  const progressPercent = resolvedTarget ? Math.min(100, (resolvedActual / resolvedTarget) * 100) : 0
+                  const progressLabel = resolvedTarget ? `${resolvedActual} / ${resolvedTarget}` : `${resolvedActual}`
+                  return (
+                    <div key={`${item.sku}-${item.name}-${item.category}`} style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 20, padding: 16, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 10px 24px rgba(15, 23, 42, 0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>SKU/Artikel {item.sku || '—'}</div>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: S.text, lineHeight: 1.4 }}>{item.name || item.sku}</div>
+                          <div style={{ color: S.sub, fontSize: 12, marginTop: 4 }}>{item.requirement || 'Syarat belum tersedia'}</div>
+                        </div>
+                        {item.imageUrl ? <img src={item.imageUrl} alt={item.name || item.sku} style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 16, border: `1px solid ${S.border}`, background: '#f8fafc' }} /> : null}
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        <span style={{ background: '#eef2ff', color: '#4338ca', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>{item.category || 'Tanpa Kategori'}</span>
+                        <span style={{ background: '#ecfeff', color: '#0e7490', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700 }}>{item.source}</span>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '8px 12px', padding: '10px 12px', borderRadius: 14, background: '#f8fafc' }}>
+                        <div style={{ color: S.muted, fontSize: 12 }}>Status</div>
+                        <div style={{ color: item.syaratStatus === 'Syarat Terpenuhi' ? '#15803d' : '#9a3412', fontWeight: 700, textAlign: 'right' }}>{item.syaratStatus}</div>
+                        <div style={{ color: S.muted, fontSize: 12 }}>Qty User</div>
+                        <div style={{ color: S.text, fontWeight: 700, textAlign: 'right' }}>{item.qty}</div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                          <span style={{ color: S.muted, fontSize: 12 }}>Qty Penjualan Toko</span>
+                          <span style={{ color: S.text, fontSize: 12, fontWeight: 700 }}>{progressLabel}</span>
+                        </div>
+                        {resolvedTarget ? (
+                          <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${progressPercent}%`, background: 'linear-gradient(90deg, #16a34a, #22c55e)', borderRadius: 999 }} />
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -678,20 +787,26 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
   const isBoomsale = type === 'boomsale'
   const isReceipt = type === 'receipt'
   const isToko = type === 'toko'
-  const isProteksi = type === 'proteksi'
+  const isLainnya = type === 'lainnya'
 
-  const color = isBersyarat ? '#D93119' : isSku ? '#059669' : isBoomsale ? '#f97316' : isReceipt ? '#0f172a' : isProteksi ? '#0f9d58' : isToko ? '#1d4ed8' : '#7c3aed'
-  const title = isBersyarat ? 'Insentif Bersyarat' : isSku ? 'SKU Insentif' : isBoomsale ? 'Insentif Boomsale' : isReceipt ? 'Insentif Receipt Dept' : isProteksi ? 'Insentif Proteksi' : isToko ? 'Insentif Toko' : isList ? 'Daftar Insentif' : 'Insentif Tanpa Syarat'
-  const subtitle = isBersyarat ? 'Data individu dari sheet INSENTIF BERSYARAT' : isSku ? '' : isBoomsale ? 'Data sheet INSENTIF BOOMSALE' : isReceipt ? 'Data sheet INSENTIF RECEIPT DEPT' : isProteksi ? 'Syarat insentif proteksi dari sheet SYARAT INSENTIF' : isToko ? 'Syarat insentif toko dari sheet SYARAT INSENTIF' : isList ? 'Pilih kategori insentif dari submenu' : 'Data individu dari sheet INSENTIF TANPA SYARAT'
+  const color = isBersyarat ? '#D93119' : isSku ? '#059669' : isBoomsale ? '#f97316' : isReceipt ? '#0f172a' : isLainnya ? '#7c3aed' : isToko ? '#1d4ed8' : '#7c3aed'
+  const title = isBersyarat ? 'Insentif Bersyarat' : isSku ? 'SKU Insentif' : isBoomsale ? 'Produk Insentif Bulan Ini' : isReceipt ? 'Insentif Receipt Dept' : isLainnya ? 'Insentif Lainnya' : isToko ? 'Insentif Toko' : isList ? 'Daftar Insentif' : 'Insentif Tanpa Syarat'
+  const subtitle = isBersyarat ? 'Data individu dari sheet INSENTIF BERSYARAT' : isSku ? '' : isBoomsale ? `Data sheet PRODUK INSENTIF ${CURRENT_MONTH_NAME}` : isReceipt ? 'Data sheet INSENTIF RECEIPT DEPT' : isLainnya ? 'Gabungan proteksi, syarat lainnya, dan receipt dept' : isToko ? 'Syarat insentif toko dari sheet SYARAT INSENTIF' : isList ? 'Pilih kategori insentif dari submenu' : 'Data individu dari sheet INSENTIF TANPA SYARAT'
 
   const syaratRows = data?.syarat.rows ?? []
   const tokoRows = filterSyaratRowsByKeyword(syaratRows, 'toko')
   const proteksiRows = filterSyaratRowsByKeyword(syaratRows, 'proteksi')
+  const syaratLainnyaRows = syaratRows.filter(row => {
+    const text = `${row.jenis} ${row.syarat} ${row.note}`.toLowerCase()
+    return !text.includes('toko') && !text.includes('proteksi')
+  })
+  const lainnyaRows = [...proteksiRows, ...syaratLainnyaRows]
   const boomsaleRows = data?.boomsale.rows ?? []
+  const salesRows = data?.sales.rows ?? []
   const receiptRows = data?.receipt.rows ?? []
   const conditionalRows = filterUserRows(data?.conditional.rows, user.nik, user.nama)
   const unconditionalRows = filterUserRows(data?.unconditional.rows, user.nik, user.nama)
-  const rows = isBersyarat ? conditionalRows : isSku ? data?.sku.rows ?? [] : isBoomsale ? boomsaleRows : isReceipt ? receiptRows : isProteksi ? proteksiRows : isToko ? tokoRows : unconditionalRows
+  const rows = isBersyarat ? conditionalRows : isSku ? data?.sku.rows ?? [] : isBoomsale ? boomsaleRows : isReceipt ? receiptRows : isLainnya ? lainnyaRows : isToko ? tokoRows : unconditionalRows
 
   const skuRows = isSku ? (data?.sku.rows ?? []) : []
   const filteredSkuRows = skuRows.filter(row => {
@@ -706,7 +821,10 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
     return skuOrder === 'asc' ? (left < right ? -1 : 1) : (left > right ? -1 : 1)
   })
 
-  const syaratGroups = (isToko || isProteksi) ? groupRowsByKey(isProteksi ? proteksiRows : tokoRows, row => row.jenis || 'Jenis Insentif Lainnya') : []
+  const syaratGroups = (isToko || isLainnya)
+    ? groupRowsByKey(isToko ? tokoRows : lainnyaRows, row => row.jenis || 'Jenis Insentif Lainnya')
+    : []
+  const hasRows = isLainnya ? (lainnyaRows.length > 0 || receiptRows.length > 0) : Boolean(rows?.length)
   const boomsaleCategoryOptions = useMemo(() => {
     const categories = Array.from(new Set(boomsaleRows.map(row => (row.category || 'Tanpa Kategori').trim()).filter(Boolean)))
     return categories.sort((a, b) => a.localeCompare(b, 'id-ID'))
@@ -726,6 +844,81 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
     })
   }, [boomsaleRows, boomsaleQuery, boomsaleCategory, boomsaleDept])
   const boomsaleGroups = isBoomsale ? groupRowsByKey(filteredBoomsaleRows, row => row.category || 'Tanpa Kategori') : []
+  const soldIncentiveRows = useMemo(() => {
+    const normalizedUserNik = normalizeNik(user.nik)
+    const normalizedUserName = normalizeName(user.nama)
+    const userSales = salesRows.filter(row => {
+      if (row.qty <= 0) return false
+
+      const rowNik = normalizeNik(row.nik)
+      const rowName = normalizeName(row.nama)
+      const nikMatches = rowNik && normalizedUserNik && (rowNik === normalizedUserNik || rowNik.endsWith(normalizedUserNik) || normalizedUserNik.endsWith(rowNik))
+      if (nikMatches) return true
+
+      // Fallback to name when sales row does not have a reliable NIK value.
+      if (!rowNik && normalizedUserName) {
+        return rowName === normalizedUserName || rowName.includes(normalizedUserName) || normalizedUserName.includes(rowName)
+      }
+
+      return false
+    })
+    if (!userSales.length) return []
+
+    const skuRows = data?.sku.rows ?? []
+    const grouped = new Map<string, { sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>()
+
+    userSales.forEach(sale => {
+      const lookupArtikel = normalizeLookup(sale.artikel)
+      const lookupName = normalizeLookup(sale.productName)
+      const lookupUserName = normalizeLookup(user.nama)
+      const boomsaleMatch = boomsaleRows.find(row => {
+        const rowArtikel = normalizeLookup(row.artikel)
+        const rowName = normalizeLookup(row.name)
+        const matchesArtikel = isLikelySameCode(rowArtikel, lookupArtikel)
+        const matchesName = lookupName && (rowName === lookupName || rowName.includes(lookupName) || lookupName.includes(rowName))
+        if (lookupArtikel) return matchesArtikel
+        return Boolean(matchesName)
+      })
+      const skuMatch = skuRows.find(row => {
+        const rowSku = normalizeLookup(row.sku)
+        const rowName = normalizeLookup(row.name)
+        const matchesSku = isLikelySameCode(rowSku, lookupArtikel)
+        const matchesName = lookupName && (rowName === lookupName || rowName.includes(lookupName) || lookupName.includes(rowName))
+        if (lookupArtikel) return matchesSku
+        return Boolean(matchesName)
+      })
+      if (!skuMatch && !boomsaleMatch) return
+      const syaratMatch = syaratRows.find(row => {
+        const list = row.articleList.map(item => normalizeLookup(item))
+        return lookupArtikel ? list.some(article => isLikelySameCode(article, lookupArtikel)) : false
+      })
+
+      const sku = sale.artikel || skuMatch?.sku || boomsaleMatch?.artikel || ''
+      const fallbackProductName = lookupName && lookupName !== lookupUserName ? sale.productName : ''
+      const name = boomsaleMatch?.name || skuMatch?.name || fallbackProductName || sale.artikel
+      const category = boomsaleMatch?.category || syaratMatch?.jenis || 'Tanpa Kategori'
+      const requirement = skuMatch?.requirement || syaratMatch?.syarat || boomsaleMatch?.remark || '-'
+      const source = boomsaleMatch ? 'Produk Bulanan' : 'SKU Insentif'
+      const targetQty = boomsaleMatch?.targetQty || syaratMatch?.targetQty
+      const imageUrl = boomsaleMatch?.imageUrl || skuMatch?.imageUrl || ''
+      const storeQty = boomsaleMatch?.actualQty ?? 0
+      const storeTargetQty = boomsaleMatch?.targetQty
+      const syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' = storeTargetQty ? (storeQty >= storeTargetQty ? 'Syarat Terpenuhi' : 'Belum Terpenuhi') : 'Belum Terpenuhi'
+      const key = normalizeLookup(`${sku}-${name}-${category}`)
+
+      const previous = grouped.get(key)
+      if (previous) {
+        previous.qty += sale.qty
+      } else {
+        grouped.set(key, { sku, name, qty: sale.qty, category, requirement, source, targetQty, imageUrl, storeQty, storeTargetQty, syaratStatus })
+      }
+    })
+
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty
+      return a.name.localeCompare(b.name, 'id-ID')
+    })
+  }, [salesRows, user.nik, user.nama, data?.sku.rows, boomsaleRows, syaratRows])
 
   return (
     <div style={{ minHeight: '100vh', background: S.bg }}>
@@ -787,7 +980,7 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
         ) : null}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {!isList && !rows?.length ? (
+          {!isList && !hasRows ? (
             <div style={{ padding: '16px 20px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, color: '#92400e', fontSize: 13 }}>
               Data belum tersedia. Pastikan sheet memiliki data dan nama sheet sesuai.
             </div>
@@ -808,7 +1001,7 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
                 </button>
               ))}
             </div>
-          ) : isToko || isProteksi ? (
+          ) : isToko ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {syaratGroups.map(([groupName, groupRows]) => (
                 <div key={groupName} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -818,6 +1011,18 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
                   </div>
                 </div>
               ))}
+            </div>
+          ) : isLainnya ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {syaratGroups.length ? syaratGroups.map(([groupName, groupRows]) => (
+                <div key={groupName} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ color: S.text, fontSize: 14, fontWeight: 800 }}>{groupName}</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {groupRows.map((row, index) => <SyaratRowCard key={`${row.jenis}-${index}`} row={row} />)}
+                  </div>
+                </div>
+              )) : null}
+              {receiptRows.length ? <ReceiptInfoTable rows={receiptRows} isMobile={isMobile} /> : null}
             </div>
           ) : isBoomsale ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -839,7 +1044,10 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
           ) : isSku ? (
             sortedSkuRows.map((row, index) => <SkuRowCard key={`${row.sku}-${index}`} row={row} />)
           ) : isBersyarat ? (
-            conditionalRows.map((row, index) => <ConditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />)
+            <>
+              {conditionalRows.map((row, index) => <ConditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />)}
+              <SoldIncentiveRecapCard rows={soldIncentiveRows} isMobile={isMobile} />
+            </>
           ) : (
             unconditionalRows.map((row, index) => <UnconditionalRowCard key={`${(row as any).nik}-${index}`} row={row as any} userNik={user.nik} />)
           )}
@@ -881,7 +1089,7 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
         type: 'list',
         achieved: 5,
         forecast: 0,
-        extra: 'Submenu: Toko, Proteksi, Boomsale, Receipt, SKU Lainnya',
+        extra: 'Submenu: Toko, Insentif Lainnya, Produk Insentif Bulan Ini, SKU Lainnya',
       },
     ]
   }, [data, user.nik, user.nama])

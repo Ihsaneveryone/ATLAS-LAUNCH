@@ -38,9 +38,9 @@ const MENUS = [
   },
   {
     key: 'forecasting' as MenuKey,
-    title: 'Forecasting Insentif', subtitle: 'Toko · Proteksi · Boomsale · Receipt',
-    desc: 'Jelajahi daftar insentif toko, proteksi, boomsale, receipt, dan SKU lainnya secara terstruktur.',
-    tags: ['Toko', 'Proteksi', 'Boomsale', 'Receipt'], color: '#7c3aed', light: '#f5f3ff',
+    title: 'Forecasting Insentif', subtitle: 'Toko · Proteksi · Produk Insentif Bulan Ini · Receipt',
+    desc: 'Jelajahi daftar insentif toko, proteksi, produk insentif bulan ini, receipt, dan SKU lainnya secara terstruktur.',
+    tags: ['Toko', 'Proteksi', 'Produk Insentif Bulan Ini', 'Receipt'], color: '#7c3aed', light: '#f5f3ff',
     icon: (
       <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
         <circle cx="20" cy="20" r="14" stroke="#7c3aed" strokeWidth="2" opacity="0.2"/>

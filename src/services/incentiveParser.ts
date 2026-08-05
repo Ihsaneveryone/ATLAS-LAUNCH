@@ -69,6 +69,14 @@ export interface IncentiveReceiptRow {
   fields: Array<{ label: string; value: string }>
 }
 
+export interface IncentiveSalesRow {
+  nik: string
+  nama: string
+  artikel: string
+  productName: string
+  qty: number
+}
+
 export interface ParsedIncentiveData {
   conditional: { rows: IncentiveConditionalRow[]; totalTarget: number; totalAchieved: number }
   unconditional: { rows: IncentiveUnconditionalRow[]; totalTarget: number; totalAchieved: number }
@@ -76,10 +84,15 @@ export interface ParsedIncentiveData {
   syarat: { rows: IncentiveSyaratRow[] }
   boomsale: { rows: IncentiveBoomsaleRow[] }
   receipt: { rows: IncentiveReceiptRow[] }
+  sales: { rows: IncentiveSalesRow[] }
 }
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, ' ')
+}
+
+function normalizeArticleKey(value: string): string {
+  return normalizeText(value).toUpperCase().replace(/[^A-Z0-9]+/g, '')
 }
 
 function toNumber(value: string): number {
@@ -260,7 +273,7 @@ function parseSyaratRow(row: string[], headers: string[], compareByArtikel: Map<
     .split(/\s*[\/\\]\s*|\s*,\s*|\s*\|\s*|\s*;\s*/)
     .map(part => normalizeText(part))
     .filter(Boolean)
-  const acvValue = articleList.reduce((sum, article) => sum + (compareByArtikel.get(article) ?? 0), 0)
+  const acvValue = articleList.reduce((sum, article) => sum + (compareByArtikel.get(normalizeArticleKey(article)) ?? 0), 0)
   const incentiveValuePerQty = toNumber(row[resolvedIncentiveValuePerQtyIndex] ?? '')
   const fields = headers.map((header, index) => ({ label: header, value: normalizeText(row[index] ?? '') }))
   return { jenis, syarat, note, targetQty: Number.isNaN(targetQty) ? undefined : targetQty, articleList, acvValue, incentiveValuePerQty, fields }
@@ -327,6 +340,7 @@ export function parseIncentiveSheets(sheets: Record<string, string[][]>): Parsed
   const syaratRows: IncentiveSyaratRow[] = []
   const boomsaleRows: IncentiveBoomsaleRow[] = []
   const receiptRows: IncentiveReceiptRow[] = []
+  const salesRows: IncentiveSalesRow[] = []
 
   const conditionalSheet = sheets['INSENTIF BERSYARAT'] ?? []
   const unconditionalSheet = sheets['INSENTIF TANPA SYARAT'] ?? []
@@ -346,17 +360,25 @@ export function parseIncentiveSheets(sheets: Record<string, string[][]>): Parsed
 
   const compareArtikelIndex = findHeaderIndex(compareHeaders, [/(^|\b)artikel(\b|$)/i, /sku/i])
   const compareQtyIndex = findHeaderIndex(compareHeaders, [/(qty actual|actual qty|actual|qty)/i])
+  const compareNikIndex = findHeaderIndex(compareHeaders, /\bnik\b/i)
+  const compareNamaIndex = findHeaderIndex(compareHeaders, /\b(nama|name)\b/i)
+  const compareProductNameIndex = findHeaderIndex(compareHeaders, /\b(nama produk|product name|deskripsi|description|nama barang|item)\b/i)
   const compareQtyByArtikel = new Map<string, number>()
   const compareActualQtyByArtikel = new Map<string, number>()
   for (const row of compareSheet.slice(1)) {
     if (!row.some(cell => normalizeText(cell))) continue
     const artikel = normalizeText(row[compareArtikelIndex >= 0 ? compareArtikelIndex : 4] ?? '')
     if (!artikel) continue
+    const artikelKey = normalizeArticleKey(artikel)
     const resolvedQtyIndex = compareQtyIndex >= 0 ? compareQtyIndex : 7
     const qtyValue = Number.parseInt(normalizeText(row[resolvedQtyIndex] ?? ''), 10)
     const actualQty = Number.isNaN(qtyValue) ? 0 : qtyValue
-    compareQtyByArtikel.set(artikel, (compareQtyByArtikel.get(artikel) ?? 0) + actualQty)
-    compareActualQtyByArtikel.set(artikel, actualQty)
+    const nik = normalizeText(row[compareNikIndex >= 0 ? compareNikIndex : 0] ?? '')
+    const nama = normalizeText(row[compareNamaIndex >= 0 ? compareNamaIndex : 1] ?? '')
+    const productName = normalizeText(row[compareProductNameIndex >= 0 ? compareProductNameIndex : 5] ?? '')
+    compareQtyByArtikel.set(artikelKey, (compareQtyByArtikel.get(artikelKey) ?? 0) + actualQty)
+    compareActualQtyByArtikel.set(artikelKey, (compareActualQtyByArtikel.get(artikelKey) ?? 0) + actualQty)
+    salesRows.push({ nik, nama, artikel, productName, qty: actualQty > 0 ? actualQty : 0 })
   }
 
   for (const row of conditionalSheet.slice(1)) {
@@ -384,7 +406,7 @@ export function parseIncentiveSheets(sheets: Record<string, string[][]>): Parsed
     if (!row.some(cell => normalizeText(cell))) continue
     const parsedRow = parseBoomsaleRow(row, boomsaleHeaders)
     if (!parsedRow.artikel && !parsedRow.name) continue
-    const actualQty = compareActualQtyByArtikel.get(parsedRow.artikel)
+    const actualQty = compareActualQtyByArtikel.get(normalizeArticleKey(parsedRow.artikel))
     if (typeof actualQty === 'number') {
       parsedRow.actualQty = actualQty > 0 ? actualQty : 0
     }
@@ -425,6 +447,7 @@ export function parseIncentiveSheets(sheets: Record<string, string[][]>): Parsed
     syarat: { rows: syaratRows },
     boomsale: { rows: boomsaleRows },
     receipt: { rows: receiptRows },
+    sales: { rows: salesRows },
     sku: {
       rows: skuRows,
       totalTarget: 0,

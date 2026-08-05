@@ -54,6 +54,7 @@ describe('resolveScanResult', () => {
         ],
       },
       receipt: { rows: [] },
+      sales: { rows: [] },
     }
 
     const result = resolveScanResult('sku-001', data)
@@ -72,6 +73,7 @@ describe('resolveScanResult', () => {
       syarat: { rows: [] },
       boomsale: { rows: [] },
       receipt: { rows: [] },
+      sales: { rows: [] },
     }
 
     const result = resolveScanResult('UNKNOWN-123', data)
@@ -102,6 +104,7 @@ describe('resolveScanResult', () => {
       syarat: { rows: [] },
       boomsale: { rows: [] },
       receipt: { rows: [] },
+      sales: { rows: [] },
     }
 
     const result = resolveScanResult('1C110584724', data)
