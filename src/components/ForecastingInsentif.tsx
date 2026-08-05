@@ -243,9 +243,9 @@ function ConditionalRowCard({ row, userNik }: { row: NonNullable<ReturnType<type
   )
 }
 
-function SoldIncentiveRecapCard({ rows, isMobile }: { rows: Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>; isMobile: boolean }) {
+function SoldIncentiveRecapCard({ rows, isMobile }: { rows: Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; remark?: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>; isMobile: boolean }) {
   const groupedRows = useMemo(() => {
-    const grouped = new Map<string, Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>>()
+    const grouped = new Map<string, Array<{ sku: string; name: string; qty: number; category: string; requirement: string; source: string; remark?: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>>()
     rows.forEach(row => {
       const key = normalizeText(row.category || 'Tanpa Kategori') || 'Tanpa Kategori'
       const current = grouped.get(key) ?? []
@@ -291,6 +291,7 @@ function SoldIncentiveRecapCard({ rows, isMobile }: { rows: Array<{ sku: string;
                           <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>SKU/Artikel {item.sku || '—'}</div>
                           <div style={{ fontSize: 15, fontWeight: 800, color: S.text, lineHeight: 1.4 }}>{item.name || item.sku}</div>
                           <div style={{ color: S.sub, fontSize: 12, marginTop: 4 }}>{item.requirement || 'Syarat belum tersedia'}</div>
+                          {item.remark ? <div style={{ color: '#9a3412', fontSize: 12, marginTop: 4 }}>Remark: {item.remark}</div> : null}
                         </div>
                         {item.imageUrl ? <img src={item.imageUrl} alt={item.name || item.sku} style={{ width: 88, height: 88, objectFit: 'cover', borderRadius: 16, border: `1px solid ${S.border}`, background: '#f8fafc' }} /> : null}
                       </div>
@@ -571,9 +572,10 @@ function ScanArticlePanel({ data, isMobile }: { data: ReturnType<typeof parseInc
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    if ('BarcodeDetector' in window) {
+    const BarcodeDetectorCtor = window.BarcodeDetector
+    if (BarcodeDetectorCtor) {
       try {
-        detectorRef.current = new window.BarcodeDetector({ formats: ['code_128', 'ean_13', 'ean_8', 'qr_code', 'upc_a', 'upc_e'] })
+        detectorRef.current = new BarcodeDetectorCtor({ formats: ['code_128', 'ean_13', 'ean_8', 'qr_code', 'upc_a', 'upc_e'] })
       } catch {
         detectorRef.current = null
       }
@@ -701,11 +703,11 @@ function ScanArticlePanel({ data, isMobile }: { data: ReturnType<typeof parseInc
           style={{ flex: 1, border: `1px solid ${S.border}`, borderRadius: 14, padding: '12px 14px', fontSize: 14, color: S.text, background: '#f8fafc' }}
         />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <button type="button" onClick={handleManualCheck} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Cek Kode</button>
+          <button type="button" onClick={handleManualCheck} disabled={isScanning} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', padding: '10px 14px', cursor: isScanning ? 'not-allowed' : 'pointer', fontWeight: 700, opacity: isScanning ? 0.6 : 1 }}>Cek Kode</button>
           {isCameraOpen ? (
             <button type="button" onClick={stopCamera} style={{ borderRadius: 14, border: `1px solid ${S.border}`, background: S.card, color: S.text, padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Stop Kamera</button>
           ) : (
-            <button type="button" onClick={() => { void openCamera() }} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#4338ca', color: '#fff', padding: '10px 14px', cursor: 'pointer', fontWeight: 700 }}>Buka Kamera</button>
+            <button type="button" onClick={() => { void openCamera() }} disabled={isScanning} style={{ borderRadius: 14, border: '1px solid #c7d2fe', background: '#4338ca', color: '#fff', padding: '10px 14px', cursor: isScanning ? 'not-allowed' : 'pointer', fontWeight: 700, opacity: isScanning ? 0.6 : 1 }}>{isScanning ? 'Scanning...' : 'Buka Kamera'}</button>
           )}
         </div>
       </div>
@@ -716,7 +718,10 @@ function ScanArticlePanel({ data, isMobile }: { data: ReturnType<typeof parseInc
         </div>
       ) : null}
 
-      <div style={{ marginBottom: 12, color: S.muted, fontSize: 12, fontWeight: 600 }}>{cameraStatus}</div>
+      <div style={{ marginBottom: 12, color: S.muted, fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {isScanning ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#16a34a', boxShadow: '0 0 0 4px rgba(22,163,74,0.18)' }} /> : null}
+        <span>{cameraStatus}</span>
+      </div>
 
       <div style={{ borderRadius: 18, overflow: 'hidden', border: `1px solid ${S.border}`, background: '#f8fafc', minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
         {isCameraOpen ? (
@@ -865,7 +870,7 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
     if (!userSales.length) return []
 
     const skuRows = data?.sku.rows ?? []
-    const grouped = new Map<string, { sku: string; name: string; qty: number; category: string; requirement: string; source: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>()
+    const grouped = new Map<string, { sku: string; name: string; qty: number; category: string; requirement: string; source: string; remark?: string; targetQty?: number; imageUrl?: string; storeQty?: number; storeTargetQty?: number; syaratStatus: 'Syarat Terpenuhi' | 'Belum Terpenuhi' }>()
 
     userSales.forEach(sale => {
       const lookupArtikel = normalizeLookup(sale.artikel)
@@ -898,6 +903,7 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
       const name = boomsaleMatch?.name || skuMatch?.name || fallbackProductName || sale.artikel
       const category = boomsaleMatch?.category || syaratMatch?.jenis || 'Tanpa Kategori'
       const requirement = skuMatch?.requirement || syaratMatch?.syarat || boomsaleMatch?.remark || '-'
+      const remark = boomsaleMatch?.remark || ''
       const source = boomsaleMatch ? 'Produk Bulanan' : 'SKU Insentif'
       const targetQty = boomsaleMatch?.targetQty || syaratMatch?.targetQty
       const imageUrl = boomsaleMatch?.imageUrl || skuMatch?.imageUrl || ''
@@ -910,7 +916,7 @@ function SubPageView({ type, data, user, isMobile, onBack: goBack, onSelectSubPa
       if (previous) {
         previous.qty += sale.qty
       } else {
-        grouped.set(key, { sku, name, qty: sale.qty, category, requirement, source, targetQty, imageUrl, storeQty, storeTargetQty, syaratStatus })
+        grouped.set(key, { sku, name, qty: sale.qty, category, requirement, source, remark, targetQty, imageUrl, storeQty, storeTargetQty, syaratStatus })
       }
     })
 

@@ -902,36 +902,38 @@ function findTargetByNik(targets: Map<string, TargetData>, nik: string): TargetD
   return undefined
 }
 
-function buildRanking(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set()) {
-  const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
-  const filteredPerfs = perfs
-    .filter(e => validNiks.size === 0 || normalizedValidNiks.has(canonicalNik(e.nik).toLowerCase()))
+function buildRanking(
+  perfs: EmpPerf[],
+  targets: Map<string, TargetData>,
+  workingDays = 1,
+  includeZeroSales = false,
+  ensureNik?: string,
+) {
+  const completedPerfs = [...perfs]
 
-  const perfsByNik = new Map(filteredPerfs.map(entry => [canonicalNik(entry.nik).toLowerCase(), entry]))
-  const completedPerfs = [...filteredPerfs]
-
-  for (const key of normalizedValidNiks) {
-    const canonicalValidNik = key
-    if (perfsByNik.has(key)) continue
-
-    const targetData = findTargetByNik(targets, canonicalValidNik)
-    completedPerfs.push({
-      nik: canonicalValidNik,
-      nama: targetData?.nama ?? canonicalValidNik,
-      sales: 0,
-      qty: 0,
-      transaksi: 0,
-      newMember: 0,
-      categorySales: {},
-      categoryQty: {},
-      basketSize: 0,
-      upt: 0,
-      aur: 0,
-    })
+  if (includeZeroSales && ensureNik) {
+    const ensured = canonicalNik(ensureNik).toLowerCase()
+    const alreadyExists = completedPerfs.some(entry => canonicalNik(entry.nik).toLowerCase() === ensured)
+    if (!alreadyExists) {
+      const targetData = findTargetByNik(targets, ensured)
+      completedPerfs.push({
+        nik: ensured,
+        nama: targetData?.nama ?? ensured,
+        sales: 0,
+        qty: 0,
+        transaksi: 0,
+        newMember: 0,
+        categorySales: {},
+        categoryQty: {},
+        basketSize: 0,
+        upt: 0,
+        aur: 0,
+      })
+    }
   }
 
   return completedPerfs
-  .filter(e => e.sales > 0)   // <-- TAMBAHKAN BARIS INI
+  .filter(e => includeZeroSales || e.sales > 0)
   .sort((a, b) => {
     const ta = (findTargetByNik(targets, a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
     const tb = (findTargetByNik(targets, b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
@@ -1299,7 +1301,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         myDaily.sales,
       workingDays: 1,
       kpis:        makeKPIs(myDaily, dailyTarget, false, 1, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(dailyPerfs, targets, 1, validNiks),
+      ranking:     buildRanking(dailyPerfs, targets, 1),
       dailyTrend:  todayTrendEntry,
     },
 
@@ -1311,7 +1313,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(mtdPerfs, targets, wdays, validNiks),
+      ranking:     buildRanking(mtdPerfs, targets, wdays, true, canonicalCurrent),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }
