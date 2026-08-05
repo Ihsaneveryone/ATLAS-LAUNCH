@@ -287,7 +287,7 @@ function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undef
   return targets
 }
 
-function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], mtdDateRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
+function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
   const labels = LEAF_DEPT_INDEXES.map(index => {
     const sourceLabel = g(sbdDataRows[index] ?? [], 1)
     return sourceLabel || DEPT_NODES[index]?.label || `Dept ${index + 1}`
@@ -303,8 +303,7 @@ function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], mtd
     const totalSales = deptValues.reduce((sum, value) => sum + value, 0)
     if (totalSales <= 0) continue
 
-    const targetRow = findRowByDay(mtdDateRows, day)
-    const targetsByIndex = buildTargetValues(targetRow?.row) ?? sbdTargetsByIndex
+    const targetsByIndex = sbdTargetsByIndex
     const deptAchievements = LEAF_DEPT_INDEXES.map((index, leafIndex) => {
       const target = targetsByIndex?.[index] ?? 0
       if (target <= 0) return 0
@@ -341,7 +340,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbdFlatTargetRow = mtdDateRows[0] ?? null
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
-  const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, mtdDateRows, sbdTargetValues)
+  const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, sbdTargetValues)
 
   // Format today's date as DD-MM-YYYY
   const today = new Date()
