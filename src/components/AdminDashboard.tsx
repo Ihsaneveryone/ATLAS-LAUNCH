@@ -228,11 +228,12 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   }
 
   const totalTrx = filteredEmployeeRows.reduce((sum, row) => sum + row.transaksi, 0)
-  const avgUpt = filteredEmployeeRows.length > 0
-    ? filteredEmployeeRows.reduce((sum, row) => sum + row.upt, 0) / filteredEmployeeRows.length
+  const sellingEmployeeRows = filteredEmployeeRows.filter(row => row.sales > 0)
+  const avgUpt = sellingEmployeeRows.length > 0
+    ? sellingEmployeeRows.reduce((sum, row) => sum + row.upt, 0) / sellingEmployeeRows.length
     : 0
-  const avgAur = filteredEmployeeRows.length > 0
-    ? filteredEmployeeRows.reduce((sum, row) => sum + row.aur, 0) / filteredEmployeeRows.length
+  const avgAur = sellingEmployeeRows.length > 0
+    ? sellingEmployeeRows.reduce((sum, row) => sum + row.aur, 0) / sellingEmployeeRows.length
     : 0
 
   // Hanya karyawan terdaftar (role=user) yang masuk YTD
