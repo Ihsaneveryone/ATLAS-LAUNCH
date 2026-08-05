@@ -336,8 +336,9 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const mtdDateRows = raw.slice(2, 33)
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
   
-  // SBD uses flat targets from columns V3:AQ3 and shows TODAY label
-  const sbdFlatTargetRow = mtdDateRows[0] ?? null
+  // SBD target must stay flat at day-1 target values.
+  // In this sheet, later days are cumulative MTD targets.
+  const sbdFlatTargetRow = findRowByDay(mtdDateRows, 1)?.row ?? mtdDateRows[0] ?? null
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
   const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, sbdTargetValues)
