@@ -8,7 +8,7 @@
 import type { DailyTrend, PerformanceData, KPIItem } from '../data/mockData'
 import { YTD_PERFORMANCE } from '../data/mockData'
 import { getConfiguredColumnIndex } from './columnMappingService'
-import { niksMatch, canonicalNik } from './nik'
+import { niksMatch, canonicalNik, looksLikeNik } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
@@ -1376,8 +1376,10 @@ export async function fetchYTDData(currentNik: string): Promise<YTDEmployee | nu
     const salesPctIdx = getConfiguredColumnIndex('YEAR TO DATE', 'YTD_SALES_PCT', 7)
     const monthlyBlockStart = getConfiguredColumnIndex('YEAR TO DATE', 'YTD_MONTHLY_BLOCK_START', 9)
 
-    // Row 0 = month names (JANUARI…), Row 1 = sub-headers, Row 2+ = data
-    const dataStart = 2
+    // Some sheets use 1 header row, others use 2 rows.
+    // Detect first data row from a valid-looking NIK to avoid skipping first employee.
+    const firstDataIndex = raw.findIndex((row, index) => index > 0 && looksLikeNik((row[nikIdx] ?? '').trim()))
+    const dataStart = firstDataIndex >= 0 ? firstDataIndex : 1
 
     // Find employee row
     const row = raw.slice(dataStart).find(r => {
@@ -1445,7 +1447,8 @@ export async function fetchAllYTD(): Promise<YTDEmployee[]> {
     const salesPctIdx = getConfiguredColumnIndex('YEAR TO DATE', 'YTD_SALES_PCT', 7)
     const monthlyBlockStart = getConfiguredColumnIndex('YEAR TO DATE', 'YTD_MONTHLY_BLOCK_START', 9)
 
-    const dataStart = 2
+    const firstDataIndex = raw.findIndex((row, index) => index > 0 && looksLikeNik((row[nikIdx] ?? '').trim()))
+    const dataStart = firstDataIndex >= 0 ? firstDataIndex : 1
     const results: YTDEmployee[] = []
     for (const row of raw.slice(dataStart)) {
       const nik = (row[nikIdx] ?? '').trim()
