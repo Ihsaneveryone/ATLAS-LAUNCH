@@ -4,6 +4,7 @@ import { formatRupiah, formatRupiahFull, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { fetchAllYTD, type YTDEmployee } from '../services/rawDataApi'
+import { niksMatch } from '../services/nik'
 import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
 import { getTrackerUrl, setTrackerUrl, writeMenuConfigToSheet } from '../services/loginTracker'
 import { getMenuSettings, setMenuSetting } from './MenuPage'
@@ -238,8 +239,8 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   // Hanya karyawan terdaftar (role=user) yang masuk YTD
   const totalKaryawan = users.filter(u => u.role === 'user').length
-  const validUserNiks = new Set(users.filter(u => u.role === 'user').map(u => u.nik))
-  const ytdValid      = ytdAll.filter(e => validUserNiks.has(e.nik))
+  const validUserNiks = users.filter(u => u.role === 'user').map(u => u.nik)
+  const ytdValid      = ytdAll.filter(e => validUserNiks.some(nik => niksMatch(nik, e.nik)))
 
   const zoneDist    = ytdValid.reduce<Record<string, number>>((acc, e) => {
     const k = (e.ytdColorZone ?? '').toLowerCase().split(' ')[0] || 'lainnya'

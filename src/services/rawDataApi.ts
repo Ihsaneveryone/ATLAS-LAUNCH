@@ -1380,8 +1380,10 @@ export async function fetchYTDData(currentNik: string): Promise<YTDEmployee | nu
     const dataStart = 2
 
     // Find employee row
-    const normCurrentNik = normNik(currentNik)
-    const row = raw.slice(dataStart).find(r => normNik((r[nikIdx] ?? '').trim()) === normCurrentNik)
+    const row = raw.slice(dataStart).find(r => {
+      const rowNik = (r[nikIdx] ?? '').trim()
+      return niksMatch(rowNik, currentNik)
+    })
     if (!row) return null
 
     const nama = (row[namaIdx] ?? '').trim()
