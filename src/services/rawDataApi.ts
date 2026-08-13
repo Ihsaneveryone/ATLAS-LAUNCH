@@ -13,31 +13,65 @@ import { niksMatch, canonicalNik, looksLikeNik } from './nik'
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
 
-function sheetUrl(name: string) {
+function sheetUrl(name: string, gid?: number) {
+  // Jika ada gid, gunakan gid (lebih reliable dari sheet name)
+  if (gid !== undefined) {
+    return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}&_t=${Date.now()}`
+  }
+  // Fallback: gunakan sheet name dengan proper URL encoding
   return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&_t=${Date.now()}`
 }
 
-async function fetchCSV(name: string): Promise<string[][]> {
-  const res = await fetch(sheetUrl(name), { cache: 'no-store' })
-  const text = await res.text()
-  if (!res.ok || text.trimStart().startsWith('<!')) throw new Error(`Sheet "${name}" tidak bisa dibaca`)
-  return parseCSV(text)
+async function fetchCSV(name: string, gid?: number, retries = 2): Promise<string[][]> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(sheetUrl(name, gid), { cache: 'no-store' })
+      const text = await res.text()
+      if (!res.ok || text.trimStart().startsWith('<!')) throw new Error(`Sheet "${name}" tidak bisa dibaca`)
+      // Koneksi yang terputus di tengah download (umum utk sheet besar) tidak selalu
+      // membuat fetch() melempar error — hasilnya CSV terpotong dengan sel berkutip
+      // yang tidak tertutup. Deteksi lewat jumlah tanda kutip ganjil lalu retry.
+      const quoteCount = (text.match(/"/g) ?? []).length
+      if (text.length > 0 && quoteCount % 2 !== 0) throw new Error(`Sheet "${name}" terpotong (respons tidak lengkap)`)
+      return parseCSV(text)
+    } catch (e) {
+      lastErr = e
+      // Google Sheets gviz kadang gagal sesaat (rate-limit/hiccup/koneksi terputus untuk sheet besar)
+      // — beri jeda lalu coba lagi sebelum menyerah ke nama sheet kandidat lain yang bisa nyasar ke tab yang salah.
+      if (attempt < retries) await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
+    }
+  }
+  throw lastErr
 }
 
 function parseCSV(text: string): string[][] {
+  // Iterasi seluruh teks (bukan split per baris dulu) — sel deskripsi produk
+  // sering mengandung enter literal, dan split('\n') di awal akan memecah
+  // satu baris data jadi beberapa baris palsu + menggeser semua kolom setelahnya.
   const rows: string[][] = []
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue
-    const cells: string[] = []
-    let inQ = false, cell = ''
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i]
-      if (c === '"') { if (inQ && line[i+1] === '"') { cell += '"'; i++ } else { inQ = !inQ } }
-      else if (c === ',' && !inQ) { cells.push(cell); cell = '' }
-      else { cell += c }
+  let cells: string[] = []
+  let cell = ''
+  let inQuote = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuote) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++ } else { inQuote = false } }
+      else { cell += ch }
+      continue
     }
+    if (ch === '"') { inQuote = true }
+    else if (ch === ',') { cells.push(cell); cell = '' }
+    else if (ch === '\r') { /* diabaikan, \n yang menandai akhir baris */ }
+    else if (ch === '\n') {
+      cells.push(cell); cell = ''
+      if (cells.some(v => v.trim())) rows.push(cells)
+      cells = []
+    } else { cell += ch }
+  }
+  if (cell !== '' || cells.length > 0) {
     cells.push(cell)
-    rows.push(cells)
+    if (cells.some(v => v.trim())) rows.push(cells)
   }
   return rows
 }
@@ -312,7 +346,9 @@ function parseMatrixDailySheet(rows: string[][], nikNameMap: Map<string, string>
 
     for (const idx of dateIndices) {
       const rawValue = c(row, idx)
-      const val = Number.parseFloat(rawValue.replace(/[^0-9.-]/g, '')) || 0
+      // Angka Indonesia pakai titik sebagai pemisah ribuan (mis. "48.000.000") —
+      // parseFloat biasa berhenti di titik kedua dan menghasilkan 48, bukan 48 juta.
+      const val = numVal(rawValue)
       if (val <= 0) continue
 
       txns.push({
@@ -331,9 +367,133 @@ function parseMatrixDailySheet(rows: string[][], nikNameMap: Map<string, string>
   return txns
 }
 
+// Deteksi apakah sheet berisi data yang cukup besar untuk dianggap transaksi real
+// (bukan data kuantitas kecil seperti login count atau summary sheet)
+// Ketat: harus ada 2+ nilai ≥100k dalam sampel data (bukan hanya 1 kebetulan)
+function looksLikeRealTransactionData(rows: string[][], startIdx: number, isMatrixData: boolean = false): boolean {
+  if (rows.length < startIdx + 3) return false
+  
+  let largeValueCount = 0
+  let totalCellsChecked = 0
+  
+  // Untuk matrix data, cek hanya kolom 2+ (skip NIK/NAMA columns, fokus ke date-columns)
+  // Untuk raw data, cek semua kolom seperti biasa
+  const startCol = isMatrixData ? 2 : 0
+  const maxCol = isMatrixData ? 12 : 12  // Untuk matrix, cek lebih banyak kolom date
+  
+  // Cek sampel data dari row startIdx hingga +20 (skip header)
+  for (let i = startIdx; i < Math.min(startIdx + 20, rows.length); i++) {
+    const row = rows[i]
+    for (let ci = startCol; ci < Math.min(maxCol, row.length); ci++) {
+      const val = numVal(row[ci])
+      totalCellsChecked++
+      // Transaksi real: nilai jutaan rupiah (≥100,000)
+      if (val >= 100_000) {
+        largeValueCount++
+      }
+    }
+  }
+  
+  // Perlu minimal 2 nilai besar dari sample cells yang dicek (bukan kebetulan)
+  // Atau: minimal 5% dari cells adalah nilai besar
+  return largeValueCount >= 2 || (totalCellsChecked > 0 && largeValueCount / totalCellsChecked > 0.05)
+}
+
+// Deteksi COPAS S2 format ketat: header kosong, tapi data rows punya struktur transaksi
+// Atau: header tidak dikenal (bukan NIK/NAMA/TANGGAL/RECEIPT), cek data untuk confirm
+function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
+  if (rows.length < 3) return false
+  
+  const firstRow = rows[0].map(v => v.trim())
+  const hasKnownHeaderLabel = firstRow.some(h => 
+    h.toUpperCase().includes('NIK') || 
+    h.toUpperCase().includes('NAMA') || 
+    h.toUpperCase().includes('TANGGAL') || 
+    h.toUpperCase().includes('RECEIPT') ||
+    h.toUpperCase().includes('ARTIKEL') ||
+    h.toUpperCase().includes('TOTAL')
+  )
+  
+  // Kalau header punya label dikenal, pasti bukan empty header case
+  if (hasKnownHeaderLabel) return false
+  
+  // Kalau first row kosong/minimal, kemungkinan true empty header
+  const emptyHeaderCount = firstRow.filter(h => h.length === 0).length
+  const isHeaderLikelyEmpty = emptyHeaderCount > firstRow.length / 2
+  
+  // Cek baris data ke-2 sampai ke-20 untuk find NIK/NAMA/DATE pattern
+  // Lebih aggressive: NIK bisa 4+ digit (fleksibel), NAMA bisa text apapun > 2 chars,
+  // DATE bisa berbagai format atau just numeric value
+  for (let i = 1; i <= Math.min(20, rows.length - 1); i++) {
+    const row = rows[i]
+    if (!row || row.length < 3) continue
+    
+    const col0 = (row[0] ?? '').trim()
+    const col1 = (row[1] ?? '').trim()
+    const col2 = (row[2] ?? '').trim()
+    
+    // Skip baris yang jelas kosong atau NONAME (sistem row)
+    if (!col0 || !col1) continue
+    if (col0.toUpperCase() === 'NONAME' || col1.toUpperCase() === 'NONAME') continue
+    
+    // Struktur COPAS S2 raw: [NIK] [NAMA] [TANGGAL/VALUE] [...]
+    // Col0: NIK = angka 4+ digit (maybe with leading zeros), atau I-prefixed
+    const col0IsNik = /^(I?\d{4,}|I\d{5})$/i.test(col0)
+    // Col1: NAMA = text (bukan semua digit), length > 2 (bukan short codes)
+    const col1IsName = col1 && !/^[\d\.\,\-]+$/.test(col1) && col1.length > 2
+    // Col2: TANGGAL/VALUE = tanggal format atau numeric (transaksi value)
+    const col2LooksLikeDate = col2 && (
+      looksLikeDateHeader(col2) || 
+      /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(col2) ||
+      /^\d+$/.test(col2) // just numeric
+    )
+    
+    if (col0IsNik && col1IsName && col2LooksLikeDate) {
+      return true
+    }
+  }
+  
+  // Jika header likely empty DAN ada banyak numeric values di kolom-kolom awal,
+  // dan ada text values (nama-like), kemungkinan COPAS S2 raw with empty header
+  if (isHeaderLikelyEmpty) {
+    for (let i = 1; i < Math.min(10, rows.length); i++) {
+      const row = rows[i]
+      if (row.length >= 3) {
+        const col0 = (row[0] ?? '').trim()
+        const col1 = (row[1] ?? '').trim()
+        
+        // Skip system rows
+        if (!col0 || col0.toUpperCase() === 'NONAME' || !col1) continue
+        
+        // Fleksibel: col0 bisa angka 4+, col1 bisa text (tapi bukan semua angka)
+        const col0LooksLikeNik = /^\d{4,}$/.test(col0)
+        const col1LooksLikeName = col1.length > 2 && !/^[\d\.\,]+$/.test(col1)
+        
+        if (col0LooksLikeNik && col1LooksLikeName) {
+          return true
+        }
+      }
+    }
+  }
+  
+  return false
+}
+
 export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
   const nikNameMap = await fetchNikNameMapping()
-  const candidates = ['COPAS S2', 'COPAS', 'COPAS S2 ', 'COPAS S2 (1)', 'COPAS S2 (2)', 'RAW DATA', 'TRANSAKSI', 'DAILY SALES']
+  // Candidates dengan gid (lebih reliable dari sheet name yang prone to silent fallback)
+  // Format: [name, gid] atau [name, undefined] untuk nama-only fallback
+  const candidates = [
+    ['COPAS S2', 1092675108],
+    ['COPAS S2', undefined],  // Fallback: try dengan sheet name
+    ['COPAS', undefined],
+    ['COPAS S2 ', undefined],
+    ['COPAS S2 (1)', undefined],
+    ['COPAS S2 (2)', undefined],
+    ['RAW DATA', undefined],
+    ['TRANSAKSI', undefined],
+    ['DAILY SALES', undefined],
+  ] as const
 
   const debugRows: string[] = []
   let raw: string[][] | null = null
@@ -343,32 +503,92 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   // matrix-style sheet (dates as columns). If no raw sheet is found,
   // fall back to the first matrix-style candidate.
   let matrixFallback: { rows: string[][]; name: string } | null = null
-  for (const candidate of candidates) {
+  for (const [candidate, gid] of candidates) {
     try {
-      const candidateRows = await fetchCSV(candidate)
+      let candidateRows = await fetchCSV(candidate, gid)
+      // Koneksi bisa terputus TEPAT setelah baris header (tanpa melempar error dan tanpa
+      // kutip yang tidak tertutup), jadi hasilnya cuma 1 baris kosong padahal harusnya
+      // ribuan baris. Ini hanya relevan utk kandidat utama ('COPAS S2') yang seharusnya
+      // besar — kandidat fallback lain boleh saja kosong (sheet memang tidak ada).
+      if (candidate === 'COPAS S2' && gid && candidateRows.length <= 1) {
+        for (let extra = 0; extra < 2 && candidateRows.length <= 1; extra++) {
+          await new Promise(r => setTimeout(r, 300))
+          const retryRows = await fetchCSV(candidate, gid)
+          if (retryRows.length > candidateRows.length) candidateRows = retryRows
+        }
+      }
       const firstRow = candidateRows[0]?.map(v => v.trim()) ?? []
       const isReferenceSheet = candidateRows.some(row => row.some(cell => cell.includes('#REF!')))
       const headerText = firstRow.join(' | ').toUpperCase()
       const looksLikeMatrix = firstRow.some(h => looksLikeDateHeader(h)) && headerText.includes('NIK') && headerText.includes('NAMA')
       const looksLikeRaw = firstRow.some(h => h.toUpperCase().includes('TANGGAL')) || firstRow.some(h => h.toUpperCase().includes('RECEIPT'))
+      // Header baris 1 di COPAS S2 kadang kosong (tanpa label kolom) — kalau begitu,
+      // deteksi format dari isi beberapa baris data pertama (bukan cuma baris ke-2,
+      // karena baris ke-2 kadang baris sistem "NONAME" dengan NIK kosong).
+      const hasKnownHeaderLabel = headerText.includes('NIK') || headerText.includes('NAMA') || headerText.includes('TANGGAL') || headerText.includes('RECEIPT')
+      const sampleDataRows = candidateRows.slice(1, 20).map(row => row.map(v => v.trim()))
+      const dataLooksLikeRaw = !hasKnownHeaderLabel
+        && sampleDataRows.some(row => /^\d{4,}$/.test(row[0] ?? '') && row.some(v => looksLikeDateHeader(v)))
+      
+      // COPAS S2 dengan header kosong butuh deteksi yang ketat
+      const hasCopasS2EmptyHeader = candidate === 'COPAS S2' && detectCopasS2WithEmptyHeader(candidateRows)
+      
+      // Validasi: jika kita ambil data ini, pastikan bukan data yang terlalu kecil
+      // (yang mana bisa indikasi kita baca sheet yang salah via gviz fallback)
+      const hasReasonableData = looksLikeRealTransactionData(candidateRows, hasKnownHeaderLabel ? 1 : 2)
+      
+      // Log deteksi untuk debug
+      if (candidate === 'COPAS S2' || candidate === 'COPAS') {
+        debugRows.push(`[DETECT] ${candidate}: looksLikeRaw=${looksLikeRaw}, dataLooksLikeRaw=${dataLooksLikeRaw}, hasCopasS2EmptyHeader=${hasCopasS2EmptyHeader}, hasReasonableData=${hasReasonableData}, looksLikeMatrix=${looksLikeMatrix}`)
+      }
 
       if (!candidateRows.length || isReferenceSheet) continue
-      if (looksLikeRaw) {
+      if (looksLikeRaw || dataLooksLikeRaw || hasCopasS2EmptyHeader) {
+        // Extra validation: jika empty header, WAJIB punya data yang masuk akal
+        if ((dataLooksLikeRaw || hasCopasS2EmptyHeader) && !hasReasonableData) {
+          debugRows.push(`⚠ Sheet "${candidate}" terdeteksi format raw tapi datanya terlalu kecil (kemungkinan sheet salah) — skip`)
+          continue
+        }
         raw = candidateRows
         usedSheet = candidate
         break
       }
       if (looksLikeMatrix && !matrixFallback) {
-        matrixFallback = { rows: candidateRows, name: candidate }
+        // Validasi matrix sheet: WAJIB punya real transaction data (nilai jutaan)
+        // Jika nilai terlalu kecil (count/summary sheet), jangan ambil sebagai fallback
+        // Pass isMatrixData=true untuk validator lebih ketat pada kolom tanggal
+        if (looksLikeRealTransactionData(candidateRows, 1, true)) {
+          debugRows.push(`[MATRIX-OK] ${candidate}: akan dijadikan fallback (punya real data)`)
+          matrixFallback = { rows: candidateRows, name: candidate }
+        } else {
+          debugRows.push(`[MATRIX-SKIP] ${candidate}: data terlalu kecil, skip sebagai fallback`)
+        }
       }
-    } catch {
-      // Try next candidate sheet name
+    } catch (e) {
+      // Log kegagalan fetch supaya kelihatan di debug log (bukan diam-diam gagal),
+      // penting utk sheet besar seperti COPAS S2 yang rawan koneksi terputus.
+      debugRows.push(`Gagal fetch sheet "${candidate}": ${e instanceof Error ? e.message : String(e)}`)
     }
   }
 
-  if (!raw && matrixFallback) {
-    raw = matrixFallback.rows
-    usedSheet = matrixFallback.name
+  // FALLBACK #1: Prioritas 1 - ambil sheet yang punya data, even jika validation ketat tidak pass.
+  // Alasan: gviz silent fallback ke gid=0 bisa return data yang tidak expected, tapi paling tidak punya rows.
+  // Validasi ketat (looksLikeMatrix, looksLikeRaw, dll) mungkin terlalu restrictive untuk beberapa format.
+  if (!raw) {
+    for (const [candidate, gid] of candidates) {
+      try {
+        const candidateRows = await fetchCSV(candidate, gid)
+        if (candidateRows.length > 10) {
+          // Ada data minimal 10 baris, terima saja. Parsing logic akan handle format.
+          debugRows.push(`[FALLBACK-DATA] ${candidate} punya ${candidateRows.length} baris, accept dengan fallback`)
+          raw = candidateRows
+          usedSheet = candidate
+          break
+        }
+      } catch (e) {
+        // Skip ke candidate berikutnya
+      }
+    }
   }
 
   if (!raw) {

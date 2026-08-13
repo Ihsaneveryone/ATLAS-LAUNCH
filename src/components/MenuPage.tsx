@@ -5,6 +5,7 @@ import type { User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow } from '../services/tokoApi'
+import { LoadingSkeleton, DataLoadingOverlay } from './LoadingSkeletons'
 
 export const MENU_SETTINGS_KEY = 'atlas_menu_settings'
 export function getMenuSettings(): Record<string, boolean> {
@@ -196,6 +197,16 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
   const px = isMobile ? '16px' : '32px'
   const [menuSettings] = useState(getMenuSettings)
 
+  // Show loading skeleton on first load
+  if (loading) {
+    return (
+      <>
+        <LoadingSkeleton />
+        <DataLoadingOverlay />
+      </>
+    )
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: S.bg }}>
       <header style={{ background: '#fff', borderBottom: `1px solid ${S.border}`, padding: `12px ${px}`, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -212,7 +223,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
               </div>
             )}
             <button onClick={() => reload(user.nik)} disabled={loading}
-              style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${S.border}`, background: '#f8faff', color: S.muted, fontSize: 12, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}
+              style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${S.border}`, background: '#f8faff', color: S.muted, fontSize: 12, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
               title="Refresh data">
               {loading ? '⟳' : '↻'}
             </button>

@@ -24,6 +24,8 @@ const COLUMNS: Record<SheetKey, ColDef[]> = {
     { col: 'C', header: 'ROLE',     type: 'admin / user',  contoh: 'admin',           desc: '"admin" untuk manajer, "user" untuk karyawan' },
     { col: 'D', header: 'JOBTITLE', type: 'Text',          contoh: 'Manajer',         desc: 'Jabatan karyawan (Manajer, Sales, SPV, CCR, dll)' },
     { col: 'E', header: 'PASSWORD', type: 'Text',          contoh: '123456',          desc: 'Password login karyawan' },
+    { col: 'F', header: 'DEPARTEMEN USER', type: 'Text',   contoh: 'Home Comfort',    desc: 'Departemen user untuk filter ranking (bisa lebih dari 1 pilihan saat filter)' },
+    { col: 'G', header: 'ZONA',     type: 'Text',          contoh: 'Zona 1',          desc: 'Zona user untuk filter ranking admin/user' },
   ],
   daily: [
     { col: 'A',  header: 'NIK',            type: 'Text',    contoh: '187856',      desc: 'NIK karyawan — harus sama dengan sheet USERS' },
@@ -59,10 +61,10 @@ const COLUMNS: Record<SheetKey, ColDef[]> = {
 
 const SAMPLES: Record<SheetKey, string[][]> = {
   users: [
-    ['191924', 'KARYAWAN A', 'admin', 'Manajer',       '123456'],
-    ['187856', 'KARYAWAN B', 'user',  'Sales',         '654321'],
-    ['176413', 'KARYAWAN C', 'user',  'Sales Advisor', 'azko123'],
-    ['113230', 'KARYAWAN D', 'user',  'Sales Advisor', 'azko123'],
+    ['191924', 'KARYAWAN A', 'admin', 'Manajer',       '123456', 'Management',   'Zona 1'],
+    ['187856', 'KARYAWAN B', 'user',  'Sales',         '654321', 'Home Comfort', 'Zona 2'],
+    ['176413', 'KARYAWAN C', 'user',  'Sales Advisor', 'azko123', 'Kitchenware',  'Zona 2'],
+    ['113230', 'KARYAWAN D', 'user',  'Sales Advisor', 'azko123', 'Kitchenware',  'Zona 3'],
   ],
   daily: [
     ['187856', 'KARYAWAN B', 'Sales', '13500000', '15000000', '23', '48', '273125', '2.1', '570000', '8', '3', '5'],

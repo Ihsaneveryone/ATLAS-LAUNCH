@@ -6,9 +6,11 @@ export interface User {
   role: UserRole
   jobTitle: string
   password: string
+  departmentUser?: string
+  userZone?: string
 }
 
-// USERS sheet: A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD (data from row 2)
+// USERS sheet: A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD, F=DEPARTEMEN USER, G=ZONA (data from row 2)
 export const USERS: User[] = []
 
 export interface KPIItem {

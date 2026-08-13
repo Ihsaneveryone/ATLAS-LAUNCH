@@ -3,19 +3,31 @@ import { getConfiguredColumnIndex } from './columnMappingService'
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 
 function parseCSV(text: string): string[][] {
+  // Iterasi seluruh teks (bukan split per baris dulu) — sel yang mengandung
+  // enter literal di dalam tanda kutip tidak boleh memecah baris data.
   const rows: string[][] = []
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue
-    const cells: string[] = []
-    let inQ = false, cell = ''
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i]
-      if (c === '"') { if (inQ && line[i+1] === '"') { cell += '"'; i++ } else inQ = !inQ }
-      else if (c === ',' && !inQ) { cells.push(cell); cell = '' }
-      else cell += c
+  let cells: string[] = []
+  let cell = ''
+  let inQuote = false
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (inQuote) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++ } else { inQuote = false } }
+      else { cell += ch }
+      continue
     }
+    if (ch === '"') { inQuote = true }
+    else if (ch === ',') { cells.push(cell); cell = '' }
+    else if (ch === '\r') { /* diabaikan, \n yang menandai akhir baris */ }
+    else if (ch === '\n') {
+      cells.push(cell); cell = ''
+      if (cells.some(v => v.trim())) rows.push(cells)
+      cells = []
+    } else { cell += ch }
+  }
+  if (cell !== '' || cells.length > 0) {
     cells.push(cell)
-    rows.push(cells)
+    if (cells.some(v => v.trim())) rows.push(cells)
   }
   return rows
 }
