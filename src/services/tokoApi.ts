@@ -118,12 +118,12 @@ export async function fetchPencapaianToko(): Promise<TokoRow[]> {
   const targetOnlineMTDIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_TARGET_ONLINE_MTD', 48)
 
   // Debug: log semua baris dengan kolom B & U untuk cek date vs trafficMTD
-  const dataRows = raw.slice(3).filter(r => g(r, dateIdx))
+  const dataRows = raw.slice(2).filter(r => g(r, dateIdx))
   dataRows.forEach((r, i) => {
     const b = g(r, dateIdx), u = g(r, trafficMTDIdx), t = g(r, targetTrafficMTDIdx)
     if (u || i < 15) console.warn(`[TOKO ROW ${i+1}] date=${b} | T(tgtTrafficMTD)=${t} | U(trafficMTD)=${u}`)
   })
-  // Data mulai baris ke-4 (index 3)
+  // Data mulai baris ke-3 (index 2)
   return dataRows.map(r => ({
     date:             g(r, dateIdx),
     salesDaily:       n(g(r, salesDailyIdx)),
@@ -159,28 +159,43 @@ export async function fetchPencapaianToko(): Promise<TokoRow[]> {
   }))
 }
 
-// Parse day number from sheet date string (DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
-function parseDayFromDateStr(dateStr: string): number {
-  if (!dateStr) return 0
+// Parse date parts from sheet date string (DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
+function parseDateParts(dateStr: string): { day: number; month: number; year: number } | null {
+  if (!dateStr) return null
   const parts = dateStr.split(/[-\/]/)
   if (parts.length === 3) {
-    if (parts[0].length === 4) return parseInt(parts[2], 10) // YYYY-MM-DD → day
-    return parseInt(parts[0], 10)                            // DD-MM-YYYY → day
+    if (parts[0].length === 4) {
+      return { day: parseInt(parts[2], 10), month: parseInt(parts[1], 10), year: parseInt(parts[0], 10) }
+    }
+    return { day: parseInt(parts[0], 10), month: parseInt(parts[1], 10), year: parseInt(parts[2], 10) }
   }
-  return 0
+  return null
+}
+
+function parseDayFromDateStr(dateStr: string): number {
+  return parseDateParts(dateStr)?.day ?? 0
+}
+
+function dateKey(date: { day: number; month: number; year: number }): string {
+  return `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`
 }
 
 // Untuk TODAY: baris tanggal hari ini
 export function todayTokoRow(rows: TokoRow[]): TokoRow | null {
   if (rows.length === 0) return null
-  const todayDay = new Date().getDate()
+  const today = new Date()
+  const todayKey = dateKey({ day: today.getDate(), month: today.getMonth() + 1, year: today.getFullYear() })
   for (let i = rows.length - 1; i >= 0; i--) {
-    if (parseDayFromDateStr(rows[i].date) === todayDay) return rows[i]
+    const date = parseDateParts(rows[i].date)
+    if (date && dateKey(date) === todayKey) {
+      return rows[i]
+    }
   }
   // fallback: baris terdekat ≤ hari ini yang ada data
+  const todayDay = today.getDate()
   for (let i = rows.length - 1; i >= 0; i--) {
-    const d = parseDayFromDateStr(rows[i].date)
-    if (d <= todayDay && (rows[i].salesMTD > 0 || rows[i].salesDaily > 0)) return rows[i]
+    const date = parseDateParts(rows[i].date)
+    if (date && date.day <= todayDay && (rows[i].salesMTD > 0 || rows[i].salesDaily > 0)) return rows[i]
   }
   return rows[rows.length - 1]
 }

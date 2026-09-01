@@ -188,19 +188,19 @@ function MTDView({ row, workingDays }: { row: TokoRow; workingDays: number }) {
 }
 
 // ─── FULL MONTH ───────────────────────────────────────────────────────────────
-// col L, AJ, AO, AW semua prorated → un-prorate semua ke full month (× daysInMonth / workingDays)
-function FullMonthView({ row, workingDays }: { row: TokoRow; workingDays: number }) {
+// Target Full Month diambil langsung dari baris rekap akhir bulan.
+function FullMonthView({ row, targetRow }: { row: TokoRow; targetRow: TokoRow }) {
   const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
-  const acv         = workingDays > 0 ? Math.round(row.salesMTD / workingDays) : 0
-  const ratio       = workingDays > 0 ? daysInMonth / workingDays : 1
+  const currentDay  = Math.max(1, parseDayNum(row.date))
+  const acv          = Math.round(row.salesMTD / currentDay)
 
-  const fmTarget            = Math.round(row.targetMTD           * ratio)
-  const fmTargetTraffic     = Math.round(row.targetTrafficMTD    * ratio)
-  const fmTargetTransaksi   = Math.round(row.targetTransaksiMTD  * ratio)
-  const fmTargetProteksi    = Math.round(row.targetProteksiMTD   * ratio)
-  const fmTargetNM          = Math.round(row.targetNewMemberMTD  * ratio)
-  const fmTargetOnline      = Math.round(row.targetOnlineMTD     * ratio)
-  const fmTargetBasketSize  = Math.round(row.targetBasketSizeMTD * ratio)
+  const fmTarget            = targetRow.targetMTD
+  const fmTargetTraffic     = targetRow.targetTrafficMTD
+  const fmTargetTransaksi   = targetRow.targetTransaksiMTD
+  const fmTargetProteksi    = targetRow.targetProteksiMTD
+  const fmTargetNM          = targetRow.targetNewMemberMTD
+  const fmTargetOnline      = targetRow.targetOnlineMTD
+  const fmTargetBasketSize  = targetRow.targetBasketSizeMTD
 
   const achPct   = pct(row.salesMTD, fmTarget)
   const color    = clr(achPct)
@@ -230,7 +230,7 @@ function FullMonthView({ row, workingDays }: { row: TokoRow; workingDays: number
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <PerfHeader donut={donut} title={`Full Month — Hari ke-${workingDays} dari ${daysInMonth}`} main={formatRupiahFull(row.salesMTD)} sub={`dari target full month ${formatRupiahFull(fmTarget)}`}/>
+      <PerfHeader donut={donut} title={`Full Month — Hari ke-${currentDay} dari ${daysInMonth}`} main={formatRupiahFull(row.salesMTD)} sub={`dari target full month ${formatRupiahFull(fmTarget)}`}/>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: 10 }}>
         {kpis.map(k => <KPICard key={k.label} {...k}/>)}
       </div>
@@ -723,7 +723,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
           <>
             {tab === 'today'     && todayRow           && <TodayView     row={todayRow}/>}
             {tab === 'mtd'       && latest             && <MTDView       row={latest}   workingDays={workingDays}/>}
-            {tab === 'fullmonth' && todayRow            && <FullMonthView row={todayRow} workingDays={todayWDays}/>}
+            {tab === 'fullmonth' && todayRow && tokoRows.length > 0 && <FullMonthView row={todayRow} targetRow={tokoRows[tokoRows.length - 1]}/>}
             {tab === 'trend'     && tokoRows.length > 0 && <TrendView     rows={tokoRows}/>} 
             {tab === 'dept'      && <DeptView sbd={deptSbd} mtd={deptMtd} trend={deptTrend} loading={deptLoading} error={deptError} />}
           </>

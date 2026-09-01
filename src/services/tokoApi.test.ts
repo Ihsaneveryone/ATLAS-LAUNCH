@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fetchPencapaianToko } from './tokoApi'
+import { fetchPencapaianToko, todayTokoRow } from './tokoApi'
 
 function csvResponse(text: string) {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/csv' } })
@@ -25,5 +25,16 @@ describe('fetchPencapaianToko', () => {
       newMember: 2,
       instantUpgrade: 4,
     })
+  })
+
+  it('prioritizes the complete current date over a later day in the same month', () => {
+    vi.setSystemTime(new Date(2026, 8, 1))
+
+    const rows = [
+      { date: '01-09-2026', salesDaily: 100, salesMTD: 100 },
+      { date: '30-09-2026', salesDaily: 100, salesMTD: 100 },
+    ] as Parameters<typeof todayTokoRow>[0]
+
+    expect(todayTokoRow(rows)?.date).toBe('01-09-2026')
   })
 })
