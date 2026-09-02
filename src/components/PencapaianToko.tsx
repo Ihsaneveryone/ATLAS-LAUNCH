@@ -3,7 +3,7 @@ import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiahFull, formatRupiah, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
-import { latestTokoRow, todayTokoRow, type TokoRow } from '../services/tokoApi'
+import { fullMonthTokoRow, latestTokoRow, todayTokoRow, type TokoRow } from '../services/tokoApi'
 import { fetchPencapaianDept, type DeptPeriodData, type DeptTrendData } from '../services/deptApi'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
@@ -652,7 +652,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
   const todayRow     = todayTokoRow(tokoRows)   // TODAY & Full Month → data hari ini
   const latest       = latestTokoRow(tokoRows)  // MTD → H-1
   const workingDays  = latest    ? parseDayNum(latest.date)    : Math.max(1, new Date().getDate() - 1) // H-1
-  const todayWDays   = todayRow  ? parseDayNum(todayRow.date)  : new Date().getDate()                  // hari ini
+  const fullMonthTarget = fullMonthTokoRow(tokoRows)
 
   useEffect(() => {
     let cancelled = false
@@ -723,7 +723,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
           <>
             {tab === 'today'     && todayRow           && <TodayView     row={todayRow}/>}
             {tab === 'mtd'       && latest             && <MTDView       row={latest}   workingDays={workingDays}/>}
-            {tab === 'fullmonth' && todayRow && tokoRows.length > 0 && <FullMonthView row={todayRow} targetRow={tokoRows[tokoRows.length - 1]}/>}
+            {tab === 'fullmonth' && todayRow && fullMonthTarget && <FullMonthView row={todayRow} targetRow={fullMonthTarget}/>}
             {tab === 'trend'     && tokoRows.length > 0 && <TrendView     rows={tokoRows}/>} 
             {tab === 'dept'      && <DeptView sbd={deptSbd} mtd={deptMtd} trend={deptTrend} loading={deptLoading} error={deptError} />}
           </>

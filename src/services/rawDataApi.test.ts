@@ -61,7 +61,7 @@ describe('buildRawPerformance', () => {
 
     expect(result.todayPerf.actual).toBe(0)
     expect(result.todayPerf.ranking).toHaveLength(0)
-    expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(true)
+    expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(false)
   })
 
   it('does not use yesterday\'s sales when there is no transaction for today', async () => {
@@ -167,7 +167,7 @@ describe('buildRawPerformance', () => {
 
     expect(result.todayPerf.actual).toBe(0)
     expect(result.todayPerf.ranking).toHaveLength(0)
-    expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(true)
+    expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(false)
   })
 
   it('derives qty and aur targets from target transaksi and target upt', async () => {

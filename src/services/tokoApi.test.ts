@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fetchPencapaianToko, todayTokoRow } from './tokoApi'
+import { fetchPencapaianToko, fullMonthTokoRow, latestTokoRow, todayTokoRow } from './tokoApi'
 
 function csvResponse(text: string) {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/csv' } })
@@ -36,5 +36,30 @@ describe('fetchPencapaianToko', () => {
     ] as Parameters<typeof todayTokoRow>[0]
 
     expect(todayTokoRow(rows)?.date).toBe('01-09-2026')
+  })
+
+  it('uses yesterday in Jakarta for MTD and never takes another month', () => {
+    vi.setSystemTime(new Date('2026-09-04T00:30:00Z'))
+    const rows = [
+      { date: '31-08-2026', salesDaily: 100, salesMTD: 100 },
+      { date: '02-09-2026', salesDaily: 200, salesMTD: 200 },
+      { date: '03-09-2026', salesDaily: 300, salesMTD: 300 },
+    ] as Parameters<typeof latestTokoRow>[0]
+
+    expect(latestTokoRow(rows)?.date).toBe('03-09-2026')
+
+    vi.setSystemTime(new Date('2026-09-01T00:30:00Z'))
+    expect(latestTokoRow(rows)).toBeNull()
+  })
+
+  it('selects Full Month target from the latest row in the current Jakarta month', () => {
+    vi.setSystemTime(new Date('2026-09-02T00:30:00Z'))
+    const rows = [
+      { date: '31-08-2026', targetMTD: 800 },
+      { date: '01-09-2026', targetMTD: 100 },
+      { date: '30-09-2026', targetMTD: 5760119333 },
+    ] as Parameters<typeof fullMonthTokoRow>[0]
+
+    expect(fullMonthTokoRow(rows)?.targetMTD).toBe(5760119333)
   })
 })

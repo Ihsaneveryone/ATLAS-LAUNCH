@@ -1533,7 +1533,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(mtdPerfs, targets, wdays, true, canonicalCurrent),
+      ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }

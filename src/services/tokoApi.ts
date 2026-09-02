@@ -172,8 +172,15 @@ function parseDateParts(dateStr: string): { day: number; month: number; year: nu
   return null
 }
 
-function parseDayFromDateStr(dateStr: string): number {
-  return parseDateParts(dateStr)?.day ?? 0
+function jakartaDateParts(now = new Date()): { day: number; month: number; year: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now)
+  return {
+    day: Number(parts.find(part => part.type === 'day')?.value),
+    month: Number(parts.find(part => part.type === 'month')?.value),
+    year: Number(parts.find(part => part.type === 'year')?.value),
+  }
 }
 
 function dateKey(date: { day: number; month: number; year: number }): string {
@@ -183,8 +190,8 @@ function dateKey(date: { day: number; month: number; year: number }): string {
 // Untuk TODAY: baris tanggal hari ini
 export function todayTokoRow(rows: TokoRow[]): TokoRow | null {
   if (rows.length === 0) return null
-  const today = new Date()
-  const todayKey = dateKey({ day: today.getDate(), month: today.getMonth() + 1, year: today.getFullYear() })
+  const today = jakartaDateParts()
+  const todayKey = dateKey(today)
   for (let i = rows.length - 1; i >= 0; i--) {
     const date = parseDateParts(rows[i].date)
     if (date && dateKey(date) === todayKey) {
@@ -192,28 +199,41 @@ export function todayTokoRow(rows: TokoRow[]): TokoRow | null {
     }
   }
   // fallback: baris terdekat ≤ hari ini yang ada data
-  const todayDay = today.getDate()
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const date = parseDateParts(rows[i].date)
-    if (date && date.day <= todayDay && (rows[i].salesMTD > 0 || rows[i].salesDaily > 0)) return rows[i]
-  }
-  return rows[rows.length - 1]
+  return null
 }
 
 // Untuk MTD: H-1 (kemarin), karena data toko MTD baru final setelah hari tutup
 export function latestTokoRow(rows: TokoRow[]): TokoRow | null {
   if (rows.length === 0) return null
-  const yesterdayDay = new Date().getDate() - 1
-  if (yesterdayDay <= 0) return todayTokoRow(rows) // awal bulan, pakai hari ini
+  const today = jakartaDateParts()
+  const yesterday = new Date(Date.UTC(today.year, today.month - 1, today.day - 1))
+  const yesterdayParts = {
+    day: yesterday.getUTCDate(), month: yesterday.getUTCMonth() + 1, year: yesterday.getUTCFullYear(),
+  }
+  if (yesterdayParts.year !== today.year || yesterdayParts.month !== today.month) return null
+  const yesterdayKey = dateKey(yesterdayParts)
 
   // Cari baris H-1
   for (let i = rows.length - 1; i >= 0; i--) {
-    if (parseDayFromDateStr(rows[i].date) === yesterdayDay) return rows[i]
+    const date = parseDateParts(rows[i].date)
+    if (date && dateKey(date) === yesterdayKey) return rows[i]
   }
-  // fallback: baris terdekat ≤ H-1 yang ada data
+  // fallback: baris terdekat ≤ H-1 pada bulan yang sama
   for (let i = rows.length - 1; i >= 0; i--) {
-    const d = parseDayFromDateStr(rows[i].date)
-    if (d <= yesterdayDay && (rows[i].salesMTD > 0 || rows[i].salesDaily > 0)) return rows[i]
+    const date = parseDateParts(rows[i].date)
+    if (date && date.year === yesterdayParts.year && date.month === yesterdayParts.month && date.day <= yesterdayParts.day && (rows[i].salesMTD > 0 || rows[i].salesDaily > 0)) return rows[i]
   }
-  return rows[rows.length - 1]
+  return null
+}
+
+// Untuk FULL MONTH: target dari baris terakhir bulan berjalan, bukan baris terakhir global.
+export function fullMonthTokoRow(rows: TokoRow[]): TokoRow | null {
+  const today = jakartaDateParts()
+  return rows.reduce<TokoRow | null>((latest, row) => {
+    const date = parseDateParts(row.date)
+    if (!date || date.year !== today.year || date.month !== today.month) return latest
+    if (!latest) return row
+    const latestDate = parseDateParts(latest.date)
+    return latestDate && date.day > latestDate.day ? row : latest
+  }, null)
 }
