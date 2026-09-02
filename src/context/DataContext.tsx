@@ -4,6 +4,7 @@ import { fetchUsers } from '../services/sheetsApi'
 import type { TeamEmployeeSummary } from '../services/rawDataApi'
 import { buildRawPerformance, fetchMenuConfig } from '../services/rawDataApi'
 import { fetchPencapaianToko, type TokoRow } from '../services/tokoApi'
+import { niksMatch } from '../services/nik'
 import type { User, PerformanceData, DailyTrend, KPIItem } from '../data/mockData'
 
 function emptyPerformance(workingDays = 1): PerformanceData {
@@ -157,7 +158,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       dailyDate = result.dailyDate
       teamTodayTrend = result.teamTodayTrend
       teamMtdTrend = result.teamMtdTrend
-      teamTodayEmployees = result.teamTodayEmployees
+      // Today memakai nama resmi USERS agar nama placeholder seperti Default
+      // dari transaksi tidak menimpa nama karyawan.
+      teamTodayEmployees = result.teamTodayEmployees.map(employee => {
+        const user = liveUsers.find(candidate => niksMatch(candidate.nik, employee.nik))
+        return user?.nama?.trim() ? { ...employee, nama: user.nama.trim() } : employee
+      })
       teamMtdEmployees = result.teamMtdEmployees
     } catch (e: any) {
       const msg = e?.message ?? String(e)
