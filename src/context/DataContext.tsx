@@ -153,7 +153,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // Hanya NIK dengan role 'user' yang masuk ranking — exclude admin & NIK anomali
       const validNiks = new Set(liveUsers.filter(u => u.role === 'user').map(u => u.nik))
       const result = await buildRawPerformance(nik, log, validNiks)
-      todayPerf = result.todayPerf
+      const todayRanking = result.todayPerf.ranking.map(employee => {
+        const user = liveUsers.find(candidate => niksMatch(candidate.nik, employee.nik))
+        return user?.nama?.trim() ? { ...employee, nama: user.nama.trim() } : employee
+      })
+      todayPerf = { ...result.todayPerf, ranking: todayRanking }
       mtdPerf   = result.mtdPerf
       dailyDate = result.dailyDate
       teamTodayTrend = result.teamTodayTrend
