@@ -9,6 +9,7 @@ import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
 import { getTrackerUrl, setTrackerUrl, writeMenuConfigToSheet } from '../services/loginTracker'
 import { getMenuSettings, setMenuSetting } from './MenuPage'
 import { useAdminSettings } from '../context/AdminSettingsContext'
+import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
 import {
   AreaChart, Area,
@@ -264,6 +265,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   return (
     <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
+      {loading && <DataLoadingOverlay />}
 
       {/* ── Sidebar (desktop) / Top nav (mobile) ───────────────────────────── */}
       {!isMobile ? (
@@ -376,7 +378,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
         )}
 
         {/* ── TODAY / MTD ─────────────────────────────────────────────────── */}
-        {page !== 'ytd' && (
+        {page !== 'ytd' && page !== 'dept' && (
           <>
             {/* Summary stats */}
             {layout.showSummaryCards && <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)', gap: 12 }}>
