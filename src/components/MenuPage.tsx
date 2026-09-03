@@ -204,7 +204,7 @@ function OffCard() {
   ]
 
   return (
-    <section style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '16px 16px 0' : '24px 32px 0' }}>
+    <section style={{ width: '100%', margin: '0 0 14px', padding: 0 }}>
       <div style={{ background: '#fff', border: `1px solid ${S.border}`, borderRadius: 16, padding: isMobile ? '14px' : '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, minmax(0, 170px))', gap: isMobile ? 8 : 14 }}>
           {items.map(item => (
@@ -277,13 +277,13 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
 
       <TodayBar/>
       <TokoBar/>
-      <OffCard/>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '20px 16px' : '36px 32px' }}>
         <div style={{ marginBottom: 24 }}>
           <h2 style={{ color: S.text, fontSize: isMobile ? 20 : 24, fontWeight: 800, marginBottom: 4 }}>Halo, {user.nama} 👋</h2>
           <p style={{ color: S.muted, fontSize: 13 }}>Pilih menu untuk mulai memantau performa penjualan</p>
         </div>
+        <OffCard/>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(290px, 1fr))', gap: 14 }}>
           {MENUS.filter(m => !m.adminOnly || user.role === 'admin').map(m => {
             // Sheet (global semua device) → localStorage (lokal device) → default enabled
