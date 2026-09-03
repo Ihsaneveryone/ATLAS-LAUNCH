@@ -162,7 +162,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const user = liveUsers.find(candidate => niksMatch(candidate.nik, employee.nik))
         return user?.nama?.trim() ? { ...employee, nama: user.nama.trim() } : employee
       })
-      teamMtdEmployees = result.teamMtdEmployees
+      const officialName = (nik: string) => liveUsers.find(candidate => niksMatch(candidate.nik, nik))?.nama?.trim()
+      teamMtdEmployees = result.teamMtdEmployees.map(employee => {
+        const name = officialName(employee.nik)
+        return name ? { ...employee, nama: name } : employee
+      })
+      mtdPerf = {
+        ...mtdPerf,
+        ranking: mtdPerf.ranking.map(employee => {
+          const name = officialName(employee.nik)
+          return name ? { ...employee, nama: name } : employee
+        }),
+      }
     } catch (e: any) {
       const msg = e?.message ?? String(e)
       rawPerfError = `Gagal ambil data performa spreadsheet: ${msg}`

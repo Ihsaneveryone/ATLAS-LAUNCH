@@ -1147,8 +1147,12 @@ function buildRanking(
   includeZeroSales = false,
   ensureNik?: string,
   useMtdTarget = false,
+  validNiks: Set<string> = new Set(),
 ) {
-  const completedPerfs = [...perfs]
+  const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
+  const completedPerfs = perfs.filter(entry =>
+    validNiks.size === 0 || normalizedValidNiks.has(canonicalNik(entry.nik).toLowerCase()),
+  )
 
   if (includeZeroSales && ensureNik) {
     const ensured = canonicalNik(ensureNik).toLowerCase()
@@ -1552,7 +1556,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         myDaily.sales,
       workingDays: 1,
       kpis:        makeKPIs(myDaily, dailyTarget, false, 1, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(dailyPerfs, targets, 1),
+      ranking:     buildRanking(dailyPerfs, targets, 1, false, undefined, false, validNiks),
       dailyTrend:  todayTrendEntry,
     },
 
@@ -1566,7 +1570,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true),
+      ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true, validNiks),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }
