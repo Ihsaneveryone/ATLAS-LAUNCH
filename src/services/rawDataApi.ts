@@ -816,6 +816,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
     const dailyIdx = findTargetHeaderIndex([/TARGET SALES DAILY/i, /TARGET HARIAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 2))
     const monthlyIdx = findTargetHeaderIndex([/TARGET SALES BULAN/i, /TARGET SATU BULAN/i, /TARGET MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_MONTHLY', 3))
     const mtdKaryawanIdx = findTargetHeaderIndex([/TARGET MTD KARYAWAN/i, /TARGET MTD/i, /MTD KARYAWAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_MTD_KARYAWAN', 9))
+    const hasMtdKaryawanColumn = Boolean(headers[mtdKaryawanIdx])
     const offTerpakaiIdx = findTargetHeaderIndex([/OFF TERPAKAI/i, /OFF USED/i], getConfiguredColumnIndex('TARGET', 'TARGET_OFF_TERPAKAI', 10))
     const offBulanIniIdx = findTargetHeaderIndex([/OFF BULAN INI/i, /JUMLAH OFF/i, /TOTAL OFF/i], getConfiguredColumnIndex('TARGET', 'TARGET_OFF_BULAN_INI', 11))
     const trxDailyIdx = findTargetHeaderIndex([/TARGET TRANSAKSI DAILY/i, /TARGET TRX DAILY/i], getConfiguredColumnIndex('TARGET', 'TARGET_TRX_DAILY', 4))
@@ -851,7 +852,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
         }
       }
       
-      const entry: TargetData = { daily, monthly, mtdKaryawan: mtdKaryawan || undefined, offTerpakai: offTerpakai || undefined, offBulanIni: offBulanIni || undefined, nama, jobTitle,
+      const entry: TargetData = { daily, monthly, mtdKaryawan: hasMtdKaryawanColumn && mtdKaryawan > 0 ? mtdKaryawan : undefined, offTerpakai: offTerpakai || undefined, offBulanIni: offBulanIni || undefined, nama, jobTitle,
         targetTrxDaily:   targetTrxDaily   || undefined,
         targetTrxMonthly: targetTrxMonthly || undefined,
         targetBasketSizeDaily: targetBasketSizeDaily || undefined,
@@ -1176,7 +1177,10 @@ function buildRanking(
   }
 
   return completedPerfs
-  .filter(e => includeZeroSales || e.sales > 0)
+  .filter(e => {
+    if (!includeZeroSales && e.sales <= 0) return false
+    return true
+  })
   .sort((a, b) => {
     const taData = findTargetByNik(targets, a.nik)
     const tbData = findTargetByNik(targets, b.nik)
@@ -1186,12 +1190,14 @@ function buildRanking(
     const tb = useMtdTarget
       ? (tbData?.mtdKaryawan ?? (tbData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays)
       : (tbData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
-    return (b.sales / tb) - (a.sales / ta)
+    const aAchievement = ta > 0 ? a.sales / ta : 0
+    const bAchievement = tb > 0 ? b.sales / tb : 0
+    return bAchievement - aAchievement || b.sales - a.sales
   })
     .map((e, i) => {
       const tData = findTargetByNik(targets, e.nik)
       const tgt   = useMtdTarget
-        ? (tData?.mtdKaryawan ?? tData?.daily ?? DEFAULT_DAILY_TARGET * workingDays)
+        ? (tData?.mtdKaryawan ?? (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays)
         : (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
       // Gunakan nama dari targets sheet jika nama transaksi kosong/tidak valid
       const rawNama = e.nama && e.nama.trim() && e.nama.trim().toUpperCase() !== 'NONAME'
@@ -1200,7 +1206,7 @@ function buildRanking(
       return {
         rank: i + 1, nik: e.nik, nama: cleanNama(rawNama), jobTitle: tData?.jobTitle ?? '',
         value: e.sales, target: tgt, fullMonthTarget: tData?.monthly,
-        achievement: parseFloat(((e.sales / tgt) * 100).toFixed(1)),
+        achievement: tgt > 0 ? parseFloat(((e.sales / tgt) * 100).toFixed(1)) : 0,
       }
     })
 }
