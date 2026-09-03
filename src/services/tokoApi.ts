@@ -160,7 +160,7 @@ export async function fetchPencapaianToko(): Promise<TokoRow[]> {
 }
 
 // Parse date parts from sheet date string (DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD)
-function parseDateParts(dateStr: string): { day: number; month: number; year: number } | null {
+export function parseDateParts(dateStr: string): { day: number; month: number; year: number } | null {
   if (!dateStr) return null
   const parts = dateStr.split(/[-\/]/)
   if (parts.length === 3) {
@@ -172,7 +172,7 @@ function parseDateParts(dateStr: string): { day: number; month: number; year: nu
   return null
 }
 
-function jakartaDateParts(now = new Date()): { day: number; month: number; year: number } {
+export function jakartaDateParts(now = new Date()): { day: number; month: number; year: number } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(now)

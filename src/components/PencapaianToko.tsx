@@ -3,7 +3,7 @@ import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiahFull, formatRupiah, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
-import { fullMonthTokoRow, latestTokoRow, todayTokoRow, type TokoRow } from '../services/tokoApi'
+import { fullMonthTokoRow, jakartaDateParts, latestTokoRow, parseDateParts, todayTokoRow, type TokoRow } from '../services/tokoApi'
 import { fetchPencapaianDept, type DeptPeriodData, type DeptTrendData } from '../services/deptApi'
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar, Cell,
@@ -249,10 +249,15 @@ function fmt(n: number) {
 function TrendView({ rows }: { rows: TokoRow[] }) {
   const isMobile = useMobile()
   const [metric, setMetric] = useState<'sales'|'traffic'|'transaksi'|'proteksi'|'newmember'|'online'>('sales')
+  const today = jakartaDateParts()
 
-  // Hanya baris yang punya data aktual (salesDaily > 0 atau targetDaily > 0)
+  // Tampilkan trend hanya sampai tanggal hari ini agar tanggal masa depan tidak
+  // membuat garis aktual terlihat turun ke nol sampai akhir bulan.
   const data = rows
-    .filter(r => r.targetDaily > 0 || r.salesDaily > 0)
+    .filter(r => {
+      const date = parseDateParts(r.date)
+      return date && date.year === today.year && date.month === today.month && date.day <= today.day && (r.targetDaily > 0 || r.salesDaily > 0)
+    })
     .map(r => ({
       day:        parseDayNum(r.date),
       date:       r.date,
