@@ -206,7 +206,7 @@ function OffCard() {
   return (
     <section style={{ width: '100%', margin: '0 0 14px', padding: 0 }}>
       <div style={{ background: '#fff', border: `1px solid ${S.border}`, borderRadius: 16, padding: isMobile ? '14px' : '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, minmax(0, 170px))', gap: isMobile ? 8 : 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: isMobile ? 8 : 14 }}>
           {items.map(item => (
             <div key={item.label} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 11, padding: isMobile ? '10px 7px' : '12px 14px' }}>
               <div style={{ color: item.color, fontSize: isMobile ? 8 : 9, fontWeight: 800, letterSpacing: '0.04em', lineHeight: 1.3 }}>{item.label}</div>
