@@ -29,8 +29,8 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'TARGET') {
         return csvResponse([
-          'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
-          'I01902,Sales User,1000000,3000000',
+          'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN,,,,,TARGET MTD KARYAWAN,OFF TERPAKAI,OFF BULAN INI',
+          'I01902,Sales User,1000000,3000000,,,,,7000000,2,5',
         ].join('\n'))
       }
 
@@ -62,6 +62,11 @@ describe('buildRawPerformance', () => {
     expect(result.todayPerf.actual).toBe(0)
     expect(result.todayPerf.ranking).toHaveLength(0)
     expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(false)
+    expect(result.mtdPerf.targetMTD).toBe(7000000)
+    expect(result.mtdPerf.target).toBe(3000000)
+    expect(result.teamMtdEmployees[0]?.fullMonthTargetSales).toBe(3000000)
+    expect(result.mtdPerf.offBulanIni).toBe(5)
+    expect(result.mtdPerf.offTerpakai).toBe(2)
   })
 
   it('does not use yesterday\'s sales when there is no transaction for today', async () => {

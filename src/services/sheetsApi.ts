@@ -2,6 +2,7 @@ import { YTD_PERFORMANCE, type User, type PerformanceData, type EmployeeRank, ty
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 let usersRequestInFlight: Promise<User[]> | null = null
+let usersCache: User[] | null = null
 const IS_DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
 
 function sheetUrl(name: string, bust = false) {
@@ -75,6 +76,7 @@ function ci(letter: string): number {
 // A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD, F=DEPARTEMEN USER, G=ZONA (data from row 2)
 
 export async function fetchUsers(): Promise<User[]> {
+  if (usersCache) return usersCache
   if (!usersRequestInFlight) {
     usersRequestInFlight = (async () => {
       const rows = await fetchCSV('USERS', true)
@@ -89,6 +91,7 @@ export async function fetchUsers(): Promise<User[]> {
       })).filter(u => u.nama)
 
       if (IS_DEV) console.warn('[USERS] Total:', users.length)
+      usersCache = users
       return users
     })().finally(() => {
       usersRequestInFlight = null

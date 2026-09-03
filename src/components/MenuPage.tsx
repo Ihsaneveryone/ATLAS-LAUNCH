@@ -191,6 +191,34 @@ function TokoBar() {
   )
 }
 
+function OffCard() {
+  const { mtdPerf } = useAtlasData()
+  const isMobile = useMobile()
+  const allocation = mtdPerf.offBulanIni ?? 0
+  const used = mtdPerf.offTerpakai ?? 0
+  const remaining = Math.max(0, allocation - used)
+  const items = [
+    { label: 'ALOKASI OFF', value: allocation, color: '#0369a1' },
+    { label: 'REALISASI OFF', value: used, color: '#d97706' },
+    { label: 'SISA OFF', value: remaining, color: '#059669' },
+  ]
+
+  return (
+    <section style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '16px 16px 0' : '24px 32px 0' }}>
+      <div style={{ background: '#fff', border: `1px solid ${S.border}`, borderRadius: 16, padding: isMobile ? '14px' : '18px 22px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, minmax(0, 170px))', gap: isMobile ? 8 : 14 }}>
+          {items.map(item => (
+            <div key={item.label} style={{ background: S.bg, border: `1px solid ${S.border}`, borderRadius: 11, padding: isMobile ? '10px 7px' : '12px 14px' }}>
+              <div style={{ color: item.color, fontSize: isMobile ? 8 : 9, fontWeight: 800, letterSpacing: '0.04em', lineHeight: 1.3 }}>{item.label}</div>
+              <div style={{ color: S.text, fontSize: isMobile ? 19 : 22, fontWeight: 800, marginTop: 5 }}>{item.value} <span style={{ color: S.muted, fontSize: 11, fontWeight: 600 }}>hari</span></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function MenuPage({ user, onNavigate, onLogout }: Props) {
   const { error, loading, reload, menuConfig } = useAtlasData()
   const isMobile = useMobile()
@@ -249,6 +277,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
 
       <TodayBar/>
       <TokoBar/>
+      <OffCard/>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: isMobile ? '20px 16px' : '36px 32px' }}>
         <div style={{ marginBottom: 24 }}>

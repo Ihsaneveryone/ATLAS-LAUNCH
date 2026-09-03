@@ -115,18 +115,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async (nik: string) => {
     setData(prev => ({ ...prev, loading: true, error: null, debugLog: [`[${new Date().toLocaleTimeString('id-ID')}] reload() untuk NIK: ${nik}`] }))
 
-    try {
-      log('Test koneksi ke Google…')
-      const ping = await fetch('https://docs.google.com/favicon.ico', { mode: 'no-cors' })
-      log(`Koneksi OK (mode: no-cors, type: ${ping.type})`)
-    } catch (pingErr: any) {
-      log(`GAGAL koneksi: ${pingErr?.message ?? pingErr}`)
-      setData(prev => ({
-        ...prev, loading: false, usingLive: false,
-        error: `Tidak bisa terhubung ke internet dari sandbox ini: ${pingErr?.message}`,
-      }))
-      return
-    }
+    log('Test koneksi ke Google…')
+    void fetch('https://docs.google.com/favicon.ico', { mode: 'no-cors' })
+      .then(ping => log(`Koneksi OK (mode: no-cors, type: ${ping.type})`))
+      .catch((pingErr: any) => log(`GAGAL koneksi: ${pingErr?.message ?? pingErr}`))
+
+    const tokoRowsPromise = fetchPencapaianToko()
 
     // ── USERS ────────────────────────────────────────────────────
     let liveUsers: User[] = []
@@ -179,7 +173,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     let tokoRows: TokoRow[] = []
     try {
       log('Mengambil data Pencapaian Toko…')
-      tokoRows = await fetchPencapaianToko()
+      tokoRows = await tokoRowsPromise
       log(`✅ Pencapaian Toko: ${tokoRows.length} baris`)
     } catch (e: any) { log(`❌ Pencapaian Toko gagal: ${e?.message ?? e}`) }
 

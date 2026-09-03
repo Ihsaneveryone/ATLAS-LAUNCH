@@ -72,6 +72,8 @@ export const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
   { id: 'TARGET_BASKET_SIZE_DAILY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetBasketSizeDaily', columnLetter: 'G', columnIndex: 6, description: 'Daily Basket Size Target (Rp)', dataType: 'currency', optional: true, active: true, section: 'Target Setup' },
   { id: 'TARGET_BASKET_SIZE_MONTHLY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetBasketSizeMonthly', columnLetter: 'H', columnIndex: 7, description: 'Monthly Basket Size Target (Rp)', dataType: 'currency', optional: true, active: true, section: 'Target Setup' },
   { id: 'TARGET_JOB_TITLE', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'jobTitle', columnLetter: 'I', columnIndex: 8, description: 'Job Title (SPV, Kasir, dll)', dataType: 'text', optional: true, active: true, section: 'Target Setup' },
+  { id: 'TARGET_OFF_TERPAKAI', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'offTerpakai', columnLetter: 'K', columnIndex: 10, description: 'Used Off days', dataType: 'number', optional: true, active: true, section: 'Target Setup' },
+  { id: 'TARGET_OFF_BULAN_INI', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'offBulanIni', columnLetter: 'L', columnIndex: 11, description: 'Monthly Off allowance', dataType: 'number', optional: true, active: true, section: 'Target Setup' },
 
   // ════════════════════════════════════════════════════════════════════════════════════════════════
   // FEATURE: PERFORMANCE TOKO (Store Performance - Daily and MTD)

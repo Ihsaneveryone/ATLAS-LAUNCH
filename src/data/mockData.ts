@@ -35,12 +35,15 @@ export interface EmployeeRank {
   value: number
   achievement: number
   target?: number
+  fullMonthTarget?: number
 }
 
 export interface PerformanceData {
   achievement: number
   target: number        // full month target
   targetMTD?: number   // prorated: dailyTarget × workingDays
+  offBulanIni?: number
+  offTerpakai?: number
   actual: number
   acv: number           // computed: actual / workingDays
   workingDays: number

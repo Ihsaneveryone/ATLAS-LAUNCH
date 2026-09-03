@@ -157,7 +157,7 @@ export default function PerformanceSales({ user, onBack }: Props) {
   }))
   // Ranking recalculated vs full month target per person
   const fullMonthRanking = (mtdPerf.ranking ?? []).map(r => {
-    const fmTarget = r.target ? Math.round(r.target * fmScale) : 0
+    const fmTarget = r.fullMonthTarget ?? (r.target ? Math.round(r.target * fmScale) : 0)
     return {
       ...r,
       target: fmTarget,

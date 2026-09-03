@@ -139,7 +139,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     ? mtdPerf.target / mtdPerf.targetMTD
     : 1
   const fullMonthRanking = (mtdPerf.ranking ?? []).map(r => {
-    const fmTarget = r.target ? Math.round(r.target * fmScale) : 0
+    const fmTarget = r.fullMonthTarget ?? (r.target ? Math.round(r.target * fmScale) : 0)
     return {
       ...r,
       target: fmTarget,
@@ -148,7 +148,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   }).sort((a, b) => b.achievement - a.achievement).map((r, i) => ({ ...r, rank: i + 1 }))
 
   const dailyTarget = targetFormula.dailyTarget > 0 ? targetFormula.dailyTarget : todayPerf.target
-  const monthlyTarget = targetFormula.monthlyTarget > 0 ? targetFormula.monthlyTarget * (targetFormula.monthlyMultiplier || 1) : mtdPerf.target
+  const monthlyTarget = mtdPerf.target > 0
+    ? mtdPerf.target
+    : targetFormula.monthlyTarget * (targetFormula.monthlyMultiplier || 1)
   const effectiveTarget = page === 'today' ? dailyTarget : monthlyTarget
   const pd = page === 'mtd' ? { ...mtdPerf, target: monthlyTarget, achievement: monthlyTarget > 0 ? parseFloat(((mtdPerf.actual / monthlyTarget) * 100).toFixed(1)) : 0 }
     : page === 'fullmonth' ? { ...mtdPerf, target: monthlyTarget, achievement: monthlyTarget > 0 ? parseFloat(((mtdPerf.actual / monthlyTarget) * 100).toFixed(1)) : 0 }
@@ -173,7 +175,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   const fullMonthEmployeeRows = teamMtdEmployees
     .map(row => {
-      const targetSales = Math.round(row.targetSales * fmScale)
+      const targetSales = row.fullMonthTargetSales ?? Math.round(row.targetSales * fmScale)
       const targetTrx = Math.round(row.targetTransaksi * fmScale)
       const targetBs = Math.round(row.targetBasketSize * fmScale)
       return {

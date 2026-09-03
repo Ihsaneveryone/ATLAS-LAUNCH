@@ -195,7 +195,9 @@ export async function fetchSkuMap(): Promise<SkuMap> {
 // A=NIK, B=NAMA, C=TANGGAL, D=RECEIPT NO, E=ARTIKEL, F=DESKRIPSI, G=KODE, H=QTY, L=TOTAL VALUE
 
 // Fetch NIK->NAMA mapping dari ATLAS DATABASE atau COPAS sheet sebagai fallback
-async function fetchNikNameMapping(): Promise<Map<string, string>> {
+let nikNameMappingInFlight: Promise<Map<string, string>> | null = null
+
+async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
   try {
     // Try ATLAS DATABASE first (punya explicit NIK-NAMA mapping)
     let raw = await fetchCSV('ATLAS DATABASE').catch(() => null)
@@ -284,6 +286,15 @@ async function fetchNikNameMapping(): Promise<Map<string, string>> {
     console.warn('[NIK Mapping] Failed:', e)
     return new Map()
   }
+}
+
+function fetchNikNameMapping(): Promise<Map<string, string>> {
+  if (!nikNameMappingInFlight) {
+    nikNameMappingInFlight = fetchNikNameMappingUncached().finally(() => {
+      nikNameMappingInFlight = null
+    })
+  }
+  return nikNameMappingInFlight
 }
 
 
@@ -766,10 +777,10 @@ export async function fetchMenuConfig(): Promise<Record<string, boolean>> {
 }
 
 // ─── Fetch TARGET ─────────────────────────────────────────────────────────────
-// Sheet TARGET: A=NIK, B=NAMA, C=TARGET SALES DAILY, D=TARGET SALES BULAN, E=TARGET TRANSAKSI DAILY, F=TARGET TRANSAKSI MONTHLY, G=TARGET BASKET SIZE DAILY, H=TARGET BASKET SIZE MONTHLY
+// Sheet TARGET: A=NIK, B=NAMA, C=TARGET SALES DAILY, D=TARGET SALES BULAN, E=TARGET TRANSAKSI DAILY, F=TARGET TRANSAKSI MONTHLY, G=TARGET BASKET SIZE DAILY, H=TARGET BASKET SIZE MONTHLY, J=TARGET MTD KARYAWAN, K=OFF TERPAKAI, L=OFF BULAN INI
 
 export interface TargetData {
-  daily: number; monthly: number; nama?: string; jobTitle?: string
+  daily: number; monthly: number; mtdKaryawan?: number; offTerpakai?: number; offBulanIni?: number; nama?: string; jobTitle?: string
   targetTrxDaily?:   number  // kolom E — target transaksi harian
   targetTrxMonthly?: number  // kolom F — target transaksi bulanan
   targetBasketSizeDaily?:   number  // kolom G — target basket size harian
@@ -804,6 +815,9 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
     const namaIdx = findTargetHeaderIndex([/^NAMA$/i, /^NAME$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NAMA', 1))
     const dailyIdx = findTargetHeaderIndex([/TARGET SALES DAILY/i, /TARGET HARIAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 2))
     const monthlyIdx = findTargetHeaderIndex([/TARGET SALES BULAN/i, /TARGET SATU BULAN/i, /TARGET MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_MONTHLY', 3))
+    const mtdKaryawanIdx = findTargetHeaderIndex([/TARGET MTD KARYAWAN/i, /TARGET MTD/i, /MTD KARYAWAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_MTD_KARYAWAN', 9))
+    const offTerpakaiIdx = findTargetHeaderIndex([/OFF TERPAKAI/i, /OFF USED/i], getConfiguredColumnIndex('TARGET', 'TARGET_OFF_TERPAKAI', 10))
+    const offBulanIniIdx = findTargetHeaderIndex([/OFF BULAN INI/i, /JUMLAH OFF/i, /TOTAL OFF/i], getConfiguredColumnIndex('TARGET', 'TARGET_OFF_BULAN_INI', 11))
     const trxDailyIdx = findTargetHeaderIndex([/TARGET TRANSAKSI DAILY/i, /TARGET TRX DAILY/i], getConfiguredColumnIndex('TARGET', 'TARGET_TRX_DAILY', 4))
     const trxMonthlyIdx = findTargetHeaderIndex([/TARGET TRANSAKSI BULAN/i, /TARGET TRANSAKSI SATU BULAN/i, /TARGET TRX MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_TRX_MONTHLY', 5))
     const basketSizeDailyIdx = findTargetHeaderIndex([/TARGET BASKET SIZE DAILY/i], getConfiguredColumnIndex('TARGET', 'TARGET_BASKET_SIZE_DAILY', 6))
@@ -815,12 +829,15 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
       const nama = c(row, namaIdx).replace(/^[A-Z]{2,3}-/i, '').trim()
       const daily          = numVal(c(row, dailyIdx))
       const monthly        = numVal(c(row, monthlyIdx)) || daily * 26
+      const mtdKaryawan    = numVal(c(row, mtdKaryawanIdx)) || 0
+      const offTerpakai    = numVal(c(row, offTerpakaiIdx)) || 0
+      const offBulanIni    = numVal(c(row, offBulanIniIdx)) || 0
       const targetTrxDaily   = numVal(c(row, trxDailyIdx)) || 0
       const targetTrxMonthly = numVal(c(row, trxMonthlyIdx)) || 0
       const targetBasketSizeDaily = numVal(c(row, basketSizeDailyIdx)) || 0
       const targetBasketSizeMonthly = numVal(c(row, basketSizeMonthlyIdx)) || 0
       const jobTitle         = c(row, jobTitleIdx) || ''
-      if (daily <= 0) continue
+      if (daily <= 0 && mtdKaryawan <= 0 && offTerpakai <= 0 && offBulanIni <= 0) continue
       
       // Jika NIK kosong di TARGET sheet, cari NIK dari ATLAS DATABASE menggunakan nama
       if (!nik && nama && nikNameMapping.size > 0) {
@@ -834,7 +851,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
         }
       }
       
-      const entry: TargetData = { daily, monthly, nama, jobTitle,
+      const entry: TargetData = { daily, monthly, mtdKaryawan: mtdKaryawan || undefined, offTerpakai: offTerpakai || undefined, offBulanIni: offBulanIni || undefined, nama, jobTitle,
         targetTrxDaily:   targetTrxDaily   || undefined,
         targetTrxMonthly: targetTrxMonthly || undefined,
         targetBasketSizeDaily: targetBasketSizeDaily || undefined,
@@ -1096,6 +1113,7 @@ function makeKPIs(
       unit,
     })
   }
+
   return kpis
 }
 
@@ -1128,6 +1146,7 @@ function buildRanking(
   workingDays = 1,
   includeZeroSales = false,
   ensureNik?: string,
+  useMtdTarget = false,
 ) {
   const completedPerfs = [...perfs]
 
@@ -1155,20 +1174,28 @@ function buildRanking(
   return completedPerfs
   .filter(e => includeZeroSales || e.sales > 0)
   .sort((a, b) => {
-    const ta = (findTargetByNik(targets, a.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
-    const tb = (findTargetByNik(targets, b.nik)?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+    const taData = findTargetByNik(targets, a.nik)
+    const tbData = findTargetByNik(targets, b.nik)
+    const ta = useMtdTarget
+      ? (taData?.mtdKaryawan ?? (taData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays)
+      : (taData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+    const tb = useMtdTarget
+      ? (tbData?.mtdKaryawan ?? (tbData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays)
+      : (tbData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
     return (b.sales / tb) - (a.sales / ta)
   })
     .map((e, i) => {
       const tData = findTargetByNik(targets, e.nik)
-      const tgt   = (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
+      const tgt   = useMtdTarget
+        ? (tData?.mtdKaryawan ?? tData?.daily ?? DEFAULT_DAILY_TARGET * workingDays)
+        : (tData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
       // Gunakan nama dari targets sheet jika nama transaksi kosong/tidak valid
       const rawNama = e.nama && e.nama.trim() && e.nama.trim().toUpperCase() !== 'NONAME'
         ? e.nama
         : (tData?.nama ?? e.nik)
       return {
         rank: i + 1, nik: e.nik, nama: cleanNama(rawNama), jobTitle: tData?.jobTitle ?? '',
-        value: e.sales, target: tgt,
+        value: e.sales, target: tgt, fullMonthTarget: tData?.monthly,
         achievement: parseFloat(((e.sales / tgt) * 100).toFixed(1)),
       }
     })
@@ -1181,6 +1208,7 @@ export interface TeamEmployeeSummary {
   jobTitle: string
   sales: number
   targetSales: number
+  fullMonthTargetSales?: number
   achievement: number
   transaksi: number
   targetTransaksi: number
@@ -1193,7 +1221,7 @@ export interface TeamEmployeeSummary {
   newMember: number
 }
 
-function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set()): TeamEmployeeSummary[] {
+function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set(), useMtdTarget = false): TeamEmployeeSummary[] {
   const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
   const filteredPerfs = perfs
     .filter(e => validNiks.size === 0 || normalizedValidNiks.has(canonicalNik(e.nik).toLowerCase()))
@@ -1222,7 +1250,9 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
   const rows = completedPerfs.map(e => {
     const tData = findTargetByNik(targets, e.nik)
     const dailyTarget = tData?.daily ?? DEFAULT_DAILY_TARGET
-    const targetSales = dailyTarget * workingDays
+    const targetSales = useMtdTarget
+      ? (tData?.mtdKaryawan ?? dailyTarget * workingDays)
+      : dailyTarget * workingDays
     const trxDailyBase = tData?.targetTrxDaily ?? Math.max(1, Math.round(dailyTarget / 450_000))
     const targetTransaksi = Math.max(1, trxDailyBase * workingDays)
     const targetBasketSize = Math.max(1, tData?.targetBasketSizeDaily ?? Math.round(dailyTarget * 0.7))
@@ -1237,6 +1267,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       jobTitle: tData?.jobTitle ?? '',
       sales: e.sales,
       targetSales,
+      fullMonthTargetSales: tData?.monthly,
       achievement: targetSales > 0 ? parseFloat(((e.sales / targetSales) * 100).toFixed(1)) : 0,
       transaksi: e.transaksi,
       targetTransaksi,
@@ -1477,7 +1508,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   const tgtData = byNik ?? byNama ?? byFuzzy
   const dailyTarget     = tgtData?.daily   ?? DEFAULT_DAILY_TARGET
   const fullMonthTarget = tgtData?.monthly ?? dailyTarget * 30  // full month target (untuk Full Month tab)
-  const mtdTargetProrated = dailyTarget * wdays                 // prorated: daily × hari berjalan
+  const mtdTargetProrated = tgtData?.mtdKaryawan ?? dailyTarget * wdays // target MTD Karyawan dari kolom J; fallback ke target harian
 
   const dailyAch = dailyTarget         > 0 ? parseFloat(((myDaily.sales / dailyTarget)          * 100).toFixed(1)) : 0
   const mtdAch   = mtdTargetProrated   > 0 ? parseFloat(((myMTD.sales   / mtdTargetProrated)    * 100).toFixed(1)) : 0
@@ -1512,7 +1543,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     teamTodayTrend: [{ date: fmt(today), actual: teamTodayTotal, target: teamDailyTarget }],
     teamMtdTrend,
     teamTodayEmployees: buildTeamEmployeeSummary(dailyPerfs, targets, 1, validNiks),
-    teamMtdEmployees: buildTeamEmployeeSummary(mtdPerfs, targets, wdays, validNiks),
+    teamMtdEmployees: buildTeamEmployeeSummary(mtdPerfs, targets, wdays, validNiks, true),
 
     todayPerf: {
       achievement: dailyAch,
@@ -1529,11 +1560,13 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       achievement: mtdAch,
       target:      fullMonthTarget,
       targetMTD:   mtdTargetProrated,
+      offBulanIni: tgtData?.offBulanIni ?? 0,
+      offTerpakai: tgtData?.offTerpakai ?? 0,
       actual:      myMTD.sales,
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
-      ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent),
+      ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }
