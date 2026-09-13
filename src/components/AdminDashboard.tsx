@@ -11,12 +11,13 @@ import { getMenuSettings, setMenuSetting } from './MenuPage'
 import { useAdminSettings } from '../context/AdminSettingsContext'
 import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
+import { parseIncentiveSheets, type IncentiveReceiptRow } from '../services/incentiveParser'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 
-type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'dept' | 'setting'
+type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'dept' | 'receipt' | 'setting'
 type SortKey = 'nama' | 'jobTitle' | 'sales' | 'achievement' | 'transaksi' | 'upt' | 'qty' | 'basketSize' | 'aur' | 'newMember'
 type SortOrder = 'asc' | 'desc'
 
@@ -88,6 +89,88 @@ function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   )
 }
 
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = []
+  let cells: string[] = []
+  let cell = ''
+  let inQuote = false
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index]
+    if (character === '"') {
+      if (inQuote && text[index + 1] === '"') { cell += '"'; index += 1 }
+      else inQuote = !inQuote
+    } else if (character === ',' && !inQuote) {
+      cells.push(cell)
+      cell = ''
+    } else if ((character === '\n' || character === '\r') && !inQuote) {
+      if (character === '\r' && text[index + 1] === '\n') index += 1
+      cells.push(cell)
+      if (cells.some(value => value.trim())) rows.push(cells)
+      cells = []
+      cell = ''
+    } else {
+      cell += character
+    }
+  }
+  if (cell || cells.length) {
+    cells.push(cell)
+    if (cells.some(value => value.trim())) rows.push(cells)
+  }
+  return rows
+}
+
+function AdminReceiptTable({ rows, loading, isMobile }: { rows: IncentiveReceiptRow[]; loading: boolean; isMobile: boolean }) {
+  const sortedRows = [...rows].sort((left, right) => right.qualifyingReceipt - left.qualifyingReceipt || right.totalValueReceipt - left.totalValueReceipt)
+
+  return (
+    <div style={{ background: S.panel, border: `1.5px solid ${S.border}`, borderRadius: 18, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.03)' }}>
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${S.border}` }}>
+        <SectionTitle title="Insentif Receipt" sub={`${rows.length} user terdaftar`} />
+        <div style={{ fontSize: 12, color: S.muted }}>Monitoring seluruh user dari sheet INSENTIF RECEIPT.</div>
+      </div>
+      {loading ? <div style={{ padding: 48, textAlign: 'center', color: S.muted }}>⟳ Memuat data insentif receipt...</div> : !rows.length ? <div style={{ padding: 48, textAlign: 'center', color: S.muted }}>Data Insentif Receipt belum tersedia.</div> : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: isMobile ? 1060 : 1240 }}>
+            <thead>
+              <tr style={{ background: S.bg, borderBottom: `1px solid ${S.border}` }}>
+                {['Nama & NIK', 'Qualifying Receipt', 'Target Minimal Cair', 'Progress', 'Total Value Receipt', 'Insentif / Receipt', 'Total Insentif', 'Status'].map(header => (
+                  <th key={header} style={{ padding: '11px 14px', textAlign: 'left', fontSize: 10, fontWeight: 800, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>{header}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.map((row, index) => {
+                const eligible = row.status.toLowerCase().includes('eligible') && !row.status.toLowerCase().includes('non')
+                const progress = Math.min(100, Math.max(0, row.progressToMinimal))
+                return (
+                  <tr key={`${row.nik}-${row.no}-${index}`} style={{ borderBottom: `1px solid ${S.border}`, background: index % 2 === 0 ? '#fff' : S.bg }}>
+                    <td style={{ padding: '13px 14px' }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: S.text }}>{row.nama || 'Nama belum tersedia'}</div>
+                      <div style={{ fontSize: 10, color: S.muted, fontFamily: 'monospace', marginTop: 2 }}>{row.nik || 'NIK belum tersedia'}</div>
+                    </td>
+                    <td style={{ padding: '13px 14px', color: S.text, fontSize: 13, fontWeight: 700 }}>{row.qualifyingReceipt.toLocaleString('id-ID')} Receipt</td>
+                    <td style={{ padding: '13px 14px', color: S.text, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{row.targetMinimalCair.toLocaleString('id-ID')} Receipt</td>
+                    <td style={{ padding: '13px 14px', minWidth: 150 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 7, background: '#e8edf8', borderRadius: 99, overflow: 'hidden' }}><div style={{ width: `${progress}%`, height: '100%', background: eligible ? '#10b981' : '#f97316', borderRadius: 99 }} /></div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: eligible ? '#047857' : '#c2410c' }}>{progress.toFixed(0)}%</span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '13px 14px', color: S.text, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalValueReceipt)}</td>
+                    <td style={{ padding: '13px 14px', color: S.text, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.incentivePerReceipt)}</td>
+                    <td style={{ padding: '13px 14px' }}><span style={{ display: 'inline-block', color: '#065f46', background: '#d1fae5', border: '1px solid #6ee7b7', borderRadius: 10, padding: '7px 10px', fontSize: 13, fontWeight: 900, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalIncentive)}</span></td>
+                    <td style={{ padding: '13px 14px' }}><span style={{ color: eligible ? '#047857' : '#b42318', background: eligible ? '#ecfdf5' : '#fff1f2', border: `1px solid ${eligible ? '#86efac' : '#fca5a5'}`, borderRadius: 999, padding: '5px 10px', fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{row.status || 'BELUM ADA STATUS'}</span></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props { user: User; onLogout: () => void }
 
 export default function AdminDashboard({ user, onLogout }: Props) {
@@ -100,6 +183,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [deptMtd, setDeptMtd]       = useState<DeptPeriodData | null>(null)
   const [deptLoading, setDeptLoading] = useState(false)
   const [deptLoaded, setDeptLoaded]   = useState(false)
+  const [receiptRows, setReceiptRows] = useState<IncentiveReceiptRow[]>([])
+  const [receiptLoading, setReceiptLoading] = useState(false)
+  const [receiptLoaded, setReceiptLoaded] = useState(false)
   const [trackerUrl, setTrackerUrlState] = useState(getTrackerUrl)
   const [trackerSaved, setTrackerSaved]  = useState(false)
   const [menuCfg, setMenuCfg] = useState(getMenuSettings)
@@ -124,6 +210,36 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       .then(r => { setDeptSbd(r.sbd); setDeptMtd(r.mtd); setDeptLoaded(true) })
       .finally(() => setDeptLoading(false))
   }, [page, deptLoaded])
+
+  useEffect(() => {
+    if (page !== 'receipt' || receiptLoaded) return
+    let cancelled = false
+    setReceiptLoading(true)
+    const loadReceiptData = async () => {
+      try {
+        const sheetNames = ['INSENTIF RECEIPT', 'INSENTIF RECEIPT DEPT']
+        const sheetRows = await Promise.all(sheetNames.map(async sheet => {
+          const response = await fetch(`https://docs.google.com/spreadsheets/d/1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&_t=${Date.now()}`)
+          const text = await response.text()
+          return response.ok && !text.trimStart().startsWith('<!') ? parseCsv(text) : []
+        }))
+        const parsed = parseIncentiveSheets({
+          'INSENTIF RECEIPT': sheetRows[0].length ? sheetRows[0] : sheetRows[1],
+        })
+        if (!cancelled) setReceiptRows(parsed.receipt.rows)
+      } catch (error) {
+        console.warn('[ADMIN] Error loading receipt incentive data:', error)
+        if (!cancelled) setReceiptRows([])
+      } finally {
+        if (!cancelled) {
+          setReceiptLoaded(true)
+          setReceiptLoading(false)
+        }
+      }
+    }
+    void loadReceiptData()
+    return () => { cancelled = true }
+  }, [page, receiptLoaded])
 
   useEffect(() => {
     const handleMappingsChanged = () => {
@@ -262,6 +378,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     { key: 'fullmonth' as NavPage, label: 'Full Month', icon: '📆', sub: 'Target Penuh'},
     { key: 'ytd'       as NavPage, label: 'YTD',        icon: '🎯', sub: 'Tahunan'    },
     { key: 'dept'      as NavPage, label: 'Departemen', icon: '🏬', sub: 'SBD & MTD'   },
+    { key: 'receipt'   as NavPage, label: 'Insentif Receipt', icon: '🧾', sub: 'Semua user' },
     { key: 'setting'   as NavPage, label: 'Pengaturan', icon: '⚙️',  sub: 'Konfigurasi' },
   ]
 
@@ -362,7 +479,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '16px' : '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {/* ── Konten Laporan (Today / MTD / Full Month / YTD) ─────────── */}
-        {page !== 'setting' && <>
+        {page !== 'setting' && page !== 'receipt' && <>
 
         {/* Page title */}
         {!isMobile && (
@@ -796,6 +913,13 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                 </div>
               )
             })}
+          </div>
+        )}
+
+        {page === 'receipt' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: S.text }}>Insentif Receipt</div>
+            <AdminReceiptTable rows={receiptRows.filter(row => users.some(account => account.role === 'user' && niksMatch(account.nik, row.nik)))} loading={receiptLoading} isMobile={isMobile} />
           </div>
         )}
 

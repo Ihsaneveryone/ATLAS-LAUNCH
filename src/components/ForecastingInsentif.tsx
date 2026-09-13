@@ -405,8 +405,8 @@ function ReceiptIncentiveCard({ row, isMobile }: { row: NonNullable<ReturnType<t
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
         {[
-          ['Qualifying receipt', row.qualifyingReceipt.toLocaleString('id-ID')],
-          ['Target minimal cair', formatRupiahFull(row.targetMinimalCair)],
+          ['Qualifying receipt', `${row.qualifyingReceipt.toLocaleString('id-ID')} Receipt`],
+          ['Target minimal cair', `${row.targetMinimalCair.toLocaleString('id-ID')} Receipt`],
           ['Total value receipt', formatRupiahFull(row.totalValueReceipt)],
           ['Insentif per receipt', formatRupiahFull(row.incentivePerReceipt)],
             ['Total Insentif Receipt (Qty > 5 & Value > Rp2.000.000)', formatRupiahFull(row.totalIncentive)],
