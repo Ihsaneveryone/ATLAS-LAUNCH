@@ -39,7 +39,8 @@ const SHEET_NAMES = {
   sku: 'SKU INSENTIF',
   syarat: 'SYARAT INSENTIF',
   boomsale: 'INSENTIF BOOMSALE',
-  receipt: 'INSENTIF RECEIPT DEPT',
+  receipt: 'INSENTIF RECEIPT',
+  receiptLegacy: 'INSENTIF RECEIPT DEPT',
   compare: 'COPAS S2',
 }
 
@@ -132,7 +133,8 @@ function useIncentiveData() {
           [SHEET_NAMES.syarat]: sheets[3] ?? [],
           [SHEET_NAMES.boomsale]: sheets[4] ?? [],
           [SHEET_NAMES.receipt]: sheets[5] ?? [],
-          [SHEET_NAMES.compare]: sheets[6] ?? [],
+          [SHEET_NAMES.receiptLegacy]: sheets[6] ?? [],
+          [SHEET_NAMES.compare]: sheets[7] ?? [],
         })
         if (!cancelled) setData(parsed)
       } catch (error) {
@@ -368,6 +370,54 @@ function UnconditionalRowCard({ row, userNik }: { row: NonNullable<ReturnType<ty
         ))}
       </div>
     </div>
+  )
+}
+
+function ReceiptIncentiveCard({ row, isMobile }: { row: NonNullable<ReturnType<typeof parseIncentiveSheets>['receipt']['rows']>[number]; isMobile: boolean }) {
+  const normalizedStatus = row.status.toLowerCase()
+  const isEligible = normalizedStatus.includes('eligible') && !normalizedStatus.includes('non')
+  const progress = Math.min(100, Math.max(0, row.progressToMinimal))
+  const statusColor = isEligible ? '#047857' : '#b42318'
+  const statusBackground = isEligible
+    ? 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 55%, #a7f3d0 100%)'
+    : 'linear-gradient(135deg, #fff7ed 0%, #fee2e2 55%, #fecaca 100%)'
+
+  return (
+    <article style={{ background: statusBackground, border: `1px solid ${isEligible ? '#86efac' : '#fca5a5'}`, borderRadius: 22, padding: isMobile ? 16 : 20, boxShadow: `0 14px 30px ${isEligible ? 'rgba(16, 185, 129, 0.14)' : 'rgba(239, 68, 68, 0.12)'}`, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ color: statusColor, fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase' }}>Insentif Receipt</div>
+          <div style={{ color: S.text, fontSize: 18, fontWeight: 900, marginTop: 5 }}>{row.nama || `NIK ${row.nik}`}</div>
+          <div style={{ color: S.sub, fontSize: 12, marginTop: 3 }}>NIK {formatDisplayNik(row.nik)}</div>
+        </div>
+        <div style={{ background: isEligible ? '#047857' : '#b42318', color: '#fff', borderRadius: 999, padding: '7px 12px', fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>
+          {row.status || 'STATUS BELUM TERSEDIA'}
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: S.sub, fontSize: 12, fontWeight: 700 }}>
+          <span>Progress to minimal cair</span>
+          <span style={{ color: statusColor }}>{progress.toFixed(0)}%</span>
+        </div>
+        <div style={{ height: 10, background: 'rgba(255,255,255,0.7)', borderRadius: 999, overflow: 'hidden' }}>
+          <div style={{ width: `${progress}%`, height: '100%', borderRadius: 999, background: isEligible ? 'linear-gradient(90deg, #059669, #34d399)' : 'linear-gradient(90deg, #ea580c, #f87171)' }} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))', gap: 10 }}>
+        {[
+          ['Qualifying receipt', row.qualifyingReceipt.toLocaleString('id-ID')],
+          ['Target minimal cair', formatRupiahFull(row.targetMinimalCair)],
+          ['Total value receipt', formatRupiahFull(row.totalValueReceipt)],
+          ['Insentif per receipt', formatRupiahFull(row.incentivePerReceipt)],
+            ['Total Insentif Receipt (Qty > 5 & Value > Rp2.000.000)', formatRupiahFull(row.totalIncentive)],
+        ].map(([label, value]) => (
+          <div key={label} style={{ background: label.startsWith('Total Insentif') ? 'rgba(255,255,255,0.94)' : 'rgba(255,255,255,0.64)', border: label.startsWith('Total Insentif') ? '2px solid #10b981' : '1px solid rgba(255,255,255,0.72)', borderRadius: 14, padding: label.startsWith('Total Insentif') ? '14px 15px' : '11px 12px', minWidth: 0, boxShadow: label.startsWith('Total Insentif') ? '0 8px 18px rgba(5, 150, 105, 0.18)' : undefined, gridColumn: label.startsWith('Total Insentif') && isMobile ? '1 / -1' : undefined, textAlign: label.startsWith('Total Insentif') ? 'center' : 'left' }}>
+            <div style={{ color: label.startsWith('Total Insentif') ? '#047857' : S.sub, fontSize: label.startsWith('Total Insentif') ? 11 : 10, lineHeight: 1.35, fontWeight: label.startsWith('Total Insentif') ? 800 : 400, textTransform: label.startsWith('Total Insentif') ? 'uppercase' : undefined, letterSpacing: label.startsWith('Total Insentif') ? '0.05em' : undefined }}>{label}</div>
+            <div style={{ color: label.startsWith('Total Insentif') ? '#065f46' : S.text, fontSize: label.startsWith('Total Insentif') ? 21 : 14, fontWeight: 900, marginTop: 5, overflowWrap: 'anywhere' }}>{value}</div>
+          </div>
+        ))}
+      </div>
+    </article>
   )
 }
 
@@ -1072,10 +1122,8 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
     if (!data) return []
 
     const conditionalRows = filterUserRows(data.conditional.rows, user.nik, user.nama)
-    const unconditionalRows = filterUserRows(data.unconditional.rows, user.nik, user.nama)
     const conditionalAchieved = conditionalRows.reduce((sum, row) => sum + row.items.filter(item => isStatusFulfilled(item.status || '')).reduce((subSum, item) => subSum + item.amount, 0), 0)
     const conditionalPotential = conditionalRows.reduce((sum, row) => sum + row.items.filter(item => !isStatusFulfilled(item.status || '')).reduce((subSum, item) => subSum + item.amount, 0), 0)
-    const unconditionalAchieved = unconditionalRows.reduce((sum, row) => sum + row.value, 0)
 
     return [
       {
@@ -1083,12 +1131,6 @@ export default function ForecastingInsentif({ user, onBack }: Props) {
         type: 'bersyarat',
         achieved: conditionalAchieved,
         forecast: conditionalPotential,
-      },
-      {
-        name: 'Insentif Tanpa Syarat',
-        type: 'tanpa_syarat',
-        achieved: unconditionalAchieved,
-        forecast: 0,
       },
       {
         name: 'Daftar Insentif',
@@ -1108,6 +1150,11 @@ const totalAchieved = summary
   .reduce((sum, item) => sum + item.achieved, 0)
 
 const totalProjected = totalAchieved + totalPotential
+  const receiptRows = data?.receipt.rows.filter(row => {
+    const rowNik = normalizeNik(row.nik)
+    const currentNik = normalizeNik(user.nik)
+    return Boolean(rowNik && currentNik && (rowNik === currentNik || rowNik.endsWith(currentNik) || currentNik.endsWith(rowNik)))
+  }) ?? []
 
   if (subPage) {
     return <SubPageView type={subPage} data={data} user={user} isMobile={isMobile} onBack={() => setSubPage(null)} onSelectSubPage={setSubPage} />
@@ -1179,6 +1226,14 @@ const totalProjected = totalAchieved + totalPotential
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <ScanArticlePanel data={data} isMobile={isMobile} />
+          {receiptRows.length ? (
+            <div>
+              <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Insentif Receipt Anda</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
+                {receiptRows.map((row, index) => <ReceiptIncentiveCard key={`${row.nik}-${row.no}-${index}`} row={row} isMobile={isMobile} />)}
+              </div>
+            </div>
+          ) : null}
           <div>
             <div style={{ color: S.muted, fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Ringkasan per Tipe Insentif</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>

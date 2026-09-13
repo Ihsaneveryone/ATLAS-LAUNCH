@@ -204,8 +204,34 @@ describe('parseIncentiveSheets', () => {
     const result = parseIncentiveSheets(sheets)
 
     expect(result.receipt.rows).toEqual([
-      expect.objectContaining({ no: '1', departemen: 'ELECTRICAL', targetValue: 40000000, percentage: 1 }),
-      expect.objectContaining({ no: '2', departemen: 'LIGHTING', targetValue: 20000000, percentage: 2 }),
+      expect.objectContaining({ no: '1', departemen: 'ELECTRICAL', targetValue: 40000000, percentage: 1, nik: '', status: '' }),
+      expect.objectContaining({ no: '2', departemen: 'LIGHTING', targetValue: 20000000, percentage: 2, nik: '', status: '' }),
+    ])
+  })
+
+  it('parses receipt incentive user metrics from columns A and F:L', () => {
+    const sheets = {
+      'INSENTIF RECEIPT': [
+        ['NIK', 'Nama', 'C', 'D', 'E', 'Qualifying Receipt', 'Target Minimal Cair', 'Progress to Minimal', 'Total Value Receipt', 'Insentif per Receipt', 'Total Insentif', 'Status Insentif'],
+        ['191924', 'Muhammad Ihsar', '', '', '', '12', '10000000', '75%', '7500000', '15000', '180000', 'ELIGIBLE'],
+        ['187856', 'MONICA', '', '', '', '3', '5000000', '0.4', '2000000', '10000', '30000', 'NON ELIGIBLE'],
+      ],
+    }
+
+    const result = parseIncentiveSheets(sheets)
+
+    expect(result.receipt.rows).toEqual([
+      expect.objectContaining({
+        nik: '191924',
+        qualifyingReceipt: 12,
+        targetMinimalCair: 10000000,
+        progressToMinimal: 75,
+        totalValueReceipt: 7500000,
+        incentivePerReceipt: 15000,
+        totalIncentive: 180000,
+        status: 'ELIGIBLE',
+      }),
+      expect.objectContaining({ nik: '187856', progressToMinimal: 40, status: 'NON ELIGIBLE' }),
     ])
   })
 
