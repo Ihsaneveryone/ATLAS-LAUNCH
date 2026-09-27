@@ -1,25 +1,48 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiah, formatRupiahFull, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
-import { fetchAllYTD, type YTDEmployee } from '../services/rawDataApi'
+import { fetchAllYTD, fetchSIDDataSignature, type YTDEmployee } from '../services/rawDataApi'
 import { niksMatch } from '../services/nik'
-import { fetchPencapaianDept, type DeptPeriodData } from '../services/deptApi'
+import { fetchPencapaianDept, type DeptPeriodData, type DeptTrendData } from '../services/deptApi'
 import { getTrackerUrl, setTrackerUrl, writeMenuConfigToSheet } from '../services/loginTracker'
 import { getMenuSettings, setMenuSetting } from './MenuPage'
 import { useAdminSettings } from '../context/AdminSettingsContext'
 import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
-import { parseIncentiveSheets, type IncentiveReceiptRow } from '../services/incentiveParser'
+import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 
-type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'dept' | 'receipt' | 'setting'
+type NavPage = 'today' | 'mtd' | 'fullmonth' | 'ytd' | 'dept' | 'tv' | 'receipt' | 'setting'
 type SortKey = 'nama' | 'jobTitle' | 'sales' | 'achievement' | 'transaksi' | 'upt' | 'qty' | 'basketSize' | 'aur' | 'newMember'
 type SortOrder = 'asc' | 'desc'
+type RankingRow = { nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number; target?: number }
+type TVSlideKey = 'today' | 'mtd' | 'fullmonth' | 'dept' | 'receipt' | 'incentive_products'
+
+const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: string }> = [
+  { key: 'today', label: 'Performance Today', description: 'Ranking performa hari ini' },
+  { key: 'mtd', label: 'Performance MTD', description: 'Ranking performa bulan berjalan' },
+  { key: 'fullmonth', label: 'Performance Full Month', description: 'Ranking terhadap target satu bulan penuh' },
+  { key: 'dept', label: 'Performance Departemen', description: 'Ringkasan dan tren performa departemen' },
+  { key: 'receipt', label: 'Insentif Receipt', description: 'Progress qualifying receipt dan total insentif karyawan' },
+  { key: 'incentive_products', label: 'Insentif Produk', description: 'Produk yang memenuhi target qty toko' },
+]
+
+function getTVDisplaySettings(): Record<TVSlideKey, boolean> {
+  const saved = getMenuSettings()
+  return {
+    today: saved.tv_today !== false,
+    mtd: saved.tv_mtd !== false,
+    fullmonth: saved.tv_fullmonth !== false,
+    dept: saved.tv_dept !== false,
+    receipt: saved.tv_receipt !== false,
+    incentive_products: saved.tv_incentive_products !== false,
+  }
+}
 
 const S = {
   bg: '#f0f4ff', panel: '#fff', card: '#f8faff',
@@ -86,6 +109,801 @@ function SectionTitle({ title, sub }: { title: string; sub?: string }) {
       <div style={{ fontSize: 14, fontWeight: 800, color: S.text }}>{title}</div>
       {sub && <div style={{ fontSize: 11, color: S.muted }}>{sub}</div>}
     </div>
+  )
+}
+
+function TVSlideshow({
+  todayRanking,
+  mtdRanking,
+  fullMonthRanking,
+  receiptRows,
+  receiptLoading,
+  onSlideEnd,
+  sidUpdatedAt,
+  visibleSlides,
+  deptSbd,
+  deptMtd,
+  deptTrend,
+  dailyDate,
+}: {
+  todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
+  mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
+  fullMonthRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
+  receiptRows: IncentiveReceiptRow[]
+  receiptLoading: boolean
+  onSlideEnd: () => void
+  sidUpdatedAt: Date | null
+  visibleSlides: Record<TVSlideKey, boolean>
+  deptSbd: DeptPeriodData | null
+  deptMtd: DeptPeriodData | null
+  deptTrend: DeptTrendData | null
+  dailyDate: string
+}) {
+  const [activeSlide, setActiveSlide] = useState(0)
+  const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
+  const [eligibleProducts, setEligibleProducts] = useState<IncentiveBoomsaleRow[]>([])
+  const [productsLoading, setProductsLoading] = useState(true)
+  const onSlideEndRef = useRef(onSlideEnd)
+
+  useEffect(() => {
+    onSlideEndRef.current = onSlideEnd
+  }, [onSlideEnd])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadProducts = async () => {
+      try {
+        const sheetId = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
+        const sheetNames = ['INSENTIF BOOMSALE', 'COPAS S2']
+        const rows = await Promise.all(sheetNames.map(async (sheet) => {
+          const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&_t=${Date.now()}`
+          const response = await fetch(url, { cache: 'no-store' })
+          const text = await response.text()
+          if (!response.ok || text.trimStart().startsWith('<!')) return []
+          return parseCsv(text)
+        }))
+        const parsed = parseIncentiveSheets({
+          'INSENTIF BOOMSALE': rows[0] ?? [],
+          'COPAS S2': rows[1] ?? [],
+        })
+        const qualified = parsed.boomsale.rows
+          .filter((product) => (product.targetQty ?? 0) > 0 && (product.actualQty ?? 0) >= (product.targetQty ?? 0))
+          .sort((left, right) => (right.actualQty ?? 0) - (left.actualQty ?? 0) || left.name.localeCompare(right.name, 'id-ID'))
+        if (!cancelled) setEligibleProducts(qualified)
+      } catch (error) {
+        console.warn('[TV] Error loading qualified incentive products:', error)
+        if (!cancelled) setEligibleProducts([])
+      } finally {
+        if (!cancelled) setProductsLoading(false)
+      }
+    }
+    void loadProducts()
+    return () => { cancelled = true }
+  }, [])
+
+  const chunkRanking = (rows: RankingRow[], size = 20) => {
+    if (!rows.length) return [[]] as RankingRow[][]
+    const pages: RankingRow[][] = []
+    for (let i = 0; i < rows.length; i += size) {
+      pages.push(rows.slice(i, i + size))
+    }
+    return pages
+  }
+
+  const chunkProducts = (rows: IncentiveBoomsaleRow[], size = 16) => {
+    if (!rows.length) return [[]] as IncentiveBoomsaleRow[][]
+    const pages: IncentiveBoomsaleRow[][] = []
+    for (let index = 0; index < rows.length; index += size) pages.push(rows.slice(index, index + size))
+    return pages
+  }
+
+  const eligibleProductPages = chunkProducts(eligibleProducts)
+  const sortedReceiptRows = [...receiptRows].sort((left, right) => right.qualifyingReceipt - left.qualifyingReceipt || right.totalValueReceipt - left.totalValueReceipt)
+  const receiptPages: IncentiveReceiptRow[][] = []
+  for (let index = 0; index < sortedReceiptRows.length; index += 12) receiptPages.push(sortedReceiptRows.slice(index, index + 12))
+  if (receiptPages.length === 0) receiptPages.push([])
+
+  const contentSlides: Array<{
+    key: string
+    label: string
+    subtitle: string
+    pageNumber?: string
+    ranking: RankingRow[]
+    fullRanking?: RankingRow[]
+    receipts?: IncentiveReceiptRow[]
+    products?: IncentiveBoomsaleRow[]
+  }> = [
+    ...[
+      { key: 'today' as const, label: 'PERFORMANCE TODAY', subtitle: '', ranking: chunkRanking(todayRanking) },
+      { key: 'mtd' as const, label: 'PERFORMANCE MONTH TO DATE (MTD)', subtitle: '', ranking: chunkRanking(mtdRanking) },
+      { key: 'fullmonth' as const, label: 'PERFORMANCE FULL MONTH ( SATU BULAN)', subtitle: '', ranking: chunkRanking(fullMonthRanking) },
+    ].filter(group => visibleSlides[group.key]).flatMap((group) =>
+      group.ranking.map((page, idx) => ({
+        key: `${group.key}-${idx}`,
+        label: group.label,
+        subtitle: group.ranking.length > 1 ? `${group.subtitle} • Hal ${idx + 1}/${group.ranking.length}` : group.subtitle,
+        pageNumber: `${idx + 1}/${group.ranking.length}`,
+        ranking: page,
+        fullRanking: group.ranking.flat(),
+      }))
+    ),
+    ...(visibleSlides.dept ? [{ key: 'dept', label: 'PERFORMANCE DEPARTEMEN', subtitle: 'SBD vs MTD', ranking: [] as Array<{ nama: string; achievement: number; value: number; rank?: number }> }] : []),
+    ...(visibleSlides.receipt ? receiptPages.map((rows, index) => ({
+      key: `receipt-${index}`,
+      label: 'INSENTIF RECEIPT',
+      subtitle: '',
+      pageNumber: `${index + 1}/${receiptPages.length}`,
+      ranking: [] as RankingRow[],
+      receipts: rows,
+    })) : []),
+    ...(visibleSlides.incentive_products ? eligibleProductPages.map((products, index) => ({
+      key: `incentive-products-${index}`,
+      label: 'INSENTIF PRODUK S&K TERPENUHI',
+      subtitle: '',
+      pageNumber: `${index + 1}/${eligibleProductPages.length}`,
+      ranking: [] as RankingRow[],
+      products,
+    })) : []),
+  ]
+  const slides = [
+    {
+      key: 'welcome',
+      label: '',
+      subtitle: 'PERFORMANCE SALES ID & INSENTIF',
+      ranking: [] as RankingRow[],
+    },
+    ...contentSlides,
+  ]
+
+  const [deptTrendIndex, setDeptTrendIndex] = useState(0)
+  const [deptZoneIndex, setDeptZoneIndex] = useState(0)
+
+  useEffect(() => {
+    if (activeSlide >= slides.length) {
+      setActiveSlide(0)
+      setTransitionSlide(null)
+    }
+  }, [activeSlide, slides.length])
+
+  const active = slides[activeSlide] ?? {
+    key: 'empty',
+    label: 'TV DISPLAY NONAKTIF',
+    subtitle: '',
+    ranking: [] as RankingRow[],
+  }
+  const receiptGridColumns = 'minmax(150px, 1.55fr) minmax(108px, 0.9fr) minmax(118px, 0.95fr) minmax(130px, 1.05fr) minmax(145px, 1.15fr) minmax(145px, 1.15fr) minmax(145px, 1.15fr) minmax(104px, 0.9fr)'
+  const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
+  const topTen = rankedList.slice(0, 10)
+  const bottomTen = [...rankedList].slice(-10).map((row, index) => ({
+    ...row,
+    actualRank: row.rank ?? rankedList.length - 9 + index,
+  }))
+  const bottomTenRankSet = new Set(bottomTen.map((row) => row.rank ?? row.actualRank ?? 0))
+  const totalTim = rankedList.reduce((sum: number, row: RankingRow) => sum + row.value, 0)
+  const avgAch = rankedList.reduce((sum: number, row: RankingRow) => sum + row.achievement, 0) / Math.max(rankedList.length, 1)
+  const topLeader = rankedList[0]
+  const bottomLeader = rankedList[rankedList.length - 1]
+  const deptPrimary = deptMtd ?? deptSbd
+  const deptSecondary = deptSbd ?? deptMtd
+  const sbdDeptRows = deptSbd?.departments?.filter((item) => item.kind !== 'zone') ?? []
+  const mtdDeptRows = deptMtd?.departments?.filter((item) => item.kind !== 'zone') ?? []
+  const getDeptAchievement = (item: { achievement?: number; target?: number; value: number }) => {
+    if (typeof item.achievement === 'number') return item.achievement
+    if (item.target && item.target > 0) return (item.value / item.target) * 100
+    return 0
+  }
+  const getAchievementBadgeStyle = (achievement?: number) => {
+    if (typeof achievement !== 'number') return { color: '#cbd5e1', background: 'rgba(148, 163, 184, 0.12)' }
+    if (achievement > 100) return { color: '#ffffff', background: '#2563eb' }
+    if (achievement >= 95) return { color: '#ffffff', background: '#16a34a' }
+    if (achievement >= 90) return { color: '#422006', background: '#eab308' }
+    if (achievement >= 80) return { color: '#ffffff', background: '#db2777' }
+    return { color: '#ffffff', background: '#dc2626' }
+  }
+  const topDept = [...mtdDeptRows].sort((left, right) => getDeptAchievement(right) - getDeptAchievement(left))[0] ?? null
+  const bottomDept = [...mtdDeptRows].sort((left, right) => getDeptAchievement(left) - getDeptAchievement(right))[0] ?? null
+  const deptTrendSeries = (deptTrend?.points ?? []).map(point => ({
+    date: point.date,
+    total: point.deptValues.reduce((sum, value) => sum + value, 0),
+    avgAchievement: point.deptAchievements.length
+      ? point.deptAchievements.reduce((sum, value) => sum + value, 0) / point.deptAchievements.length
+      : 0,
+  }))
+  const zoneOrder = ['Hobbies & Lifestyle', 'Home Improvement', 'Home Living']
+  const inferDeptZone = (label: string) => {
+    const normalized = label.toLowerCase()
+    if (/(automotive|lg aquapet|outdoor comfort|sports & health|travels|trendy goods)/i.test(normalized)) return 'Hobbies & Lifestyle'
+    if (/(electrical|fans|lighting|locker|paint|plumbing|safes|tools)/i.test(normalized)) return 'Home Improvement'
+    if (/(appliances|cleaning|home comfort|home storage|kitchenware)/i.test(normalized)) return 'Home Living'
+    return label
+  }
+
+  const deptZoneGroups = Array.from(
+    new Set([
+      ...((deptSbd?.departments ?? []).map((dept) => dept.zone || inferDeptZone(dept.label))),
+      ...((deptMtd?.departments ?? []).map((dept) => dept.zone || inferDeptZone(dept.label))),
+    ]),
+  )
+    .sort((left, right) => {
+      const leftIndex = zoneOrder.indexOf(left)
+      const rightIndex = zoneOrder.indexOf(right)
+      const leftRank = leftIndex === -1 ? 999 : leftIndex
+      const rightRank = rightIndex === -1 ? 999 : rightIndex
+      return leftRank - rightRank
+    })
+    .map((zoneName) => {
+      const sbdZone = deptSbd?.zones?.find((zone) => zone.zone === zoneName) ?? null
+      const mtdZone = deptMtd?.zones?.find((zone) => zone.zone === zoneName) ?? null
+      const deptRows = Array.from(
+        new Set([
+          ...((sbdZone?.departments ?? []) .map((dept) => dept.label)),
+          ...((mtdZone?.departments ?? []) .map((dept) => dept.label)),
+          ...((deptSbd?.departments ?? []).filter((dept) => dept.kind !== 'zone' && (dept.zone || inferDeptZone(dept.label)) === zoneName).map((dept) => dept.label)),
+          ...((deptMtd?.departments ?? []).filter((dept) => dept.kind !== 'zone' && (dept.zone || inferDeptZone(dept.label)) === zoneName).map((dept) => dept.label)),
+        ]),
+      ).map((label) => {
+        const sbd = (sbdZone?.departments ?? []).find((item) => item.label === label)
+          ?? (deptSbd?.departments ?? []).find((item) => item.kind !== 'zone' && (item.zone || inferDeptZone(item.label)) === zoneName && item.label === label)
+          ?? null
+        const mtd = (mtdZone?.departments ?? []).find((item) => item.label === label)
+          ?? (deptMtd?.departments ?? []).find((item) => item.kind !== 'zone' && (item.zone || inferDeptZone(item.label)) === zoneName && item.label === label)
+          ?? null
+        return { label, sbd, mtd }
+      }).sort((left, right) =>
+        getDeptAchievement(right.mtd ?? { value: 0 }) - getDeptAchievement(left.mtd ?? { value: 0 })
+        || getDeptAchievement(right.sbd ?? { value: 0 }) - getDeptAchievement(left.sbd ?? { value: 0 }),
+      )
+      const trendIndexes = deptRows
+        .map((dept) => deptTrend?.labels.findIndex((label) => label === dept.label) ?? -1)
+        .filter((index) => index >= 0)
+      return { zoneName, sbdZone, mtdZone, deptRows, trendIndexes }
+    })
+  const deptCycleDuration = deptZoneGroups.reduce(
+    (duration, zone) => duration + (zone.trendIndexes.length > 0 ? zone.trendIndexes.length * 3000 : 7000),
+    0,
+  )
+  const activeDeptZone = deptZoneGroups[deptZoneIndex % Math.max(deptZoneGroups.length, 1)] ?? null
+
+  useEffect(() => {
+    if (transitionSlide !== null || slides.length === 0) return
+
+    const activeSlideKey = slides[activeSlide]?.key
+    const isDeptSlide = activeSlideKey === 'dept'
+    const isProductSlide = activeSlideKey?.startsWith('incentive-products-') ?? false
+    const isReceiptSlide = activeSlideKey?.startsWith('receipt-') ?? false
+    const duration = isDeptSlide ? Math.max(deptCycleDuration, 7000) : isProductSlide ? 12000 : isReceiptSlide ? 5000 : 7000
+    const timer = window.setTimeout(() => {
+      onSlideEndRef.current()
+      const nextSlide = activeSlide === slides.length - 1 ? 0 : activeSlide + 1
+      if (slides[nextSlide]?.key === 'welcome' || slides[activeSlide]?.label === slides[nextSlide]?.label) {
+        setActiveSlide(nextSlide)
+        return
+      }
+
+      setTransitionSlide(nextSlide)
+      window.setTimeout(() => {
+        setActiveSlide(nextSlide)
+        setTransitionSlide(null)
+      }, 1600)
+    }, duration)
+
+    return () => window.clearTimeout(timer)
+  }, [
+    activeSlide,
+    transitionSlide,
+    slides.length,
+    deptCycleDuration,
+    visibleSlides.today,
+    visibleSlides.mtd,
+    visibleSlides.fullmonth,
+    visibleSlides.dept,
+    visibleSlides.receipt,
+    visibleSlides.incentive_products,
+  ])
+
+  useEffect(() => {
+    if (slides[activeSlide]?.key !== 'dept') return
+    setDeptZoneIndex(0)
+    setDeptTrendIndex(deptZoneGroups[0]?.trendIndexes[0] ?? 0)
+  }, [activeSlide])
+
+  useEffect(() => {
+    if (slides[activeSlide]?.key !== 'dept' || deptZoneGroups.length === 0) return
+
+    const currentZoneIndex = deptZoneIndex % deptZoneGroups.length
+    const currentZone = deptZoneGroups[currentZoneIndex]
+    const trendIndexes = currentZone?.trendIndexes ?? []
+    if (trendIndexes.length === 0) {
+      const timer = window.setTimeout(() => {
+        if (currentZoneIndex === deptZoneGroups.length - 1) return
+        setDeptZoneIndex((currentZoneIndex + 1) % deptZoneGroups.length)
+      }, 7000)
+      return () => window.clearTimeout(timer)
+    }
+
+    const trendPosition = trendIndexes.indexOf(deptTrendIndex)
+    if (trendPosition < 0) {
+      setDeptTrendIndex(trendIndexes[0])
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      if (trendPosition < trendIndexes.length - 1) {
+        setDeptTrendIndex(trendIndexes[trendPosition + 1])
+        return
+      }
+
+      if (currentZoneIndex === deptZoneGroups.length - 1) return
+
+      const nextZoneIndex = currentZoneIndex + 1
+      const nextZone = deptZoneGroups[nextZoneIndex]
+      setDeptZoneIndex(nextZoneIndex)
+      setDeptTrendIndex(nextZone?.trendIndexes[0] ?? 0)
+    }, 3000)
+
+    return () => window.clearTimeout(timer)
+  }, [activeSlide, slides.length, deptZoneIndex, deptTrendIndex, deptTrend?.labels.length, deptSbd, deptMtd])
+
+  const activeTrendIndex = Math.min(deptTrendIndex, Math.max((deptTrend?.labels.length ?? 1) - 1, 0))
+  const activeTrendLabel = deptTrend?.labels[activeTrendIndex] ?? 'Dept'
+  const activeTrendColor = ['#e1261c', '#f2c511', '#7852d6', '#ff7b68', '#a78bfa', '#d6ad18'][activeTrendIndex % 6]
+  const deptTrendByDepartmentSeries = (deptTrend?.points ?? []).map((point) => ({
+    date: point.date,
+    value: point.deptValues[Math.min(activeTrendIndex, Math.max((point.deptValues.length ?? 1) - 1, 0))] ?? 0,
+  }))
+  const getRankBadgeStyle = (rank?: number, isBottom10 = false) => {
+    if (isBottom10) return {
+      background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.34), rgba(127, 29, 29, 0.24))',
+      color: '#fee2e2',
+      border: '1px solid rgba(248, 113, 113, 0.42)',
+      boxShadow: '0 0 10px rgba(248, 113, 113, 0.2)',
+    }
+    if (rank === 1) return {
+      background: 'linear-gradient(135deg, rgba(180, 145, 255, 0.96), rgba(104, 70, 199, 0.82))',
+      color: '#21172f',
+      border: '1px solid rgba(196, 181, 253, 0.95)',
+      boxShadow: '0 0 16px rgba(120, 82, 214, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)',
+    }
+    if (rank === 2) return {
+      background: 'linear-gradient(135deg, rgba(226, 232, 240, 0.98), rgba(148, 163, 184, 0.8))',
+      color: '#0f172a',
+      border: '1px solid rgba(203, 213, 225, 0.95)',
+      boxShadow: '0 0 16px rgba(148, 163, 184, 0.45), inset 0 1px 0 rgba(255,255,255,0.6)',
+    }
+    if (rank === 3) return {
+      background: 'linear-gradient(135deg, rgba(180, 145, 255, 0.96), rgba(104, 70, 199, 0.82))',
+      color: '#21172f',
+      border: '1px solid rgba(196, 181, 253, 0.95)',
+      boxShadow: '0 0 16px rgba(120, 82, 214, 0.4), inset 0 1px 0 rgba(255,255,255,0.4)',
+    }
+    return {
+      background: 'rgba(148, 163, 184, 0.12)',
+      color: '#cbd5e1',
+      border: '1px solid rgba(148, 163, 184, 0.18)',
+      boxShadow: 'none',
+    }
+  }
+  const getBottomRankBadgeStyle = (rank?: number) => ({
+    background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.34), rgba(127, 29, 29, 0.24))',
+    color: '#fee2e2',
+    border: '1px solid rgba(248, 113, 113, 0.42)',
+    boxShadow: rank === 1 ? '0 0 10px rgba(248, 113, 113, 0.24)' : 'none',
+  })
+
+  return (
+    <>
+      <style>{`
+        @keyframes tvSlideIn {
+          0% {
+            opacity: 0;
+            transform: translateY(18px) scale(0.985);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+      `}</style>
+
+      <div style={{ position: 'relative', minHeight: '100vh', height: '100vh', background: 'radial-gradient(circle at top left, #3b2020 0%, #1d171a 36%, #100e12 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(225,38,28,0.12), rgba(242,197,17,0.05), rgba(104,70,199,0.08))' }} />
+
+        <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'grid', gridTemplateRows: 'auto auto 1fr', padding: '10px 18px 8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
+            <div>
+              <div style={{ color: '#e2e8f0', fontWeight: 800, letterSpacing: '0.16em', fontSize: 10, textTransform: 'uppercase' }}>ATLAS</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ color: '#cbd5e1', fontSize: 10, fontWeight: 700 }}>LIVE</span>
+              <div style={{ width: 8, height: 8, background: '#22c55e', borderRadius: '50%', boxShadow: '0 0 18px rgba(34, 197, 94, 0.9)' }} />
+              <span style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 700 }}>{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <div>
+              <div style={{ color: '#f8fafc', fontSize: 17, fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{active.label}</div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {active.pageNumber ? (
+                <div style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(39,27,31,0.82)', border: '1px solid rgba(242,197,17,0.3)', color: '#fff8e1', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>
+                  {active.pageNumber}
+                </div>
+              ) : null}
+              <div style={{ display: 'flex', gap: 6 }}>
+                {slides.map((slide, index) => (
+                  <span key={slide.key} style={{ width: index === activeSlide ? 28 : 10, height: 8, borderRadius: 999, background: index === activeSlide ? '#e1261c' : 'rgba(214,195,190,0.34)', boxShadow: index === activeSlide ? '0 0 12px rgba(225,38,28,0.72)' : 'none', transition: 'all 0.25s ease' }} />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {contentSlides.length === 0 ? (
+            <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#cbd5e1', fontSize: 20, fontWeight: 800, textAlign: 'center' }}>
+              Semua tampilan TV sedang dinonaktifkan oleh admin.
+            </div>
+          ) : transitionSlide !== null ? (
+            <div style={{
+              display: 'grid',
+              placeItems: 'center',
+              height: '100%',
+              background: 'radial-gradient(circle at center, rgba(55,30,34,0.88), rgba(16,14,18,0.98))',
+              borderRadius: 20,
+              border: '1px solid rgba(148,163,184,0.25)',
+              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04)',
+              animation: 'tvSlideIn 0.5s ease',
+            }}>
+              <div style={{ textAlign: 'center', color: '#f8fafc' }}>
+                <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.05em', lineHeight: 1.1, textTransform: 'uppercase' }}>{slides[transitionSlide]?.label}</div>
+              </div>
+            </div>
+          ) : (
+          <div key={`${active.key}-${activeSlide}`} style={{ animation: 'tvSlideIn 0.7s cubic-bezier(0.22, 1, 0.36, 1)', willChange: 'transform, opacity', minHeight: 0, overflow: 'hidden', height: '100%' }}>
+            {active.key === 'welcome' ? (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', minHeight: 0, overflow: 'hidden', borderRadius: 16, border: '1px solid rgba(214,195,190,0.16)', background: 'rgba(29,21,25,0.72)' }}>
+                <div style={{ textAlign: 'center', padding: 24 }}>
+                  <div style={{ color: '#d6ad18', fontSize: 12, fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 16 }}>
+                    AZKO ROYAL PLAZA SURABAYA
+                  </div>
+                  <div style={{ color: '#f8fafc', fontSize: 'clamp(28px, 4.2vw, 54px)', fontWeight: 800, letterSpacing: '-0.035em', lineHeight: 1.12, textTransform: 'uppercase' }}>
+                    Performance Sales ID
+                    <br />
+                    <span style={{ color: '#e7c84b' }}>&amp; Insentif</span>
+                  </div>
+                  <div style={{ width: 40, height: 2, margin: '22px auto', borderRadius: 99, background: '#d6ad18' }} />
+                  <div style={{ color: '#e2e8f0', fontSize: 14, fontWeight: 600, letterSpacing: '0.04em' }}>
+                    {new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600, letterSpacing: '0.03em', marginTop: 14 }}>
+                    Terakhir diperbarui: {sidUpdatedAt
+                      ? sidUpdatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                      : 'Belum ada perubahan data SID terdeteksi'}
+                  </div>
+                </div>
+              </div>
+            ) : active.key.startsWith('receipt-') ? (
+              <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 8, height: '100%', minHeight: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 2px' }}>
+                  <div style={{ color: '#f8df83', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {receiptLoading ? 'Memuat insentif receipt...' : `${receiptRows.length} karyawan`}
+                  </div>
+                </div>
+                {receiptLoading ? (
+                  <div style={{ display: 'grid', placeItems: 'center', color: '#cbd5e1', fontSize: 14 }}>Memuat data insentif receipt...</div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0, overflow: 'hidden', borderRadius: 14, border: '1px solid rgba(214,195,190,0.2)', background: 'rgba(29,21,25,0.88)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 12, padding: '14px 18px', color: '#e4d8d5', fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', background: 'rgba(45,31,35,0.95)', borderBottom: '1px solid rgba(214,195,190,0.2)' }}>
+                      <div>Nama & NIK</div>
+                      <div style={{ textAlign: 'right' }}>Qualifying Receipt</div>
+                      <div style={{ textAlign: 'right' }}>Target Minimal Cair</div>
+                      <div>Progress</div>
+                      <div style={{ textAlign: 'right' }}>Total Value Receipt</div>
+                      <div style={{ textAlign: 'right' }}>Insentif / Receipt</div>
+                      <div style={{ textAlign: 'right' }}>Total Insentif</div>
+                      <div style={{ textAlign: 'center' }}>Status</div>
+                    </div>
+                    {(active.receipts ?? []).length === 0 ? (
+                      <div style={{ display: 'grid', placeItems: 'center', color: '#cbd5e1', fontSize: 13 }}>Data Insentif Receipt belum tersedia.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateRows: `repeat(${(active.receipts ?? []).length}, minmax(0, 1fr))`, minHeight: 0 }}>
+                        {(active.receipts ?? []).map((row, index) => {
+                          const eligible = row.status.toLowerCase().includes('eligible') && !row.status.toLowerCase().includes('non')
+                          const progress = Math.min(100, Math.max(0, row.progressToMinimal))
+                          return (
+                            <div key={`${row.nik}-${row.no}-${index}`} style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 12, padding: '8px 18px', color: '#f8fafc', fontSize: 12, borderBottom: index === (active.receipts?.length ?? 0) - 1 ? 'none' : '1px solid rgba(214,195,190,0.12)', background: index % 2 === 0 ? 'rgba(45,31,35,0.45)' : 'transparent', minHeight: 0 }}>
+                              <div style={{ minWidth: 0, overflow: 'hidden' }}>
+                                <div style={{ fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.nama || 'Nama belum tersedia'}</div>
+                                <div style={{ marginTop: 3, color: '#94a3b8', fontSize: 10, fontFamily: 'monospace' }}>{row.nik || 'NIK belum tersedia'}</div>
+                              </div>
+                              <div style={{ textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{row.qualifyingReceipt.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
+                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{row.targetMinimalCair.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                                <div style={{ flex: 1, minWidth: 18, height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 99, overflow: 'hidden' }}>
+                                  <div style={{ width: `${progress}%`, height: '100%', background: eligible ? '#10b981' : '#f97316', borderRadius: 99 }} />
+                                </div>
+                                <span style={{ color: eligible ? '#6ee7b7' : '#fdba74', fontSize: 11, fontWeight: 800 }}>{progress.toFixed(0)}%</span>
+                              </div>
+                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalValueReceipt)}</div>
+                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.incentivePerReceipt)}</div>
+                              <div style={{ textAlign: 'right', color: '#6ee7b7', fontWeight: 900, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalIncentive)}</div>
+                              <div style={{ display: 'flex', justifyContent: 'center', minWidth: 0 }}>
+                                <span style={{ maxWidth: '100%', color: eligible ? '#6ee7b7' : '#fdba74', background: eligible ? 'rgba(16,185,129,0.14)' : 'rgba(249,115,22,0.14)', border: `1px solid ${eligible ? 'rgba(110,231,183,0.32)' : 'rgba(253,186,116,0.32)'}`, borderRadius: 999, padding: '5px 10px', fontSize: 10, fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.status || 'BELUM ADA STATUS'}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : active.key.startsWith('incentive-products-') ? (
+              <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr', gap: 8, height: '100%', minHeight: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '0 2px' }}>
+                  <div style={{ color: '#a7f3d0', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    {productsLoading ? 'Memuat produk...' : `${eligibleProducts.length} produk memenuhi target qty toko`}
+                  </div>
+                  <div style={{ color: '#94a3b8', fontSize: 8, fontWeight: 700 }}>Qty aktual toko ≥ target</div>
+                </div>
+                {productsLoading ? (
+                  <div style={{ display: 'grid', placeItems: 'center', color: '#cbd5e1', fontSize: 14 }}>Memuat data produk insentif...</div>
+                ) : (active.products ?? []).length === 0 ? (
+                  <div style={{ display: 'grid', placeItems: 'center', background: 'rgba(39,27,31,0.78)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 16, color: '#e7deda', fontSize: 14 }}>
+                    Belum ada produk yang memenuhi target qty toko.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(4, minmax(0, 1fr))', gap: 7, minHeight: 0 }}>
+                    {(active.products ?? []).map((product) => (
+                      <article key={product.artikel} style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr) 44px', gap: 4, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: 5, boxSizing: 'border-box', borderRadius: 12, background: 'linear-gradient(150deg, rgba(45,31,35,0.96), rgba(29,21,25,0.94))', border: '1px solid rgba(214,195,190,0.22)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 8, background: '#f8fafc', padding: 3, boxSizing: 'border-box' }}>
+                          {product.imageUrl ? (
+                            <img src={product.imageUrl} alt={product.name || product.artikel} style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '90%', maxHeight: '90%', objectFit: 'contain', objectPosition: 'center', flexShrink: 0 }} />
+                          ) : (
+                            <div style={{ color: '#64748b', fontSize: 10, fontWeight: 700, textAlign: 'center' }}>Gambar tidak tersedia</div>
+                          )}
+                        </div>
+                          <div style={{ minWidth: 0, minHeight: 0, display: 'grid', gridTemplateRows: '8px minmax(0, 1fr) 14px', gap: 2, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4, color: '#94a3b8', fontSize: 6.5, lineHeight: '8px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', minWidth: 0, overflow: 'hidden' }}>
+                            <span>Artikel {product.artikel || '—'}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{product.category || product.departemen || 'Produk Insentif'}</span>
+                          </div>
+                          <div style={{ minHeight: 0, color: '#f8fafc', fontSize: 7.8, fontWeight: 900, lineHeight: 1.12, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>
+                            {product.name || product.artikel}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, minHeight: 0 }}>
+                            <span style={{ color: '#bbf7d0', fontSize: 6.5, fontWeight: 800, whiteSpace: 'nowrap' }}>QTY TOKO</span>
+                            <span style={{ color: '#064e3b', background: '#6ee7b7', borderRadius: 5, padding: '1px 4px', fontSize: 7, lineHeight: '11px', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                              {product.actualQty ?? 0} / {product.targetQty ?? 0} ✓
+                            </span>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : active.key !== 'dept' ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)', gap: 8, height: '100%', minWidth: 0 }}>
+                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto 1fr', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.35)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(184,140,0,0.1)' }}>
+                      <div style={{ fontSize: 7.5, color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
+                      <div style={{ fontSize: 9, fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
+                      <div style={{ marginTop: 3, fontSize: 15, fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
+                    </div>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(225,38,28,0.08)' }}>
+                      <div style={{ fontSize: 7.5, color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
+                      <div style={{ fontSize: 9, fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
+                      <div style={{ marginTop: 3, fontSize: 15, fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gap: 0, minHeight: 0, minWidth: 0, alignContent: 'start' }}>
+                    <div style={{ display: 'grid', gridTemplateRows: 'auto', gridAutoRows: 'clamp(22px, 3.2vh, 34px)', gap: 2, minHeight: 0, minWidth: 0, alignContent: 'start' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, color: '#e4d8d5', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box', height: 'clamp(20px, 2.6vh, 28px)' }}>
+                        <div style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(7px, 0.5vw, 9px)' }}>#</div>
+                        <div style={{ textAlign: 'left', paddingLeft: 1 }}>Nama</div>
+                        <div style={{ textAlign: 'left', paddingLeft: 1 }}>Job Title</div>
+                        <div style={{ textAlign: 'right' }}>Proteksi</div>
+                        <div style={{ textAlign: 'right' }}>Target</div>
+                        <div style={{ textAlign: 'right' }}>Sales</div>
+                        <div style={{ textAlign: 'right' }}>Ach</div>
+                      </div>
+                      {active.ranking.map((row, index) => {
+                        const displayRank = row.rank ?? index + 1
+                        const isBottom10Row = bottomTenRankSet.has(displayRank)
+                        return (
+                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.14)', borderRadius: 5, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1, height: '100%' }}>
+                            <div style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', borderRadius: 3, fontWeight: 900, fontSize: 'clamp(7px, 0.5vw, 9px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(8px, 0.68vw, 12px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.nama}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.jobTitle || '—'}</div>
+                            <div style={{ minWidth: 0, color: '#a7f3d0', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{(row.protectionQty ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}</div>
+                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.target ?? 0)}</div>
+                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.value)}</div>
+                            <div style={{ minWidth: 0, textAlign: 'center', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 900, padding: '2px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', lineHeight: 1, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gap: 3, alignContent: 'stretch', gridTemplateRows: '1fr 1fr', height: '100%' }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.12), rgba(38,27,31,0.78))', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
+                    <div style={{ color: '#fca5a5', fontSize: 7.2, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Leader Board</div>
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
+                      {topTen.map((row, index) => (
+                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', borderBottom: index === topTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
+                          <div style={{ width: 13, height: 13, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 6, ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
+                          <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
+                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 6.7, lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
+                            <div style={{ color: '#94a3b8', fontSize: 5 }}>{formatRupiah(row.value)}</div>
+                          </div>
+                          <div style={{ fontWeight: 900, fontSize: 6.7, padding: '1px 3px', borderRadius: 4, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'linear-gradient(180deg, rgba(120,82,214,0.12), rgba(38,27,31,0.82))', border: '1px solid rgba(196,181,253,0.18)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
+                    <div style={{ color: '#fca5a5', fontSize: 7.2, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Bottom 10 Performance</div>
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
+                      {bottomTen.map((row, index) => (
+                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', borderBottom: index === bottomTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
+                          <div style={{ width: 13, height: 13, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 6, ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
+                          <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
+                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 6.7, lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
+                            <div style={{ color: '#94a3b8', fontSize: 5 }}>{formatRupiah(row.value)}</div>
+                          </div>
+                          <div style={{ fontWeight: 900, fontSize: 6.7, padding: '1px 3px', borderRadius: 4, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateRows: 'auto 1fr', gap: 10, height: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8 }}>
+                  <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.18), rgba(38,27,31,0.9))', border: '1px solid rgba(242,197,17,0.32)', borderRadius: 14, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 16px rgba(184,140,0,0.08)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#f8df83', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Top Departemen</div>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: '#f8fafc', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{topDept?.label ?? '—'}</div>
+                      <div style={{ color: '#cbd5e1', fontSize: 8, marginTop: 3 }}>{topDept?.zone || 'Zona tidak tersedia'} · Sales MTD {formatRupiahFull(topDept?.value ?? 0)}</div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      <div style={{ display: 'inline-block', padding: '3px 7px', borderRadius: 6, fontSize: 14, fontWeight: 900, ...getAchievementBadgeStyle(topDept ? getDeptAchievement(topDept) : undefined) }}>{topDept ? getDeptAchievement(topDept).toFixed(1) : '—'}%</div>
+                    </div>
+                  </div>
+                  <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.16), rgba(38,27,31,0.9))', border: '1px solid rgba(252,165,165,0.3)', borderRadius: 14, padding: '8px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 16px rgba(225,38,28,0.07)' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: '#fecaca', fontSize: 8, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 }}>Bottom Departemen</div>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: '#f8fafc', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{bottomDept?.label ?? '—'}</div>
+                      <div style={{ color: '#cbd5e1', fontSize: 8, marginTop: 3 }}>{bottomDept?.zone || 'Zona tidak tersedia'} · Sales MTD {formatRupiahFull(bottomDept?.value ?? 0)}</div>
+                    </div>
+                    <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                      <div style={{ display: 'inline-block', padding: '3px 7px', borderRadius: 6, fontSize: 14, fontWeight: 900, ...getAchievementBadgeStyle(bottomDept ? getDeptAchievement(bottomDept) : undefined) }}>{bottomDept ? getDeptAchievement(bottomDept).toFixed(1) : '—'}%</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) 170px', gap: 8, height: '100%', minHeight: 0 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'auto', gap: 8, minHeight: 0, alignContent: 'start' }}>
+                    {activeDeptZone ? [activeDeptZone].map((zoneGroup) => (
+                      <div key={zoneGroup.zoneName} style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 14, padding: 12, display: 'grid', gridTemplateRows: 'auto auto', alignContent: 'start', minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7, padding: '0 2px', gap: 6 }}>
+                          <div style={{ color: '#f8fafc', fontSize: 11, fontWeight: 900, letterSpacing: '0.06em', textTransform: 'uppercase', minWidth: 0 }}>{zoneGroup.zoneName}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <div style={{ color: '#94a3b8', fontSize: 8, fontWeight: 800 }}>ZONA {deptZoneIndex + 1}/{deptZoneGroups.length}</div>
+                            <div style={{ color: '#cbd5e1', fontSize: 8.5, fontWeight: 700, opacity: 0.9 }}>
+                              {((zoneGroup.sbdZone?.value ?? 0) > 0 || (zoneGroup.mtdZone?.value ?? 0) > 0) ? `${zoneGroup.sbdZone?.achievement ?? 0}% / ${zoneGroup.mtdZone?.achievement ?? 0}%` : '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateRows: 'auto auto', gap: 4, minWidth: 0, alignContent: 'start' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, color: '#cbd5e1', fontSize: 8, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '0 3px' }}>
+                            <div>Dept</div>
+                            <div style={{ textAlign: 'right' }}>SBD</div>
+                            <div style={{ textAlign: 'center' }}>ACV</div>
+                            <div style={{ textAlign: 'right' }}>MTD</div>
+                            <div style={{ textAlign: 'center' }}>ACV</div>
+                          </div>
+
+                          <div style={{ display: 'grid', gap: 1, alignContent: 'start', gridAutoRows: 'min-content' }}>
+                            {zoneGroup.deptRows.map((dept) => (
+                              <div key={`${zoneGroup.zoneName}-${dept.label}-row`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, alignItems: 'center', padding: '5px 3px', borderTop: '1px solid rgba(148,163,184,0.08)', minHeight: 0 }}>
+                                <div style={{ color: '#f8fafc', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dept.label}</div>
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#f8fafc', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                  <span>{dept.sbd ? formatRupiahFull(dept.sbd.value) : '—'}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    minWidth: 24,
+                                    padding: '1px 4px',
+                                    borderRadius: 999,
+                                    fontSize: 7,
+                                    fontWeight: 800,
+                                    letterSpacing: '0.02em',
+                                    ...getAchievementBadgeStyle(dept.sbd?.achievement),
+                                    border: '1px solid rgba(255,255,255,0.12)'
+                                  }}>
+                                    {dept.sbd && dept.sbd.achievement !== undefined ? `${dept.sbd.achievement.toFixed(1)}%` : '—'}
+                                  </span>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#dbeafe', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                  <span>{dept.mtd ? formatRupiahFull(dept.mtd.value) : '—'}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    minWidth: 24,
+                                    padding: '1px 4px',
+                                    borderRadius: 999,
+                                    fontSize: 7,
+                                    fontWeight: 800,
+                                    letterSpacing: '0.02em',
+                                    ...getAchievementBadgeStyle(dept.mtd?.achievement),
+                                    border: '1px solid rgba(255,255,255,0.12)'
+                                  }}>
+                                    {dept.mtd && dept.mtd.achievement !== undefined ? `${dept.mtd.achievement.toFixed(1)}%` : '—'}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )) : null}
+                  </div>
+
+                  <div style={{ background: 'rgba(38,27,31,0.84)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
+                    <div style={{ color: '#cbd5e1', fontSize: 8.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Dept Trend</div>
+                    <div style={{ marginBottom: 8, color: '#f8fafc', fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: activeTrendColor, boxShadow: `0 0 12px ${activeTrendColor}` }} />
+                      {activeTrendLabel}
+                    </div>
+                    <div style={{ height: '100%', minHeight: 0 }}>
+                      {deptTrendByDepartmentSeries.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={deptTrendByDepartmentSeries} margin={{ top: 8, right: 10, left: 0, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="deptTrendFill" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor={activeTrendColor} stopOpacity={0.5} />
+                                <stop offset="100%" stopColor={activeTrendColor} stopOpacity={0.05} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid stroke="rgba(148,163,184,0.16)" strokeDasharray="4 4" />
+                            <XAxis dataKey="date" tick={{ fill: '#cbd5e1', fontSize: 7 }} minTickGap={12} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fill: '#cbd5e1', fontSize: 7 }} axisLine={false} tickLine={false} width={42} tickFormatter={value => `${Math.round(value / 1000000)} jt`} />
+                            <Tooltip
+                              formatter={(value: number) => [formatRupiahFull(Number(value)), activeTrendLabel]}
+                              labelStyle={{ color: '#e2e8f0', fontSize: 10 }}
+                              contentStyle={{ background: 'rgba(29,21,25,0.97)', border: '1px solid rgba(214,195,190,0.25)', borderRadius: 10 }}
+                            />
+                            <Area type="monotone" dataKey="value" stroke={activeTrendColor} strokeWidth={2} fill="url(#deptTrendFill)" dot={{ r: 2, fill: activeTrendColor }} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#cbd5e1', fontSize: 10 }}>Data trend belum tersedia</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -181,6 +999,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [ytdLoading, setYtdLoading] = useState(false)
   const [deptSbd, setDeptSbd]       = useState<DeptPeriodData | null>(null)
   const [deptMtd, setDeptMtd]       = useState<DeptPeriodData | null>(null)
+  const [deptTrend, setDeptTrend]   = useState<DeptTrendData | null>(null)
   const [deptLoading, setDeptLoading] = useState(false)
   const [deptLoaded, setDeptLoaded]   = useState(false)
   const [receiptRows, setReceiptRows] = useState<IncentiveReceiptRow[]>([])
@@ -189,14 +1008,52 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [trackerUrl, setTrackerUrlState] = useState(getTrackerUrl)
   const [trackerSaved, setTrackerSaved]  = useState(false)
   const [menuCfg, setMenuCfg] = useState(getMenuSettings)
+  const [tvDisplaySettings, setTVDisplaySettings] = useState<Record<TVSlideKey, boolean>>(getTVDisplaySettings)
   const [jobFilter, setJobFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('achievement')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [sidUpdatedAt, setSIDUpdatedAt] = useState<Date | null>(null)
+  const sidSignatureRef = useRef<string | null>(null)
+  const sidCheckInProgressRef = useRef(false)
   const isMobile = useMobile()
 
   // Declare these early to avoid temporal dead zone issues
   const targetFormula = settings.targetFormula
   const layout = settings.layout
+
+  const checkForSIDUpdates = useCallback(async () => {
+    if (sidCheckInProgressRef.current) return
+    sidCheckInProgressRef.current = true
+    try {
+      const nextSignature = await fetchSIDDataSignature()
+      const previousSignature = sidSignatureRef.current
+      sidSignatureRef.current = nextSignature
+      if (previousSignature && previousSignature !== nextSignature) {
+        await reload(user.nik)
+        setSIDUpdatedAt(new Date())
+      }
+    } catch (error) {
+      console.error('[TV] Gagal memeriksa perubahan data SID:', error)
+    } finally {
+      sidCheckInProgressRef.current = false
+    }
+  }, [reload, user.nik])
+
+  useEffect(() => {
+    if (page === 'tv') void checkForSIDUpdates()
+  }, [page, checkForSIDUpdates])
+
+  useEffect(() => {
+    setTVDisplaySettings(current => {
+      const next = { ...current }
+      for (const { key } of TV_DISPLAY_OPTIONS) {
+        const configKey = `tv_${key}`
+        if (configKey in menuConfig) next[key] = menuConfig[configKey]
+      }
+      return next
+    })
+  }, [menuConfig])
 
   useEffect(() => {
     setYtdLoading(true)
@@ -204,15 +1061,20 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   }, [])
 
   useEffect(() => {
-    if (page !== 'dept' || deptLoaded) return
+    if (deptLoaded) return
     setDeptLoading(true)
     fetchPencapaianDept()
-      .then(r => { setDeptSbd(r.sbd); setDeptMtd(r.mtd); setDeptLoaded(true) })
+      .then(r => {
+        setDeptSbd(r.sbd)
+        setDeptMtd(r.mtd)
+        setDeptTrend(r.trend)
+        setDeptLoaded(true)
+      })
       .finally(() => setDeptLoading(false))
-  }, [page, deptLoaded])
+  }, [deptLoaded])
 
   useEffect(() => {
-    if (page !== 'receipt' || receiptLoaded) return
+    if ((page !== 'receipt' && page !== 'tv') || receiptLoaded) return
     let cancelled = false
     setReceiptLoading(true)
     const loadReceiptData = async () => {
@@ -372,22 +1234,44 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   const primaryColor = layout.primaryColor || S.red
   const cardRadius = layout.cardRadius || 18
+
+  const toggleFullscreen = async () => {
+    const root = document.documentElement
+    try {
+      if (!document.fullscreenElement) {
+        if (root.requestFullscreen) await root.requestFullscreen()
+        return
+      }
+      if (document.exitFullscreen) await document.exitFullscreen()
+    } catch (error) {
+      console.warn('[ADMIN] Fullscreen toggle failed:', error)
+    }
+  }
+
+  useEffect(() => {
+    const syncFullscreenState = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', syncFullscreenState)
+    return () => document.removeEventListener('fullscreenchange', syncFullscreenState)
+  }, [])
+
   const NAV = [
     { key: 'today'     as NavPage, label: 'Today',      icon: '📅', sub: dailyDate    },
     { key: 'mtd'       as NavPage, label: 'MTD',        icon: '📊', sub: 'Berjalan'   },
     { key: 'fullmonth' as NavPage, label: 'Full Month', icon: '📆', sub: 'Target Penuh'},
     { key: 'ytd'       as NavPage, label: 'YTD',        icon: '🎯', sub: 'Tahunan'    },
     { key: 'dept'      as NavPage, label: 'Departemen', icon: '🏬', sub: 'SBD & MTD'   },
+    { key: 'tv'        as NavPage, label: 'TV Display', icon: '📺', sub: 'Slide otomatis' },
     { key: 'receipt'   as NavPage, label: 'Insentif Receipt', icon: '🧾', sub: 'Semua user' },
     { key: 'setting'   as NavPage, label: 'Pengaturan', icon: '⚙️',  sub: 'Konfigurasi' },
   ]
 
+  const isDisplayMode = page === 'tv'
+
   return (
-    <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
+    <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: isDisplayMode || isMobile ? 'column' : 'row' }}>
       {loading && <DataLoadingOverlay />}
 
-      {/* ── Sidebar (desktop) / Top nav (mobile) ───────────────────────────── */}
-      {!isMobile ? (
+      {!isDisplayMode && !isMobile ? (
         <aside style={{
           width: 220, flexShrink: 0, background: S.panel, borderRight: `1px solid ${S.border}`,
           display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, height: '100vh',
@@ -433,6 +1317,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
           {/* Bottom */}
           <div style={{ padding: '16px 12px', borderTop: `1px solid ${S.border}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <button onClick={toggleFullscreen}
+              style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${S.border}`, background: isFullscreen ? '#fef2f2' : S.bg, color: isFullscreen ? '#b91c1c' : S.sub, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              {isFullscreen ? '⤢ Exit Fullscreen' : '⛶ Fullscreen'}
+            </button>
             <button onClick={() => reload(user.nik)} disabled={loading}
               style={{ width: '100%', padding: '9px 12px', borderRadius: 10, border: `1px solid ${S.border}`, background: S.bg, color: S.sub, fontSize: 12, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer' }}>
               {loading ? '⟳ Memuat…' : '↻ Refresh Data'}
@@ -443,7 +1331,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             </button>
           </div>
         </aside>
-      ) : (
+      ) : null}
+
+      {!isDisplayMode && isMobile ? (
         /* Mobile top header */
         <header style={{ background: S.panel, borderBottom: `1px solid ${S.border}`, padding: '12px 16px', position: 'sticky', top: 0, zIndex: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -452,6 +1342,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
               <div style={{ fontWeight: 800, fontSize: 13, color: S.text }}>ATLAS</div>
               <div style={{ fontSize: 10, color: S.muted }}>{user.nama}</div>
             </div>
+            <button onClick={toggleFullscreen}
+              style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${S.border}`, background: isFullscreen ? '#fef2f2' : S.bg, color: isFullscreen ? '#b91c1c' : S.muted, fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
+              {isFullscreen ? '⤢' : '⛶'}
+            </button>
             <button onClick={() => reload(user.nik)} disabled={loading}
               style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${S.border}`, background: S.bg, color: S.muted, fontSize: 13, cursor: 'pointer' }}>
               {loading ? '⟳' : '↻'}
@@ -473,13 +1367,30 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             ))}
           </div>
         </header>
-      )}
+      ) : null}
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '16px' : '24px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ flex: 1, minWidth: 0, padding: isDisplayMode ? 0 : isMobile ? '16px' : '24px 28px', display: 'flex', flexDirection: 'column', gap: isDisplayMode ? 0 : 16 }}>
+
+        {page === 'tv' && (
+          <TVSlideshow
+            todayRanking={(todayPerf.ranking ?? []).map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            mtdRanking={(mtdPerf.ranking ?? []).map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            fullMonthRanking={fullMonthRanking.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            receiptRows={receiptRows.filter(row => users.some(account => account.role === 'user' && niksMatch(account.nik, row.nik)))}
+            receiptLoading={receiptLoading}
+            onSlideEnd={checkForSIDUpdates}
+            sidUpdatedAt={sidUpdatedAt}
+            visibleSlides={tvDisplaySettings}
+            deptSbd={deptSbd}
+            deptMtd={deptMtd}
+            deptTrend={deptTrend}
+            dailyDate={dailyDate}
+          />
+        )}
 
         {/* ── Konten Laporan (Today / MTD / Full Month / YTD) ─────────── */}
-        {page !== 'setting' && page !== 'receipt' && <>
+        {page !== 'setting' && page !== 'receipt' && page !== 'tv' && <>
 
         {/* Page title */}
         {!isMobile && (
@@ -927,6 +1838,49 @@ export default function AdminDashboard({ user, onLogout }: Props) {
         {page === 'setting' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: S.text, marginBottom: 4 }}>Pengaturan</div>
+
+            {/* Visibilitas TV Display */}
+            <div style={{ padding: '22px 24px', background: '#fff', borderRadius: 18, border: `1.5px solid ${S.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Visibilitas TV Display</div>
+              <div style={{ fontSize: 12, color: S.sub, marginBottom: 16 }}>Pilih tampilan yang ingin ditayangkan. Pengaturan dapat diaktifkan kembali kapan saja.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {TV_DISPLAY_OPTIONS.map(({ key, label, description }) => {
+                  const isOn = tvDisplaySettings[key]
+                  return (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px', borderRadius: 12, background: S.bg, border: `1.5px solid ${S.border}` }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>{label}</div>
+                        <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>{description}</div>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: isOn ? '#16a34a' : S.muted, minWidth: 28 }}>
+                        {isOn ? 'ON' : 'OFF'}
+                      </span>
+                      <button
+                        role="switch"
+                        aria-checked={isOn}
+                        aria-label={`${label} ${isOn ? 'aktif' : 'nonaktif'}`}
+                        onClick={() => {
+                          const newValue = !isOn
+                          const settingKey = `tv_${key}`
+                          setMenuSetting(settingKey, newValue)
+                          setMenuCfg(getMenuSettings())
+                          setTVDisplaySettings(current => ({ ...current, [key]: newValue }))
+                          void writeMenuConfigToSheet(`TV_${key.toUpperCase()}`, newValue).then(() => {
+                            setTimeout(() => reloadMenuConfig(), 3000)
+                          })
+                        }}
+                        style={{ width: 48, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', position: 'relative', background: isOn ? S.red : '#cbd5e1', transition: 'background 0.2s', flexShrink: 0 }}
+                      >
+                        <span style={{ position: 'absolute', top: 3, left: isOn ? 25 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.2)' }}/>
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ marginTop: 12, padding: '12px 14px', background: '#f0f9ff', border: '1.5px solid #bae6fd', borderRadius: 12, fontSize: 11, color: '#0369a1', lineHeight: 1.7 }}>
+                Pengaturan tersimpan di device ini dan dikirim ke sheet <strong>SETTING</strong> agar berlaku di TV display pada device lain. Perubahan pada device lain diperbarui otomatis setelah sinkronisasi.
+              </div>
+            </div>
 
             {/* Visibilitas Menu */}
             <div style={{ padding: '22px 24px', background: '#fff', borderRadius: 18, border: `1.5px solid ${S.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>

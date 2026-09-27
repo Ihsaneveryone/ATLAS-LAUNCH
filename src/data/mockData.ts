@@ -34,6 +34,7 @@ export interface EmployeeRank {
   jobTitle: string
   value: number
   achievement: number
+  protectionQty?: number
   target?: number
   fullMonthTarget?: number
 }

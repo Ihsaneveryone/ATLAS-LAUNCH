@@ -21,6 +21,13 @@ describe('NIK matching', () => {
     expect(niksMatch('101902', 'I01902')).toBe(true)
   })
 
+  it('stores the I-prefix variant for 6-digit NIKs so mixed exports still match', () => {
+    const variants = getNikVariants('191924')
+    expect(variants).toContain('191924')
+    expect(variants).toContain('I91924')
+    expect(niksMatch('191924', 'I91924')).toBe(true)
+  })
+
   it('uses the matching row when the current NIK uses an alternate format', () => {
     const rows: DailySalesRow[] = [
       {

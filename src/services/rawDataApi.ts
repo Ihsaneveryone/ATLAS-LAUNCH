@@ -12,6 +12,7 @@ import { niksMatch, canonicalNik, looksLikeNik } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
+const SID_RAW_DATA_GID = 1092675108
 
 function sheetUrl(name: string, gid?: number) {
   // Jika ada gid, gunakan gid (lebih reliable dari sheet name)
@@ -78,6 +79,10 @@ function parseCSV(text: string): string[][] {
 
 function c(row: string[], idx: number) { return (row[idx] ?? '').trim() }
 
+function normalizeArticleCode(value: string): string {
+  return (value ?? '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
 function numVal(s: string): number {
   if (!s) return 0
   return parseFloat(s.replace(/Rp\.?\s*/gi, '').replace(/\./g, '').replace(',', '.')) || 0
@@ -140,6 +145,18 @@ function sameMonth(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
 }
 
+function resolveTransactionDate(value: string, today: Date, preferUS: boolean): Date | null {
+  const localDate = parseDate(value)
+  const usDate = parseDateUS(value)
+  if (!localDate || !usDate || localDate.getTime() === usDate.getTime()) return preferUS ? usDate ?? localDate : localDate ?? usDate
+
+  // Google Sheets can export ambiguous dates as M/D/YYYY. Prefer the
+  // interpretation that is not in the future when the other is this month.
+  if (localDate > today && usDate <= today && sameMonth(usDate, today)) return usDate
+  if (usDate > today && localDate <= today && sameMonth(localDate, today)) return localDate
+  return preferUS ? usDate : localDate
+}
+
 // ─── Raw transaction row ──────────────────────────────────────────────────────
 
 interface RawTxn {
@@ -169,7 +186,7 @@ export async function fetchSkuMap(): Promise<SkuMap> {
 
   for (const row of raw.slice(1)) {
     row.forEach((val, ci) => {
-      const v = val.trim()
+      const v = normalizeArticleCode(val)
       if (v && categories[ci]) categories[ci].articles.add(v)
     })
   }
@@ -527,6 +544,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
           const retryRows = await fetchCSV(candidate, gid)
           if (retryRows.length > candidateRows.length) candidateRows = retryRows
         }
+
       }
       const firstRow = candidateRows[0]?.map(v => v.trim()) ?? []
       const isReferenceSheet = candidateRows.some(row => row.some(cell => cell.includes('#REF!')))
@@ -706,6 +724,19 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   return { txns, debugRows }
 }
 
+export async function fetchSIDDataSignature(): Promise<string> {
+  const response = await fetch(sheetUrl('COPAS S2', SID_RAW_DATA_GID), { cache: 'no-store' })
+  const text = await response.text()
+  if (!response.ok || text.trimStart().startsWith('<!')) {
+    throw new Error(`Sheet SID COPAS S2 tidak bisa diperiksa (HTTP ${response.status})`)
+  }
+
+  let hash = 2166136261
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 16777619)
+  }
+  return `${text.length}:${(hash >>> 0).toString(16)}`
+}
 
 // ─── Fetch SETTING ────────────────────────────────────────────────────────────
 // Sheet SETTING: A=SECTION, B=NAMA, C=AKTIF, D=TARGET_TYPE, E=TARGET_VALUE, F=UNIT, G=KETERANGAN
@@ -765,9 +796,11 @@ export async function fetchMenuConfig(): Promise<Record<string, boolean>> {
       const section = c(row, sectionIdx).toUpperCase().trim()
       const key     = c(row, namaIdx).toUpperCase().trim()
       const val     = c(row, aktifIdx).toUpperCase().trim()
-      if (section === 'CONFIG' && key.startsWith('MENU_')) {
-        // MENU_FORECASTING → 'forecasting'
-        cfg[key.replace('MENU_', '').toLowerCase()] = val !== 'FALSE'
+      const configPrefix = key.startsWith('MENU_') ? 'MENU_' : key.startsWith('TV_') ? 'TV_' : null
+      if (section === 'CONFIG' && configPrefix) {
+        // MENU_FORECASTING → 'forecasting'; TV_TODAY → 'tv_today'
+        const configKey = key.replace(configPrefix, '').toLowerCase()
+        cfg[configPrefix === 'TV_' ? `tv_${configKey}` : configKey] = val !== 'FALSE'
       }
     }
     return cfg
@@ -943,9 +976,11 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
   const articleToCategories = new Map<string, string[]>()
   for (const cat of skuMap.categories) {
     for (const art of cat.articles) {
-      const existing = articleToCategories.get(art) ?? []
+      const normalizedArticle = normalizeArticleCode(art)
+      if (!normalizedArticle) continue
+      const existing = articleToCategories.get(normalizedArticle) ?? []
       existing.push(cat.name)
-      articleToCategories.set(art, existing)
+      articleToCategories.set(normalizedArticle, existing)
     }
   }
 
@@ -971,7 +1006,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     e.qty   += t.qty
     if (t.receiptNo) e.receipts.add(t.receiptNo)
 
-    const cats = articleToCategories.get(t.artikel)
+    const cats = articleToCategories.get(normalizeArticleCode(t.artikel))
     if (cats) {
       for (const catName of cats) {
         e.categorySales.set(catName, (e.categorySales.get(catName) ?? 0) + t.totalValue)
@@ -1206,6 +1241,9 @@ function buildRanking(
       return {
         rank: i + 1, nik: e.nik, nama: cleanNama(rawNama), jobTitle: tData?.jobTitle ?? '',
         value: e.sales, target: tgt, fullMonthTarget: tData?.monthly,
+        protectionQty: Object.entries(e.categoryQty)
+          .filter(([category]) => category.toLowerCase().includes('proteksi'))
+          .reduce((total, [, qty]) => total + qty, 0),
         achievement: tgt > 0 ? parseFloat(((e.sales / tgt) * 100).toFixed(1)) : 0,
       }
     })
@@ -1376,7 +1414,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   // Re-parse semua tanggal dengan format yang benar
   const parsedTxns = txns.map(t => ({
     ...t,
-    date: useUSFormat ? parseDateUS(t.tanggal) : parseDate(t.tanggal),
+    date: resolveTransactionDate(t.tanggal, today, useUSFormat),
   }))
 
   // ── NIK diagnostics ─────────────────────────────────────────────────────

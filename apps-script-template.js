@@ -4,6 +4,7 @@
  *
  * Expected actions:
  * - action=menuConfig&key=MENU_FORECASTING&val=true
+ * - action=menuConfig&key=TV_TODAY&val=false
  * - action=adminSettings&targetFormula=...&layout=...
  * - action=columnMappings&mappings=[...]
  */
