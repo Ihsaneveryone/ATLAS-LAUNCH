@@ -12,6 +12,8 @@ import { useAdminSettings } from '../context/AdminSettingsContext'
 import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
+import { getTrackedProductArticleKey, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
+import { readSIDUpdateState, saveSIDUpdateState } from '../services/sidUpdateTracker'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -142,6 +144,7 @@ function TVSlideshow({
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
   const [eligibleProducts, setEligibleProducts] = useState<IncentiveBoomsaleRow[]>([])
+  const [newProductArticles, setNewProductArticles] = useState<Set<string>>(() => new Set())
   const [productsLoading, setProductsLoading] = useState(true)
   const onSlideEndRef = useRef(onSlideEnd)
 
@@ -159,7 +162,9 @@ function TVSlideshow({
           const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheet)}&_t=${Date.now()}`
           const response = await fetch(url, { cache: 'no-store' })
           const text = await response.text()
-          if (!response.ok || text.trimStart().startsWith('<!')) return []
+          if (!response.ok || text.trimStart().startsWith('<!')) {
+            throw new Error(`Unable to load incentive product sheet "${sheet}".`)
+          }
           return parseCsv(text)
         }))
         const parsed = parseIncentiveSheets({
@@ -169,16 +174,22 @@ function TVSlideshow({
         const qualified = parsed.boomsale.rows
           .filter((product) => (product.targetQty ?? 0) > 0 && (product.actualQty ?? 0) >= (product.targetQty ?? 0))
           .sort((left, right) => (right.actualQty ?? 0) - (left.actualQty ?? 0) || left.name.localeCompare(right.name, 'id-ID'))
-        if (!cancelled) setEligibleProducts(qualified)
+        if (!cancelled) {
+          setEligibleProducts(qualified)
+          setNewProductArticles(trackNewlyQualifiedProducts(qualified))
+        }
       } catch (error) {
         console.warn('[TV] Error loading qualified incentive products:', error)
-        if (!cancelled) setEligibleProducts([])
       } finally {
         if (!cancelled) setProductsLoading(false)
       }
     }
     void loadProducts()
-    return () => { cancelled = true }
+    const refreshTimer = window.setInterval(() => { void loadProducts() }, 5 * 60 * 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(refreshTimer)
+    }
   }, [])
 
   const chunkRanking = (rows: RankingRow[], size = 20) => {
@@ -283,6 +294,7 @@ function TVSlideshow({
   const avgAch = rankedList.reduce((sum: number, row: RankingRow) => sum + row.achievement, 0) / Math.max(rankedList.length, 1)
   const topLeader = rankedList[0]
   const bottomLeader = rankedList[rankedList.length - 1]
+  const rankingColumns = '24px minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(42px, 0.9fr)'
   const deptPrimary = deptMtd ?? deptSbd
   const deptSecondary = deptSbd ?? deptMtd
   const sbdDeptRows = deptSbd?.departments?.filter((item) => item.kind !== 'zone') ?? []
@@ -576,7 +588,7 @@ function TVSlideshow({
                   </div>
                   <div style={{ color: '#94a3b8', fontSize: 11, fontWeight: 600, letterSpacing: '0.03em', marginTop: 14 }}>
                     Terakhir diperbarui: {sidUpdatedAt
-                      ? sidUpdatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                      ? `${sidUpdatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' })} WIB`
                       : 'Belum ada perubahan data SID terdeteksi'}
                   </div>
                 </div>
@@ -653,8 +665,17 @@ function TVSlideshow({
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gridTemplateRows: 'repeat(4, minmax(0, 1fr))', gap: 7, minHeight: 0 }}>
-                    {(active.products ?? []).map((product) => (
-                      <article key={product.artikel} style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr) 44px', gap: 4, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: 5, boxSizing: 'border-box', borderRadius: 12, background: 'linear-gradient(150deg, rgba(45,31,35,0.96), rgba(29,21,25,0.94))', border: '1px solid rgba(214,195,190,0.22)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+                    {(active.products ?? []).map((product) => {
+                      const isNewProduct = newProductArticles.has(getTrackedProductArticleKey(product.artikel))
+                      return (
+                      <article key={product.artikel} style={{ display: 'grid', gridTemplateRows: '16px minmax(0, 1fr) 44px', gap: 4, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: 5, boxSizing: 'border-box', borderRadius: 12, background: 'linear-gradient(150deg, rgba(45,31,35,0.96), rgba(29,21,25,0.94))', border: '1px solid rgba(214,195,190,0.22)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                          {isNewProduct && (
+                            <span style={{ color: '#422006', background: '#f8df83', border: '1px solid rgba(255,241,168,0.65)', borderRadius: 999, padding: '1px 6px', fontSize: 8, lineHeight: '12px', fontWeight: 900, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                              🆕 NEW
+                            </span>
+                          )}
+                        </div>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 8, background: '#f8fafc', padding: 3, boxSizing: 'border-box' }}>
                           {product.imageUrl ? (
                             <img src={product.imageUrl} alt={product.name || product.artikel} style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '90%', maxHeight: '90%', objectFit: 'contain', objectPosition: 'center', flexShrink: 0 }} />
@@ -678,49 +699,49 @@ function TVSlideshow({
                           </div>
                         </div>
                       </article>
-                    ))}
+                    )})}
                   </div>
                 )}
               </div>
             ) : active.key !== 'dept' ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)', gap: 8, height: '100%', minWidth: 0 }}>
-                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto 1fr', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                     <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.35)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(184,140,0,0.1)' }}>
                       <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
-                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
+                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
                     <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(225,38,28,0.08)' }}>
                       <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
-                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
+                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gap: 0, minHeight: 0, minWidth: 0, alignContent: 'start' }}>
-                    <div style={{ display: 'grid', gridTemplateRows: `clamp(22px, 2.8vh, 30px) repeat(${active.ranking.length}, minmax(0, 1fr))`, gap: 2, minHeight: 0, minWidth: 0 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, color: '#e4d8d5', fontSize: 'clamp(9px, 0.78vw, 13px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box' }}>
-                        <div style={{ width: 14, height: 14, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
-                        <div style={{ textAlign: 'left', paddingLeft: 1 }}>Nama</div>
-                        <div style={{ textAlign: 'left', paddingLeft: 1 }}>Job Title</div>
-                        <div style={{ textAlign: 'right' }}>Proteksi</div>
-                        <div style={{ textAlign: 'right' }}>Target</div>
-                        <div style={{ textAlign: 'right' }}>Sales</div>
-                        <div style={{ textAlign: 'right' }}>Ach</div>
+                  <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: 0, height: '100%', minHeight: 0, minWidth: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateRows: `clamp(22px, 2.8vh, 30px) repeat(${active.ranking.length}, minmax(0, 1fr))`, gap: 3, height: '100%', minHeight: 0, minWidth: 0 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, color: '#e4d8d5', fontSize: 'clamp(9px, 0.82vw, 12px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box', minWidth: 0 }}>
+                        <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
+                        <div style={{ minWidth: 0 }}>Nama</div>
+                        <div style={{ minWidth: 0 }}>Job</div>
+                        <div style={{ textAlign: 'right', minWidth: 0 }}>Prot.</div>
+                        <div style={{ textAlign: 'right', minWidth: 0 }}>Target</div>
+                        <div style={{ textAlign: 'right', minWidth: 0 }}>Sales</div>
+                        <div style={{ textAlign: 'right', minWidth: 0 }}>Ach</div>
                       </div>
                       {active.ranking.map((row, index) => {
                         const displayRank = row.rank ?? index + 1
                         const isBottom10Row = bottomTenRankSet.has(displayRank)
                         return (
-                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.14)', borderRadius: 5, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1 }}>
-                            <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 4, fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
-                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(11px, 0.92vw, 15px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.nama}</div>
-                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.jobTitle || '—'}</div>
-                            <div style={{ minWidth: 0, color: '#a7f3d0', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{(row.protectionQty ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}</div>
-                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.target ?? 0)}</div>
-                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.value)}</div>
-                            <div style={{ minWidth: 0, textAlign: 'center', fontSize: 'clamp(9px, 0.75vw, 13px)', fontWeight: 900, padding: '3px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', lineHeight: 1, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 6, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1 }}>
+                            <div style={{ width: 14, height: 14, display: 'grid', placeItems: 'center', borderRadius: 4, fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(11px, 0.95vw, 15px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1.1 }}>{row.nama}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#d1d9e3', fontSize: 'clamp(10px, 0.82vw, 13px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1.1 }}>{row.jobTitle || '—'}</div>
+                            <div style={{ minWidth: 0, color: '#a7f3d0', fontSize: 'clamp(10px, 0.82vw, 13px)', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>{(row.protectionQty ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}</div>
+                            <div style={{ minWidth: 0, color: '#d1d9e3', fontSize: 'clamp(10px, 0.82vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>{formatRupiah(row.target ?? 0)}</div>
+                            <div style={{ minWidth: 0, color: '#d1d9e3', fontSize: 'clamp(10px, 0.82vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.1 }}>{formatRupiah(row.value)}</div>
+                            <div style={{ minWidth: 0, textAlign: 'center', fontSize: 'clamp(10px, 0.82vw, 13px)', fontWeight: 900, padding: '2px 3px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', lineHeight: 1.1, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                           </div>
                         )
                       })}
@@ -728,34 +749,34 @@ function TVSlideshow({
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 3, alignContent: 'stretch', gridTemplateRows: '1fr 1fr', height: '100%' }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.12), rgba(38,27,31,0.78))', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
+                <div style={{ display: 'grid', gap: 6, gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', height: '100%', minHeight: 0 }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.12), rgba(38,27,31,0.78))', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0 }}>
                     <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Leader Board</div>
-                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
                       {topTen.map((row, index) => (
-                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', borderBottom: index === topTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
-                          <div style={{ width: 20, height: 20, flexShrink: 0, borderRadius: 6, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 12px)', ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
-                          <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
-                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 'clamp(10px, 0.82vw, 14px)', lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
-                            <div style={{ color: '#94a3b8', fontSize: 'clamp(9px, 0.68vw, 11px)' }}>{formatRupiah(row.value)}</div>
+                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 6, background: 'rgba(29,21,25,0.42)', minHeight: 0, overflow: 'hidden' }}>
+                          <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontWeight: 800, fontSize: 'clamp(11px, 0.95vw, 15px)', lineHeight: 1.1, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{row.nama}</div>
+                            <div style={{ flexShrink: 0, color: '#b7c1cf', fontSize: 'clamp(9px, 0.72vw, 11px)', lineHeight: 1, whiteSpace: 'nowrap' }}>{formatRupiah(row.value)}</div>
                           </div>
-                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.78vw, 13px)', padding: '3px 5px', borderRadius: 5, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.82vw, 12px)', padding: '3px 4px', borderRadius: 5, whiteSpace: 'nowrap', ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div style={{ background: 'linear-gradient(180deg, rgba(120,82,214,0.12), rgba(38,27,31,0.82))', border: '1px solid rgba(196,181,253,0.18)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(120,82,214,0.12), rgba(38,27,31,0.82))', border: '1px solid rgba(196,181,253,0.18)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0 }}>
                     <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Bottom 10 Performance</div>
-                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
                       {bottomTen.map((row, index) => (
-                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', borderBottom: index === bottomTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
-                          <div style={{ width: 20, height: 20, flexShrink: 0, borderRadius: 6, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 12px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
-                          <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
-                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 'clamp(10px, 0.82vw, 14px)', lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
-                            <div style={{ color: '#94a3b8', fontSize: 'clamp(9px, 0.68vw, 11px)' }}>{formatRupiah(row.value)}</div>
+                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 6, background: 'rgba(29,21,25,0.42)', minHeight: 0, overflow: 'hidden' }}>
+                          <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
+                            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontWeight: 800, fontSize: 'clamp(11px, 0.95vw, 15px)', lineHeight: 1.1, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{row.nama}</div>
+                            <div style={{ flexShrink: 0, color: '#b7c1cf', fontSize: 'clamp(9px, 0.72vw, 11px)', lineHeight: 1, whiteSpace: 'nowrap' }}>{formatRupiah(row.value)}</div>
                           </div>
-                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.78vw, 13px)', padding: '3px 5px', borderRadius: 5, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.82vw, 12px)', padding: '3px 4px', borderRadius: 5, whiteSpace: 'nowrap', ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                         </div>
                       ))}
                     </div>
@@ -1013,8 +1034,8 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('achievement')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [sidUpdatedAt, setSIDUpdatedAt] = useState<Date | null>(null)
-  const sidSignatureRef = useRef<string | null>(null)
+  const [sidUpdateState, setSIDUpdateState] = useState(readSIDUpdateState)
+  const sidSignatureRef = useRef<string | null>(sidUpdateState.signature)
   const sidCheckInProgressRef = useRef(false)
   const isMobile = useMobile()
 
@@ -1028,20 +1049,31 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     try {
       const nextSignature = await fetchSIDDataSignature()
       const previousSignature = sidSignatureRef.current
+      const signatureChanged = previousSignature !== nextSignature
       sidSignatureRef.current = nextSignature
-      if (previousSignature && previousSignature !== nextSignature) {
-        await reload(user.nik)
-        setSIDUpdatedAt(new Date())
+      if (signatureChanged || !sidUpdateState.updatedAt) {
+        const nextState = {
+          signature: nextSignature,
+          updatedAt: signatureChanged && previousSignature
+            ? new Date().toISOString()
+            : sidUpdateState.updatedAt ?? new Date().toISOString(),
+        }
+        saveSIDUpdateState(nextState)
+        setSIDUpdateState(nextState)
+        if (signatureChanged && previousSignature) await reload(user.nik)
       }
     } catch (error) {
       console.error('[TV] Gagal memeriksa perubahan data SID:', error)
     } finally {
       sidCheckInProgressRef.current = false
     }
-  }, [reload, user.nik])
+  }, [reload, sidUpdateState.updatedAt, user.nik])
 
   useEffect(() => {
-    if (page === 'tv') void checkForSIDUpdates()
+    if (page !== 'tv') return
+    void checkForSIDUpdates()
+    const interval = window.setInterval(() => { void checkForSIDUpdates() }, 30_000)
+    return () => window.clearInterval(interval)
   }, [page, checkForSIDUpdates])
 
   useEffect(() => {
@@ -1380,7 +1412,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             receiptRows={receiptRows.filter(row => users.some(account => account.role === 'user' && niksMatch(account.nik, row.nik)))}
             receiptLoading={receiptLoading}
             onSlideEnd={checkForSIDUpdates}
-            sidUpdatedAt={sidUpdatedAt}
+            sidUpdatedAt={sidUpdateState.updatedAt ? new Date(sidUpdateState.updatedAt) : null}
             visibleSlides={tvDisplaySettings}
             deptSbd={deptSbd}
             deptMtd={deptMtd}
