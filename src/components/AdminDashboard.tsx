@@ -12,7 +12,7 @@ import { useAdminSettings } from '../context/AdminSettingsContext'
 import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
-import { getTrackedProductArticleKey, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
+import { getTrackedProductArticleKey, seedNewlyQualifiedProducts, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
 import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from '../services/sidUpdateTracker'
 import {
   AreaChart, Area,
@@ -33,6 +33,8 @@ const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: s
   { key: 'receipt', label: 'Insentif Receipt', description: 'Progress qualifying receipt dan total insentif karyawan' },
   { key: 'incentive_products', label: 'Insentif Produk', description: 'Produk yang memenuhi target qty toko' },
 ]
+
+const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 
 function getTVDisplaySettings(): Record<TVSlideKey, boolean> {
   const saved = getMenuSettings()
@@ -176,7 +178,9 @@ function TVSlideshow({
           .sort((left, right) => (right.actualQty ?? 0) - (left.actualQty ?? 0) || left.name.localeCompare(right.name, 'id-ID'))
         if (!cancelled) {
           setEligibleProducts(qualified)
-          setNewProductArticles(trackNewlyQualifiedProducts(qualified))
+          const newlyQualified = trackNewlyQualifiedProducts(qualified)
+          const seededNewProducts = seedNewlyQualifiedProducts(qualified, NEWLY_QUALIFIED_PRODUCT_ARTICLES)
+          setNewProductArticles(new Set([...newlyQualified, ...seededNewProducts]))
         }
       } catch (error) {
         console.warn('[TV] Error loading qualified incentive products:', error)
@@ -191,6 +195,14 @@ function TVSlideshow({
       window.clearInterval(refreshTimer)
     }
   }, [])
+
+  useEffect(() => {
+    if (!slides[activeSlide]?.key.startsWith('incentive-products-') || eligibleProducts.length === 0) return
+
+    const newlyQualified = trackNewlyQualifiedProducts(eligibleProducts)
+    const seededNewProducts = seedNewlyQualifiedProducts(eligibleProducts, NEWLY_QUALIFIED_PRODUCT_ARTICLES)
+    setNewProductArticles(new Set([...newlyQualified, ...seededNewProducts]))
+  }, [activeSlide, eligibleProducts])
 
   const chunkRanking = (rows: RankingRow[], size = 20) => {
     if (!rows.length) return [[]] as RankingRow[][]
@@ -517,7 +529,7 @@ function TVSlideshow({
         }
       `}</style>
 
-      <div style={{ position: 'relative', minHeight: '100vh', height: '100vh', background: 'radial-gradient(circle at top left, #3b2020 0%, #1d171a 36%, #100e12 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
+      <div style={{ position: 'relative', minHeight: '100vh', height: '100vh', background: 'radial-gradient(circle at top left, #b95046 0%, #a7463f 36%, #8d3e47 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(225,38,28,0.12), rgba(242,197,17,0.05), rgba(104,70,199,0.08))' }} />
 
         <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'grid', gridTemplateRows: 'auto auto 1fr', padding: '10px 18px 8px' }}>
@@ -668,15 +680,13 @@ function TVSlideshow({
                     {(active.products ?? []).map((product) => {
                       const isNewProduct = newProductArticles.has(getTrackedProductArticleKey(product.artikel))
                       return (
-                      <article key={product.artikel} style={{ display: 'grid', gridTemplateRows: '16px minmax(0, 1fr) 44px', gap: 4, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: 5, boxSizing: 'border-box', borderRadius: 12, background: 'linear-gradient(150deg, rgba(45,31,35,0.96), rgba(29,21,25,0.94))', border: '1px solid rgba(214,195,190,0.22)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
-                          {isNewProduct && (
-                            <span style={{ color: '#422006', background: '#f8df83', border: '1px solid rgba(255,241,168,0.65)', borderRadius: 999, padding: '1px 6px', fontSize: 8, lineHeight: '12px', fontWeight: 900, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
-                              🆕 NEW
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 8, background: '#f8fafc', padding: 3, boxSizing: 'border-box' }}>
+                      <article key={product.artikel} style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr) 44px', gap: 4, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: 5, boxSizing: 'border-box', borderRadius: 12, background: 'linear-gradient(150deg, rgba(45,31,35,0.96), rgba(29,21,25,0.94))', border: '1px solid rgba(214,195,190,0.22)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)', position: 'relative' }}>
+                        {isNewProduct && (
+                          <span style={{ position: 'absolute', top: 3, right: 3, zIndex: 2, color: '#422006', background: '#f8df83', borderRadius: 3, padding: '2px 6px', fontSize: 8, lineHeight: '11px', fontWeight: 900, letterSpacing: '0.05em', whiteSpace: 'nowrap', transform: 'rotate(4deg)', boxShadow: '0 2px 5px rgba(0,0,0,0.24)' }}>
+                            NEW
+                          </span>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 8, background: '#f8fafc', padding: isNewProduct ? '14px 3px 3px' : 3, boxSizing: 'border-box' }}>
                           {product.imageUrl ? (
                             <img src={product.imageUrl} alt={product.name || product.artikel} style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '90%', maxHeight: '90%', objectFit: 'contain', objectPosition: 'center', flexShrink: 0 }} />
                           ) : (
@@ -705,14 +715,14 @@ function TVSlideshow({
               </div>
             ) : active.key !== 'dept' ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)', gap: 8, height: '100%', minWidth: 0 }}>
-                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(245,220,205,0.48)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.35)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(184,140,0,0.1)' }}>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.72)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 0 0 1px rgba(242,197,17,0.12)' }}>
                       <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
                       <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
-                    <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(225,38,28,0.08)' }}>
+                    <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(255,145,132,0.66)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 0 0 1px rgba(225,38,28,0.12)' }}>
                       <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
                       <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
@@ -721,8 +731,8 @@ function TVSlideshow({
 
                   <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: 0, height: '100%', minHeight: 0, minWidth: 0 }}>
                     <div style={{ display: 'grid', gridTemplateRows: `clamp(22px, 2.8vh, 30px) repeat(${active.ranking.length}, minmax(0, 1fr))`, gap: 3, height: '100%', minHeight: 0, minWidth: 0 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, color: '#e4d8d5', fontSize: 'clamp(9px, 0.82vw, 12px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box', minWidth: 0 }}>
-                        <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, color: '#e4d8d5', fontSize: 'clamp(9px, 0.82vw, 12px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.88)', border: '1px solid rgba(245,220,205,0.42)', borderRadius: 5, boxSizing: 'border-box', minWidth: 0 }}>
+                        <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(214,195,190,0.2)', color: '#f0e6df', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
                         <div style={{ minWidth: 0 }}>Nama</div>
                         <div style={{ minWidth: 0 }}>Job</div>
                         <div style={{ textAlign: 'right', minWidth: 0 }}>Proteksi</div>
@@ -734,7 +744,7 @@ function TVSlideshow({
                         const displayRank = row.rank ?? index + 1
                         const isBottom10Row = bottomTenRankSet.has(displayRank)
                         return (
-                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 6, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1 }}>
+                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, background: 'rgba(29,21,25,0.92)', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1 }}>
                             <div style={{ width: 14, height: 14, display: 'grid', placeItems: 'center', borderRadius: 4, fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
                             <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(11px, 0.95vw, 15px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1.1 }}>{row.nama}</div>
                             <div style={{ minWidth: 0, overflow: 'hidden', color: '#d1d9e3', fontSize: 'clamp(10px, 0.82vw, 13px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1.1 }}>{row.jobTitle || '—'}</div>
@@ -750,11 +760,13 @@ function TVSlideshow({
                 </div>
 
                 <div style={{ display: 'grid', gap: 6, gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', height: '100%', minHeight: 0 }}>
-                  <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.12), rgba(38,27,31,0.78))', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0 }}>
-                    <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Leader Board</div>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(242,197,17,0.18), rgba(48,34,37,0.88))', border: '2px solid rgba(248,223,131,0.9)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(242,197,17,0.18)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '3px 5px 5px', borderBottom: '2px solid rgba(248,223,131,0.9)', minWidth: 0 }}>
+                      <div style={{ color: '#fff6c7', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>LEADERBOARD</div>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
                       {topTen.map((row, index) => (
-                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 6, background: 'rgba(29,21,25,0.42)', minHeight: 0, overflow: 'hidden' }}>
+                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, background: 'rgba(29,21,25,0.62)', minHeight: 0, overflow: 'hidden' }}>
                           <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
                           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
                             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontWeight: 800, fontSize: 'clamp(11px, 0.95vw, 15px)', lineHeight: 1.1, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{row.nama}</div>
@@ -766,11 +778,13 @@ function TVSlideshow({
                     </div>
                   </div>
 
-                  <div style={{ background: 'linear-gradient(180deg, rgba(120,82,214,0.12), rgba(38,27,31,0.82))', border: '1px solid rgba(196,181,253,0.18)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0 }}>
-                    <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Bottom 10 Performance</div>
+                  <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.2), rgba(48,34,37,0.9))', border: '2px solid rgba(255,145,132,0.9)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(225,38,28,0.18)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '3px 5px 5px', borderBottom: '2px solid rgba(255,145,132,0.9)', minWidth: 0 }}>
+                      <div style={{ color: '#ffe1dc', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>BOTTOM 10 PERFORMANCE</div>
+                    </div>
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
                       {bottomTen.map((row, index) => (
-                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(148,163,184,0.18)', borderRadius: 6, background: 'rgba(29,21,25,0.42)', minHeight: 0, overflow: 'hidden' }}>
+                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, background: 'rgba(29,21,25,0.62)', minHeight: 0, overflow: 'hidden' }}>
                           <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
                           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
                             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontWeight: 800, fontSize: 'clamp(11px, 0.95vw, 15px)', lineHeight: 1.1, whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{row.nama}</div>
@@ -811,7 +825,7 @@ function TVSlideshow({
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1.15fr) minmax(230px, 0.85fr)', gap: 8, height: '100%', minHeight: 0 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', gap: 8, height: '100%', minHeight: 0, alignContent: 'stretch' }}>
                     {activeDeptZone ? [activeDeptZone].map((zoneGroup) => (
-                      <div key={zoneGroup.zoneName} style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 14, padding: 14, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', alignContent: 'stretch', minWidth: 0, minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
+                      <div key={zoneGroup.zoneName} style={{ background: 'rgba(38, 27, 31, 0.88)', border: '1px solid rgba(245,220,205,0.44)', borderRadius: 14, padding: 14, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', alignContent: 'stretch', minWidth: 0, minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7, padding: '0 2px', gap: 6 }}>
                           <div style={{ color: '#f8fafc', fontSize: 11, fontWeight: 900, letterSpacing: '0.06em', textTransform: 'uppercase', minWidth: 0 }}>{zoneGroup.zoneName}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -833,7 +847,7 @@ function TVSlideshow({
 
                           <div style={{ display: 'grid', gap: 1, alignContent: 'stretch', gridAutoRows: 'minmax(0, 1fr)', minHeight: 0 }}>
                             {zoneGroup.deptRows.map((dept) => (
-                              <div key={`${zoneGroup.zoneName}-${dept.label}-row`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, alignItems: 'center', padding: '7px 3px', borderTop: '1px solid rgba(148,163,184,0.08)', minHeight: 0 }}>
+                              <div key={`${zoneGroup.zoneName}-${dept.label}-row`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, alignItems: 'center', padding: '7px 3px', borderTop: '1px solid rgba(245,220,205,0.2)', minHeight: 0 }}>
                                 <div style={{ color: '#f8fafc', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dept.label}</div>
 
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#f8fafc', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
@@ -885,7 +899,7 @@ function TVSlideshow({
                     )) : null}
                   </div>
 
-                  <div style={{ background: 'rgba(38,27,31,0.84)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
+                  <div style={{ background: 'rgba(38,27,31,0.88)', border: '1px solid rgba(245,220,205,0.42)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
                     <div style={{ color: '#cbd5e1', fontSize: 8.5, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Dept Trend</div>
                     <div style={{ marginBottom: 8, color: '#f8fafc', fontSize: 10, fontWeight: 800, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 8, height: 8, borderRadius: '50%', background: activeTrendColor, boxShadow: `0 0 12px ${activeTrendColor}` }} />

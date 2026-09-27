@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IncentiveBoomsaleRow } from './incentiveParser'
-import { getTrackedProductArticleKey, trackNewlyQualifiedProducts } from './incentiveProductTracker'
+import { getTrackedProductArticleKey, seedNewlyQualifiedProducts, trackNewlyQualifiedProducts } from './incentiveProductTracker'
 
 const product = (artikel: string) => ({ artikel }) as IncentiveBoomsaleRow
 const trackerKey = 'atlas_incentive_product_tracker_v1'
@@ -65,5 +65,20 @@ describe('trackNewlyQualifiedProducts', () => {
       qualifiedArticles: ['1001'],
       firstQualifiedAt: {},
     })
+  })
+
+  it('seeds a selected currently-qualified product once and expires its badge after three days', () => {
+    trackNewlyQualifiedProducts([product('10669672')], 1_000, storage)
+
+    expect(seedNewlyQualifiedProducts([product('10669672')], ['10669672'], 2_000, storage)).toEqual(new Set(['10669672']))
+    expect(seedNewlyQualifiedProducts([product('10669672')], ['10669672'], 3_000, storage)).toEqual(new Set(['10669672']))
+    expect(seedNewlyQualifiedProducts([product('10669672')], ['10669672'], 2_000 + 3 * 24 * 60 * 60 * 1000, storage)).toEqual(new Set())
+  })
+
+  it('does not seed an article until it qualifies', () => {
+    trackNewlyQualifiedProducts([product('1001')], 1_000, storage)
+
+    expect(seedNewlyQualifiedProducts([product('1001')], ['1002'], 2_000, storage)).toEqual(new Set())
+    expect(JSON.parse(storage.getItem(trackerKey) ?? '{}').seededArticles).toEqual([])
   })
 })

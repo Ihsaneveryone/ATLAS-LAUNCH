@@ -7,6 +7,7 @@ interface ProductTrackerState {
   version: 1
   qualifiedArticles: string[]
   firstQualifiedAt: Record<string, number>
+  seededArticles?: string[]
 }
 
 function articleKey(article: string): string {
@@ -22,6 +23,7 @@ function isTrackerState(value: unknown): value is ProductTrackerState {
     && !!state.firstQualifiedAt
     && typeof state.firstQualifiedAt === 'object'
     && Object.values(state.firstQualifiedAt).every((timestamp) => typeof timestamp === 'number' && Number.isFinite(timestamp))
+    && (state.seededArticles === undefined || (Array.isArray(state.seededArticles) && state.seededArticles.every((article) => typeof article === 'string')))
 }
 
 export function trackNewlyQualifiedProducts(
@@ -71,6 +73,7 @@ export function trackNewlyQualifiedProducts(
     version: 1,
     qualifiedArticles: currentArticles,
     firstQualifiedAt,
+    seededArticles: previousState?.seededArticles ?? [],
   }
   try {
     trackerStorage.setItem(STORAGE_KEY, JSON.stringify(nextState))
@@ -79,6 +82,64 @@ export function trackNewlyQualifiedProducts(
   }
 
   return new Set(Object.keys(firstQualifiedAt).filter((article) => currentSet.has(article)))
+}
+
+export function seedNewlyQualifiedProducts(
+  products: IncentiveBoomsaleRow[],
+  articles: string[],
+  now = Date.now(),
+  storage?: Pick<Storage, 'getItem' | 'setItem'>,
+): Set<string> {
+  let trackerStorage: Pick<Storage, 'getItem' | 'setItem'>
+  let storedValue: string | null
+  try {
+    trackerStorage = storage ?? window.localStorage
+    storedValue = trackerStorage.getItem(STORAGE_KEY)
+  } catch (error) {
+    console.warn('[TV] Unable to read new product tracking data:', error)
+    return new Set()
+  }
+
+  if (storedValue === null) return new Set()
+
+  let state: ProductTrackerState
+  try {
+    const parsed: unknown = JSON.parse(storedValue)
+    if (!isTrackerState(parsed)) return new Set()
+    state = parsed
+  } catch (error) {
+    console.warn('[TV] Unable to parse new product tracking data:', error)
+    return new Set()
+  }
+
+  const eligibleArticles = new Set(products.map((product) => articleKey(product.artikel)).filter(Boolean))
+  const seededArticles = new Set(state.seededArticles ?? [])
+  const newlySeeded = new Set<string>()
+
+  for (const rawArticle of articles) {
+    const article = articleKey(rawArticle)
+    if (!article || !eligibleArticles.has(article) || seededArticles.has(article)) continue
+    state.firstQualifiedAt[article] = now
+    seededArticles.add(article)
+    newlySeeded.add(article)
+  }
+
+  if (newlySeeded.size > 0) {
+    state.seededArticles = [...seededArticles]
+    try {
+      trackerStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    } catch (error) {
+      console.warn('[TV] Unable to save new product tracking data:', error)
+    }
+  }
+
+  return new Set([...seededArticles].filter((article) => {
+    const firstSeen = state.firstQualifiedAt[article]
+    return eligibleArticles.has(article)
+      && firstSeen !== undefined
+      && now >= firstSeen
+      && now - firstSeen < NEW_PRODUCT_DURATION_MS
+  }))
 }
 
 export function getTrackedProductArticleKey(article: string): string {
