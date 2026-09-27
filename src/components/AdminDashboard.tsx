@@ -687,21 +687,21 @@ function TVSlideshow({
                 <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto 1fr', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                     <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.35)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(184,140,0,0.1)' }}>
-                      <div style={{ fontSize: 7.5, color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
-                      <div style={{ fontSize: 9, fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
-                      <div style={{ marginTop: 3, fontSize: 15, fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
+                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
+                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
+                      <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
                     <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(248,113,113,0.3)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 16px rgba(225,38,28,0.08)' }}>
-                      <div style={{ fontSize: 7.5, color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
-                      <div style={{ fontSize: 9, fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
-                      <div style={{ marginTop: 3, fontSize: 15, fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
+                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
+                      <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
+                      <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gap: 0, minHeight: 0, minWidth: 0, alignContent: 'start' }}>
-                    <div style={{ display: 'grid', gridTemplateRows: 'auto', gridAutoRows: 'clamp(22px, 3.2vh, 34px)', gap: 2, minHeight: 0, minWidth: 0, alignContent: 'start' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, color: '#e4d8d5', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box', height: 'clamp(20px, 2.6vh, 28px)' }}>
-                        <div style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(7px, 0.5vw, 9px)' }}>#</div>
+                    <div style={{ display: 'grid', gridTemplateRows: `clamp(22px, 2.8vh, 30px) repeat(${active.ranking.length}, minmax(0, 1fr))`, gap: 2, minHeight: 0, minWidth: 0 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, color: '#e4d8d5', fontSize: 'clamp(9px, 0.78vw, 13px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.75)', border: '1px solid rgba(214,195,190,0.18)', borderRadius: 5, boxSizing: 'border-box' }}>
+                        <div style={{ width: 14, height: 14, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
                         <div style={{ textAlign: 'left', paddingLeft: 1 }}>Nama</div>
                         <div style={{ textAlign: 'left', paddingLeft: 1 }}>Job Title</div>
                         <div style={{ textAlign: 'right' }}>Proteksi</div>
@@ -713,14 +713,14 @@ function TVSlideshow({
                         const displayRank = row.rank ?? index + 1
                         const isBottom10Row = bottomTenRankSet.has(displayRank)
                         return (
-                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.14)', borderRadius: 5, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1, height: '100%' }}>
-                            <div style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', borderRadius: 3, fontWeight: 900, fontSize: 'clamp(7px, 0.5vw, 9px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
-                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(8px, 0.68vw, 12px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.nama}</div>
-                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.jobTitle || '—'}</div>
-                            <div style={{ minWidth: 0, color: '#a7f3d0', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{(row.protectionQty ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}</div>
-                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.target ?? 0)}</div>
-                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(7px, 0.58vw, 10px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.value)}</div>
-                            <div style={{ minWidth: 0, textAlign: 'center', fontSize: 'clamp(7px, 0.58vw, 10px)', fontWeight: 900, padding: '2px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', lineHeight: 1, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div key={`${row.nama}-${index}`} style={{ display: 'grid', gridTemplateColumns: '12px minmax(0, 1.65fr) minmax(0, 0.7fr) minmax(22px, 0.48fr) minmax(38px, 0.82fr) minmax(38px, 0.82fr) minmax(32px, 0.62fr)', alignItems: 'center', gap: 3, background: 'rgba(29,21,25,0.88)', border: '1px solid rgba(214,195,190,0.14)', borderRadius: 5, padding: '0 4px', overflow: 'hidden', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', lineHeight: 1 }}>
+                            <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 4, fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)', ...getRankBadgeStyle(displayRank, isBottom10Row) }}>{displayRank}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#f8fafc', fontSize: 'clamp(11px, 0.92vw, 15px)', fontWeight: 800, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.nama}</div>
+                            <div style={{ minWidth: 0, overflow: 'hidden', color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', fontWeight: 700, whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '100%', lineHeight: 1 }}>{row.jobTitle || '—'}</div>
+                            <div style={{ minWidth: 0, color: '#a7f3d0', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{(row.protectionQty ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 1 })}</div>
+                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.target ?? 0)}</div>
+                            <div style={{ minWidth: 0, color: '#cbd5e1', fontSize: 'clamp(9px, 0.75vw, 13px)', textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>{formatRupiah(row.value)}</div>
+                            <div style={{ minWidth: 0, textAlign: 'center', fontSize: 'clamp(9px, 0.75vw, 13px)', fontWeight: 900, padding: '3px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', lineHeight: 1, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                           </div>
                         )
                       })}
@@ -730,32 +730,32 @@ function TVSlideshow({
 
                 <div style={{ display: 'grid', gap: 3, alignContent: 'stretch', gridTemplateRows: '1fr 1fr', height: '100%' }}>
                   <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.12), rgba(38,27,31,0.78))', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
-                    <div style={{ color: '#fca5a5', fontSize: 7.2, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Leader Board</div>
+                    <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Leader Board</div>
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
                       {topTen.map((row, index) => (
-                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', borderBottom: index === topTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
-                          <div style={{ width: 13, height: 13, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 6, ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
+                        <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', borderBottom: index === topTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
+                          <div style={{ width: 20, height: 20, flexShrink: 0, borderRadius: 6, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 12px)', ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
                           <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
-                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 6.7, lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
-                            <div style={{ color: '#94a3b8', fontSize: 5 }}>{formatRupiah(row.value)}</div>
+                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 'clamp(10px, 0.82vw, 14px)', lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
+                            <div style={{ color: '#94a3b8', fontSize: 'clamp(9px, 0.68vw, 11px)' }}>{formatRupiah(row.value)}</div>
                           </div>
-                          <div style={{ fontWeight: 900, fontSize: 6.7, padding: '1px 3px', borderRadius: 4, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.78vw, 13px)', padding: '3px 5px', borderRadius: 5, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   <div style={{ background: 'linear-gradient(180deg, rgba(120,82,214,0.12), rgba(38,27,31,0.82))', border: '1px solid rgba(196,181,253,0.18)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto 1fr', gap: 2, minHeight: 0 }}>
-                    <div style={{ color: '#fca5a5', fontSize: 7.2, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Bottom 10 Performance</div>
+                    <div style={{ color: '#fca5a5', fontSize: 'clamp(10px, 0.78vw, 13px)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 0 }}>Bottom 10 Performance</div>
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 2, minHeight: 0 }}>
                       {bottomTen.map((row, index) => (
-                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 0', borderBottom: index === bottomTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
-                          <div style={{ width: 13, height: 13, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 6, ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
+                        <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', borderBottom: index === bottomTen.length - 1 ? 'none' : '1px solid rgba(148,163,184,0.1)', minHeight: 0 }}>
+                          <div style={{ width: 20, height: 20, flexShrink: 0, borderRadius: 6, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 12px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
                           <div style={{ flex: 1, minWidth: 0, overflow: 'visible' }}>
-                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 6.7, lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
-                            <div style={{ color: '#94a3b8', fontSize: 5 }}>{formatRupiah(row.value)}</div>
+                            <div style={{ color: '#f8fafc', fontWeight: 700, fontSize: 'clamp(10px, 0.82vw, 14px)', lineHeight: 1.15, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{row.nama}</div>
+                            <div style={{ color: '#94a3b8', fontSize: 'clamp(9px, 0.68vw, 11px)' }}>{formatRupiah(row.value)}</div>
                           </div>
-                          <div style={{ fontWeight: 900, fontSize: 6.7, padding: '1px 3px', borderRadius: 4, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
+                          <div style={{ flexShrink: 0, fontWeight: 900, fontSize: 'clamp(9px, 0.78vw, 13px)', padding: '3px 5px', borderRadius: 5, ...getAchievementBadgeStyle(row.achievement) }}>{row.achievement.toFixed(1)}%</div>
                         </div>
                       ))}
                     </div>
