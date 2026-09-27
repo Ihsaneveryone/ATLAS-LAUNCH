@@ -13,7 +13,7 @@ import { DataLoadingOverlay } from './LoadingSkeletons'
 import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
 import { getTrackedProductArticleKey, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
-import { readSIDUpdateState, saveSIDUpdateState } from '../services/sidUpdateTracker'
+import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from '../services/sidUpdateTracker'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -1050,14 +1050,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       const nextSignature = await fetchSIDDataSignature()
       const previousSignature = sidSignatureRef.current
       const signatureChanged = previousSignature !== nextSignature
+      const nextState = updateSIDSignature(previousSignature, nextSignature, sidUpdateState.updatedAt)
       sidSignatureRef.current = nextSignature
-      if (signatureChanged || !sidUpdateState.updatedAt) {
-        const nextState = {
-          signature: nextSignature,
-          updatedAt: signatureChanged && previousSignature
-            ? new Date().toISOString()
-            : sidUpdateState.updatedAt ?? new Date().toISOString(),
-        }
+      if (signatureChanged || sidUpdateState.signature !== nextSignature) {
         saveSIDUpdateState(nextState)
         setSIDUpdateState(nextState)
         if (signatureChanged && previousSignature) await reload(user.nik)

@@ -6,6 +6,12 @@ export interface SIDUpdateState {
 }
 
 interface StoredSIDUpdateState {
+  version: 2
+  signature: string
+  updatedAt: string | null
+}
+
+interface LegacyStoredSIDUpdateState {
   version: 1
   signature: string
   updatedAt: string | null
@@ -17,12 +23,25 @@ function getStorage(storage?: TrackerStorage): TrackerStorage {
   return storage ?? window.localStorage
 }
 
-function isStoredState(value: unknown): value is StoredSIDUpdateState {
+function isStoredState(value: unknown): value is StoredSIDUpdateState | LegacyStoredSIDUpdateState {
   if (!value || typeof value !== 'object') return false
-  const state = value as Partial<StoredSIDUpdateState>
-  return state.version === 1
+  const state = value as Partial<StoredSIDUpdateState | LegacyStoredSIDUpdateState>
+  return (state.version === 1 || state.version === 2)
     && typeof state.signature === 'string'
     && (state.updatedAt === null || typeof state.updatedAt === 'string')
+}
+
+export function updateSIDSignature(
+  previousSignature: string | null,
+  nextSignature: string,
+  previousUpdatedAt: string | null,
+  updatedAt = new Date().toISOString(),
+): SIDUpdateState {
+  const changed = previousSignature !== null && previousSignature !== nextSignature
+  return {
+    signature: nextSignature,
+    updatedAt: changed ? updatedAt : previousUpdatedAt,
+  }
 }
 
 export function readSIDUpdateState(storage?: TrackerStorage): SIDUpdateState {
@@ -35,7 +54,10 @@ export function readSIDUpdateState(storage?: TrackerStorage): SIDUpdateState {
       console.warn('[TV] Invalid SID update tracking data; resetting its baseline.')
       return { signature: null, updatedAt: null }
     }
-    return { signature: parsed.signature, updatedAt: parsed.updatedAt }
+    return {
+      signature: parsed.signature,
+      updatedAt: parsed.version === 1 ? null : parsed.updatedAt,
+    }
   } catch (error) {
     console.warn('[TV] Unable to read SID update tracking data:', error)
     return { signature: null, updatedAt: null }
@@ -47,7 +69,7 @@ export function saveSIDUpdateState(state: SIDUpdateState, storage?: TrackerStora
 
   try {
     const stored: StoredSIDUpdateState = {
-      version: 1,
+      version: 2,
       signature: state.signature,
       updatedAt: state.updatedAt,
     }

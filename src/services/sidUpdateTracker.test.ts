@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { readSIDUpdateState, saveSIDUpdateState } from './sidUpdateTracker'
+import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from './sidUpdateTracker'
 
 const storageKey = 'atlas_sid_update_tracker_v1'
 
@@ -30,7 +30,7 @@ describe('SID update tracking persistence', () => {
 
     expect(readSIDUpdateState(storage)).toEqual(state)
     expect(JSON.parse(storage.getItem(storageKey) ?? '{}')).toMatchObject({
-      version: 1,
+      version: 2,
       signature: state.signature,
       updatedAt: state.updatedAt,
     })
@@ -41,6 +41,32 @@ describe('SID update tracking persistence', () => {
     saveSIDUpdateState(state, storage)
 
     expect(readSIDUpdateState(storage)).toEqual(state)
+  })
+
+  it('does not assign a time when establishing the initial signature baseline', () => {
+    expect(updateSIDSignature(null, 'signature-1', null, '2026-09-27T08:00:00.000Z'))
+      .toEqual({ signature: 'signature-1', updatedAt: null })
+  })
+
+  it('updates the time only when the SID signature changes', () => {
+    const previousTime = '2026-09-27T07:00:00.000Z'
+
+    expect(updateSIDSignature('signature-1', 'signature-1', previousTime, '2026-09-27T08:00:00.000Z'))
+      .toEqual({ signature: 'signature-1', updatedAt: previousTime })
+    expect(updateSIDSignature('signature-1', 'signature-2', previousTime, '2026-09-27T08:00:00.000Z'))
+      .toEqual({ signature: 'signature-2', updatedAt: '2026-09-27T08:00:00.000Z' })
+    expect(updateSIDSignature('signature-1', 'signature-2', null, '2026-09-27T08:00:00.000Z'))
+      .toEqual({ signature: 'signature-2', updatedAt: '2026-09-27T08:00:00.000Z' })
+  })
+
+  it('discards baseline timestamps saved by the earlier behavior', () => {
+    storage.setItem(storageKey, JSON.stringify({
+      version: 1,
+      signature: 'signature-1',
+      updatedAt: '2026-09-27T07:00:00.000Z',
+    }))
+
+    expect(readSIDUpdateState(storage)).toEqual({ signature: 'signature-1', updatedAt: null })
   })
 
   it('reports invalid persisted values and returns an empty baseline', () => {
