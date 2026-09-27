@@ -725,7 +725,7 @@ function TVSlideshow({
                         <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(148,163,184,0.12)', color: '#cbd5e1', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
                         <div style={{ minWidth: 0 }}>Nama</div>
                         <div style={{ minWidth: 0 }}>Job</div>
-                        <div style={{ textAlign: 'right', minWidth: 0 }}>Prot.</div>
+                        <div style={{ textAlign: 'right', minWidth: 0 }}>Proteksi</div>
                         <div style={{ textAlign: 'right', minWidth: 0 }}>Target</div>
                         <div style={{ textAlign: 'right', minWidth: 0 }}>Sales</div>
                         <div style={{ textAlign: 'right', minWidth: 0 }}>Ach</div>
@@ -808,10 +808,10 @@ function TVSlideshow({
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr) 170px', gap: 8, height: '100%', minHeight: 0 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'auto', gap: 8, minHeight: 0, alignContent: 'start' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1.15fr) minmax(230px, 0.85fr)', gap: 8, height: '100%', minHeight: 0 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gridTemplateRows: 'minmax(0, 1fr)', gap: 8, height: '100%', minHeight: 0, alignContent: 'stretch' }}>
                     {activeDeptZone ? [activeDeptZone].map((zoneGroup) => (
-                      <div key={zoneGroup.zoneName} style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 14, padding: 12, display: 'grid', gridTemplateRows: 'auto auto', alignContent: 'start', minWidth: 0 }}>
+                      <div key={zoneGroup.zoneName} style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(214,195,190,0.2)', borderRadius: 14, padding: 14, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', alignContent: 'stretch', minWidth: 0, minHeight: 0, height: '100%', boxSizing: 'border-box' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 7, padding: '0 2px', gap: 6 }}>
                           <div style={{ color: '#f8fafc', fontSize: 11, fontWeight: 900, letterSpacing: '0.06em', textTransform: 'uppercase', minWidth: 0 }}>{zoneGroup.zoneName}</div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -822,7 +822,7 @@ function TVSlideshow({
                           </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateRows: 'auto auto', gap: 4, minWidth: 0, alignContent: 'start' }}>
+                        <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minWidth: 0, minHeight: 0, alignContent: 'stretch' }}>
                           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, color: '#cbd5e1', fontSize: 8, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '0 3px' }}>
                             <div>Dept</div>
                             <div style={{ textAlign: 'right' }}>SBD</div>
@@ -831,12 +831,12 @@ function TVSlideshow({
                             <div style={{ textAlign: 'center' }}>ACV</div>
                           </div>
 
-                          <div style={{ display: 'grid', gap: 1, alignContent: 'start', gridAutoRows: 'min-content' }}>
+                          <div style={{ display: 'grid', gap: 1, alignContent: 'stretch', gridAutoRows: 'minmax(0, 1fr)', minHeight: 0 }}>
                             {zoneGroup.deptRows.map((dept) => (
-                              <div key={`${zoneGroup.zoneName}-${dept.label}-row`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, alignItems: 'center', padding: '5px 3px', borderTop: '1px solid rgba(148,163,184,0.08)', minHeight: 0 }}>
-                                <div style={{ color: '#f8fafc', fontSize: 10, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dept.label}</div>
+                              <div key={`${zoneGroup.zoneName}-${dept.label}-row`} style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2.4fr) minmax(0, 1.25fr) minmax(0, 0.65fr) minmax(0, 1.25fr) minmax(0, 0.65fr)', gap: 10, alignItems: 'center', padding: '7px 3px', borderTop: '1px solid rgba(148,163,184,0.08)', minHeight: 0 }}>
+                                <div style={{ color: '#f8fafc', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{dept.label}</div>
 
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#f8fafc', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#f8fafc', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
                                   <span>{dept.sbd ? formatRupiahFull(dept.sbd.value) : '—'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -847,7 +847,7 @@ function TVSlideshow({
                                     minWidth: 24,
                                     padding: '1px 4px',
                                     borderRadius: 999,
-                                    fontSize: 7,
+                                    fontSize: 8,
                                     fontWeight: 800,
                                     letterSpacing: '0.02em',
                                     ...getAchievementBadgeStyle(dept.sbd?.achievement),
@@ -857,7 +857,7 @@ function TVSlideshow({
                                   </span>
                                 </div>
 
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#dbeafe', fontSize: 9.5, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', color: '#dbeafe', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
                                   <span>{dept.mtd ? formatRupiahFull(dept.mtd.value) : '—'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
@@ -868,7 +868,7 @@ function TVSlideshow({
                                     minWidth: 24,
                                     padding: '1px 4px',
                                     borderRadius: 999,
-                                    fontSize: 7,
+                                    fontSize: 8,
                                     fontWeight: 800,
                                     letterSpacing: '0.02em',
                                     ...getAchievementBadgeStyle(dept.mtd?.achievement),
