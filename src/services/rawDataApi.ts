@@ -1442,7 +1442,8 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   // MTD = H-1: data s.d. kemarin agar angka MTD sudah final (bukan setengah hari)
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
   const mtdTxns   = parsedTxns.filter(t => t.date && sameMonth(t.date, today) && t.date <= yesterday)
-  log(`Transaksi MTD (s.d. H-1 / ${yesterday.getDate()}): ${mtdTxns.length} baris`)
+  const mtdDateTo = sameMonth(yesterday, today) ? yesterday : today
+  log(`Transaksi MTD (s.d. ${mtdDateTo.getDate()}): ${mtdTxns.length} baris`)
 
   const dailyPerfs = aggregate(dailyTxns, skuMap)
   const mtdPerfs   = aggregate(mtdTxns,   skuMap)
@@ -1473,7 +1474,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       return { date: fmtLabel(new Date(yyyy, mm - 1, dd)), actual, target: teamDailyTarget }
     })
 
-  const wdays = yesterday.getDate() // hari berjalan = kemarin
+  const wdays = sameMonth(yesterday, today) ? yesterday.getDate() : 0
 
   // Build NAMA→NIK map from raw txns for table-1 matching
   // Build NAMA→NIK map from raw txns (fill-down NAMA already applied)
@@ -1587,7 +1588,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   return {
     dailyDate:      fmt(today),
     dateFrom:       fmt(firstOfMonth),
-    dateTo:         fmt(yesterday),
+    dateTo:         fmt(mtdDateTo),
     teamTodayTrend: [{ date: fmt(today), actual: teamTodayTotal, target: teamDailyTarget }],
     teamMtdTrend,
     teamTodayEmployees: buildTeamEmployeeSummary(dailyPerfs, targets, 1, validNiks),
@@ -1615,7 +1616,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       workingDays: wdays,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true, validNiks),
-      monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(yesterday)}`, actual: myMTD.sales, target: mtdTargetProrated }],
+      monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(mtdDateTo)}`, actual: myMTD.sales, target: mtdTargetProrated }],
     },
   }
 }

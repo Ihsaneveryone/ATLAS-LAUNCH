@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildRawPerformance } from './rawDataApi'
 
 function csvResponse(text: string) {
@@ -8,6 +8,10 @@ function csvResponse(text: string) {
 describe('buildRawPerformance', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('includes sales rows for users whose NIK uses an alternate format', async () => {
@@ -119,6 +123,43 @@ describe('buildRawPerformance', () => {
 
     expect(result.todayPerf.actual).toBe(0)
     expect(result.todayPerf.dailyTrend?.[0]?.actual).toBe(0)
+  })
+
+  it('starts MTD from the current month after the month changes', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-01T12:00:00+07:00'))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const sheet = new URL(String(input)).searchParams.get('sheet')
+
+      if (sheet === 'COPAS S2') return csvResponse([
+        'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+        '123702,Sales User,,R1,SKU1,Desc,Code,1,,,,100000,,01/10/2026',
+      ].join('\n'))
+      if (sheet === 'TARGET') return csvResponse([
+        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+        '123702,Sales User,100000,3000000',
+      ].join('\n'))
+      if (sheet === 'KUNCIAN SKU') return csvResponse(['SKU', 'SKU1'].join('\n'))
+      if (sheet === 'USERS') return csvResponse(['NIK,NAMA,ROLE,JOBTITLE,PASSWORD', '123702,Sales User,user,Sales,123456'].join('\n'))
+      if (sheet === 'ATLAS DATABASE' || sheet === 'COPAS') return csvResponse(['NIK,NAMA', '123702,Sales User'].join('\n'))
+      if (sheet === 'MEMBER') return csvResponse(['TANGGAL,TYPE,NAMA', ''].join('\n'))
+      if (sheet === 'SETTING') return csvResponse(['SECTION,NAMA,AKTIF', ''].join('\n'))
+      return csvResponse('')
+    }))
+
+    try {
+      const result = await buildRawPerformance('123702', undefined, new Set(['123702']))
+
+      expect(result.dailyDate).toBe('01/10/2026')
+      expect(result.dateFrom).toBe('01/10/2026')
+      expect(result.dateTo).toBe('01/10/2026')
+      expect(result.mtdPerf.workingDays).toBe(0)
+      expect(result.mtdPerf.targetMTD).toBe(0)
+      expect(result.mtdPerf.target).toBe(3000000)
+      expect(result.teamMtdEmployees[0]?.fullMonthTargetSales).toBe(3000000)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('parses daily matrix rows when COPAS S2 is blank but COPAS has the data', async () => {
@@ -323,7 +364,9 @@ describe('buildRawPerformance', () => {
     expect(result.todayPerf.ranking[0]?.protectionQty).toBe(4)
   })
 
-  it('keeps ambiguous prior-month Proteksi dates in MTD when US export is inferred per row', async () => {
+  it('infers ambiguous Proteksi dates per row within MTD', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-13T12:00:00+07:00'))
     const today = new Date()
     const month = String(today.getMonth() + 1).padStart(2, '0')
     const year = today.getFullYear()

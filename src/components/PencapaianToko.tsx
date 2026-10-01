@@ -190,7 +190,8 @@ function MTDView({ row, workingDays }: { row: TokoRow; workingDays: number }) {
 // ─── FULL MONTH ───────────────────────────────────────────────────────────────
 // Target Full Month diambil langsung dari baris rekap akhir bulan.
 function FullMonthView({ row, targetRow }: { row: TokoRow; targetRow: TokoRow }) {
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const { year, month } = jakartaDateParts()
+  const daysInMonth = new Date(year, month, 0).getDate()
   const currentDay  = Math.max(1, parseDayNum(row.date))
   const acv          = Math.round(row.salesMTD / currentDay)
 
@@ -646,7 +647,7 @@ function DeptView({ sbd, mtd, trend, loading, error }: { sbd: DeptPeriodData | n
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function PencapaianToko({ user, onBack }: Props) {
-  const { tokoRows, loading } = useAtlasData()
+  const { tokoRows, loading, dailyDate } = useAtlasData()
   const [tab, setTab] = useState<Tab>('today')
   const [deptLoading, setDeptLoading] = useState(false)
   const [deptError, setDeptError] = useState<string | null>(null)
@@ -656,7 +657,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
   const isMobile  = useMobile()
   const todayRow     = todayTokoRow(tokoRows)   // TODAY & Full Month → data hari ini
   const latest       = latestTokoRow(tokoRows)  // MTD → H-1
-  const workingDays  = latest    ? parseDayNum(latest.date)    : Math.max(1, new Date().getDate() - 1) // H-1
+  const workingDays  = latest    ? parseDayNum(latest.date)    : Math.max(1, jakartaDateParts().day - 1) // H-1
   const fullMonthTarget = fullMonthTokoRow(tokoRows)
 
   useEffect(() => {
@@ -677,7 +678,7 @@ export default function PencapaianToko({ user, onBack }: Props) {
         setDeptLoading(false)
       })
     return () => { cancelled = true }
-  }, [])
+  }, [dailyDate])
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'today',     label: 'Today'      },

@@ -17,6 +17,12 @@ const PERIODS = [
   { key: 'fullmonth' as Period, label: 'Full Month', labelMobile: 'Full', sub: 'Target Penuh' },
   { key: 'ytd'       as Period, label: 'YTD',   labelMobile: 'YTD',   sub: 'Tahun Ini'   },
 ]
+const jakartaDateFormatter = new Intl.DateTimeFormat('id-ID', {
+  timeZone: 'Asia/Jakarta',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+})
 
 function pctToZone(pct: number): string {
   if (pct >= 100) return 'biru'
@@ -243,7 +249,7 @@ export default function PerformanceSales({ user, onBack }: Props) {
             </div>
           )}{/* Mobile mascot rendered inline inside the ring row below */}
           <div style={{ color: S.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14 }}>
-            {PERIODS.find(p => p.key === period)?.label} · {PERIODS.find(p => p.key === period)?.sub} — {(() => { const d = new Date(); if (period === 'mtd' || period === 'fullmonth') d.setDate(d.getDate() - 1); return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) })()}
+            {PERIODS.find(p => p.key === period)?.label} · {PERIODS.find(p => p.key === period)?.sub} — {jakartaDateFormatter.format(new Date())}
           </div>
           {isMobile ? (
             /* Mobile: ring kiri, mascot tengah, bar kanan */

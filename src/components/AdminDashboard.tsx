@@ -1036,7 +1036,6 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [deptMtd, setDeptMtd]       = useState<DeptPeriodData | null>(null)
   const [deptTrend, setDeptTrend]   = useState<DeptTrendData | null>(null)
   const [deptLoading, setDeptLoading] = useState(false)
-  const [deptLoaded, setDeptLoaded]   = useState(false)
   const [receiptRows, setReceiptRows] = useState<IncentiveReceiptRow[]>([])
   const [receiptLoading, setReceiptLoading] = useState(false)
   const [receiptLoaded, setReceiptLoaded] = useState(false)
@@ -1102,17 +1101,18 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   }, [])
 
   useEffect(() => {
-    if (deptLoaded) return
+    let cancelled = false
     setDeptLoading(true)
     fetchPencapaianDept()
       .then(r => {
+        if (cancelled) return
         setDeptSbd(r.sbd)
         setDeptMtd(r.mtd)
         setDeptTrend(r.trend)
-        setDeptLoaded(true)
       })
-      .finally(() => setDeptLoading(false))
-  }, [deptLoaded])
+      .finally(() => { if (!cancelled) setDeptLoading(false) })
+    return () => { cancelled = true }
+  }, [dailyDate])
 
   useEffect(() => {
     if ((page !== 'receipt' && page !== 'tv') || receiptLoaded) return

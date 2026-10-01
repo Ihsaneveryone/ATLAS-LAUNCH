@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { DataProvider } from './context/DataContext'
 import { AdminSettingsProvider } from './context/AdminSettingsContext'
 import { useAtlasData } from './context/useAtlasData'
@@ -14,10 +14,39 @@ const AdminDashboard = lazy(() => import('./components/AdminDashboard'))
 
 type Page = 'login' | 'menu' | 'performance' | 'forecasting' | 'toko' | 'spreadsheet' | 'admin'
 
+function getJakartaMonthKey(): string {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date())
+  const year = parts.find(part => part.type === 'year')?.value ?? ''
+  const month = parts.find(part => part.type === 'month')?.value ?? ''
+  return `${year}-${month}`
+}
+
 function AppInner() {
   const [page, setPage] = useState<Page>('login')
   const [user, setUser] = useState<User | null>(null)
   const { reload } = useAtlasData()
+
+  useEffect(() => {
+    if (!user) return
+
+    let loadedMonth = getJakartaMonthKey()
+    const reloadForNewMonth = () => {
+      const currentMonth = getJakartaMonthKey()
+      if (currentMonth === loadedMonth) return
+      loadedMonth = currentMonth
+      void reload(user.nik)
+    }
+    const interval = window.setInterval(reloadForNewMonth, 60_000)
+    document.addEventListener('visibilitychange', reloadForNewMonth)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', reloadForNewMonth)
+    }
+  }, [reload, user])
 
   const handleLogin = (u: User) => {
     setUser(u)
