@@ -46,7 +46,7 @@ export const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
   { id: 'COPAS_S2_NAMA', sheet: 'COPAS S2', feature: 'Performance SID', fieldName: 'nama', columnLetter: 'B', columnIndex: 1, description: 'Employee Name', dataType: 'text', optional: false, active: true, section: 'Employee' },
 
   // ── Transaction Details ──
-  { id: 'COPAS_S2_TANGGAL', sheet: 'COPAS S2', feature: 'Performance SID', fieldName: 'tanggal', columnLetter: 'C', columnIndex: 2, description: 'Transaction Date (DD-MMM-YYYY or DD/MM/YYYY)', dataType: 'date', optional: false, active: true, section: 'Transaction' },
+  { id: 'COPAS_S2_TANGGAL', sheet: 'COPAS S2', feature: 'Performance SID', fieldName: 'tanggal', columnLetter: 'N', columnIndex: 13, description: 'Transaction Date (DD-MMM-YYYY or DD/MM/YYYY)', dataType: 'date', optional: false, active: true, section: 'Transaction' },
   { id: 'COPAS_S2_RECEIPT_NO', sheet: 'COPAS S2', feature: 'Performance SID', fieldName: 'receiptNo', columnLetter: 'D', columnIndex: 3, description: 'Receipt/Invoice Number', dataType: 'text', optional: true, active: true, section: 'Transaction' },
 
   // ── Product Details ──
@@ -276,7 +276,11 @@ function normalizeColumnMappings(mappings: ColumnMapping[] = DEFAULT_COLUMN_MAPP
   const storedById = new Map(mappings.map(mapping => [mapping.id, mapping]))
   return DEFAULT_COLUMN_MAPPINGS.map(defaultMapping => {
     const storedMapping = storedById.get(defaultMapping.id)
-    return storedMapping ? { ...defaultMapping, ...storedMapping } : defaultMapping
+    const normalizedMapping = storedMapping ? { ...defaultMapping, ...storedMapping } : defaultMapping
+    if (defaultMapping.id === 'COPAS_S2_TANGGAL' && normalizedMapping.columnLetter === 'C' && normalizedMapping.columnIndex === 2) {
+      return { ...normalizedMapping, columnLetter: defaultMapping.columnLetter, columnIndex: defaultMapping.columnIndex }
+    }
+    return normalizedMapping
   })
 }
 

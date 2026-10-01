@@ -1,6 +1,6 @@
 /**
  * Raw data pipeline:
- * - COPAS S2: raw transactions (NIK, NAMA, TANGGAL, RECEIPT NO, ARTIKEL, DESKRIPSI, KODE, QTY, ..., TOTAL VALUE@L)
+ * - COPAS S2: raw transactions (NIK, NAMA, RECEIPT NO, ARTIKEL, DESKRIPSI, KODE, QTY, ..., TOTAL VALUE@L, TANGGAL@N)
  * - KUNCIAN SKU: article→category mapping (TERUS HEMATIK, TEMATIK, NEW PRODUCT, RAINBOW, ITEM STD, PROTEKSI)
  * - TARGET: NIK, NAMA, TARGET_HARIAN (optional — falls back to DEFAULT_TARGET)
  */
@@ -454,29 +454,29 @@ function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
   // DATE bisa berbagai format atau just numeric value
   for (let i = 1; i <= Math.min(20, rows.length - 1); i++) {
     const row = rows[i]
-    if (!row || row.length < 3) continue
+    if (!row || row.length < 14) continue
     
     const col0 = (row[0] ?? '').trim()
     const col1 = (row[1] ?? '').trim()
-    const col2 = (row[2] ?? '').trim()
+    const dateCol = (row[13] ?? '').trim()
     
     // Skip baris yang jelas kosong atau NONAME (sistem row)
     if (!col0 || !col1) continue
     if (col0.toUpperCase() === 'NONAME' || col1.toUpperCase() === 'NONAME') continue
     
-    // Struktur COPAS S2 raw: [NIK] [NAMA] [TANGGAL/VALUE] [...]
+    // Struktur COPAS S2 raw: [NIK] [NAMA] [...] [TANGGAL di kolom N]
     // Col0: NIK = angka 4+ digit (maybe with leading zeros), atau I-prefixed
     const col0IsNik = /^(I?\d{4,}|I\d{5})$/i.test(col0)
     // Col1: NAMA = text (bukan semua digit), length > 2 (bukan short codes)
     const col1IsName = col1 && !/^[\d\.\,\-]+$/.test(col1) && col1.length > 2
-    // Col2: TANGGAL/VALUE = tanggal format atau numeric (transaksi value)
-    const col2LooksLikeDate = col2 && (
-      looksLikeDateHeader(col2) || 
-      /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(col2) ||
-      /^\d+$/.test(col2) // just numeric
+    // Kolom N: tanggal transaksi, termasuk serial tanggal numerik.
+    const dateColLooksLikeDate = dateCol && (
+      looksLikeDateHeader(dateCol) || 
+      /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(dateCol) ||
+      /^\d+$/.test(dateCol) // just numeric
     )
     
-    if (col0IsNik && col1IsName && col2LooksLikeDate) {
+    if (col0IsNik && col1IsName && dateColLooksLikeDate) {
       return true
     }
   }
@@ -658,7 +658,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   const txns: RawTxn[] = []
 
   const namaIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_NAMA', 1)
-  const tanggalIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TANGGAL', 2)
+  const tanggalIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TANGGAL', 13)
   const receiptIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_RECEIPT_NO', 3)
   const artikelIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_ARTIKEL', 4)
   const qtyIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_QTY', 7)

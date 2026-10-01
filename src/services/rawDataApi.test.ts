@@ -17,9 +17,9 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          '101902,Sales User,17/07/2026,R1,SKU1,Desc,Code,1,,,,100000',
-          '101902,Sales User,16/07/2026,R2,SKU1,Desc,Code,1,,,,100000',
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          '101902,Sales User,,R1,SKU1,Desc,Code,1,,,,100000,,17/07/2026',
+          '101902,Sales User,,R2,SKU1,Desc,Code,1,,,,100000,,16/07/2026',
         ].join('\n'))
       }
 
@@ -76,8 +76,8 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          '101902,Sales User,17/07/2026,R1,SKU1,Desc,Code,1,,,,100000',
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          '101902,Sales User,,R1,SKU1,Desc,Code,1,,,,100000,,17/07/2026',
         ].join('\n'))
       }
 
@@ -182,8 +182,8 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          '101902,Sales User,18/07/2026,R1,SKU1,Desc,Code,2,,,,500000',
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          '101902,Sales User,,R1,SKU1,Desc,Code,2,,,,500000,,18/07/2026',
         ].join('\n'))
       }
 
@@ -247,8 +247,8 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          '123702,Wahyu Rianto,18/07/2026,R1,SKU1,Desc,Code,2,,,,500000',
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          '123702,Wahyu Rianto,,R1,SKU1,Desc,Code,2,,,,500000,,18/07/2026',
         ].join('\n'))
       }
 
@@ -300,11 +300,11 @@ describe('buildRawPerformance', () => {
       const sheet = new URL(String(input)).searchParams.get('sheet')
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          `123702,Wahyu Rianto,${todayText},R1,PROT-001,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,${todayText},R2,prot 002,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,${todayText},R3,PROT003,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,${todayText},R4,PROT004,Proteksi,Code,1,,,,500000`,
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          `123702,Wahyu Rianto,,R1,PROT-001,Proteksi,Code,1,,,,500000,,${todayText}`,
+          `123702,Wahyu Rianto,,R2,prot 002,Proteksi,Code,1,,,,500000,,${todayText}`,
+          `123702,Wahyu Rianto,,R3,PROT003,Proteksi,Code,1,,,,500000,,${todayText}`,
+          `123702,Wahyu Rianto,,R4,PROT004,Proteksi,Code,1,,,,500000,,${todayText}`,
         ].join('\n'))
       }
       if (sheet === 'KUNCIAN SKU') return csvResponse(['REGULER,PROTEKSI', 'SKU1,PROT001', 'SKU2,PROT-002', 'SKU3,PROT003', 'SKU4,PROT004'].join('\n'))
@@ -331,11 +331,11 @@ describe('buildRawPerformance', () => {
       const sheet = new URL(String(input)).searchParams.get('sheet')
       if (sheet === 'COPAS S2') {
         return csvResponse([
-          'NIK,NAMA,TANGGAL,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE',
-          `123702,Wahyu Rianto,9/10/${year},R1,PROT001,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,9/11/${year},R2,PROT002,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,9/12/${year},R3,PROT003,Proteksi,Code,1,,,,500000`,
-          `123702,Wahyu Rianto,12/09/${year},R4,PROT004,Proteksi,Code,1,,,,500000`,
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          `123702,Wahyu Rianto,,R1,PROT001,Proteksi,Code,1,,,,500000,,9/10/${year}`,
+          `123702,Wahyu Rianto,,R2,PROT002,Proteksi,Code,1,,,,500000,,9/11/${year}`,
+          `123702,Wahyu Rianto,,R3,PROT003,Proteksi,Code,1,,,,500000,,9/12/${year}`,
+          `123702,Wahyu Rianto,,R4,PROT004,Proteksi,Code,1,,,,500000,,12/09/${year}`,
         ].join('\n'))
       }
       if (sheet === 'KUNCIAN SKU') return csvResponse(['REGULER,PROTEKSI', 'SKU1,PROT001', 'SKU2,PROT002', 'SKU3,PROT003', 'SKU4,PROT004'].join('\n'))
