@@ -1,8 +1,8 @@
 import { formatRupiahFull } from '../data/mockData'
-import { SALES_CONTRIBUTION_GROUPS, salesContributionKeyForZone, type SalesContributions } from '../services/rawDataApi'
+import { SALES_CONTRIBUTION_GROUPS, salesContributionKeyForZone } from '../services/rawDataApi'
 
 interface Props {
-  salesContributions?: SalesContributions
+  salesContributions?: Record<string, number>
   totalSales: number
   userZone?: string
   periodLabel: string
