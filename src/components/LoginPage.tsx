@@ -156,9 +156,9 @@ export default function LoginPage({ onLogin }: Props) {
               <label style={{ display: 'block', color: '#64748b', fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Password</label>
               <div style={{ position: 'relative' }}>
                 <input
-                  type="text" value={password} onChange={e => setPassword(e.target.value)} required
+                  type="password" value={password} onChange={e => setPassword(e.target.value)} required
                   name="atlas-access-code"
-                  autoComplete="new-password" placeholder="Masukkan password"
+                  autoComplete="current-password" placeholder="Masukkan password"
                   autoCapitalize="none" autoCorrect="off" spellCheck={false}
                   onFocus={() => setFocused('pw')} onBlur={() => setFocused(null)}
                   {...passwordManagerIgnoreProps}

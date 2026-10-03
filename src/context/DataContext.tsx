@@ -108,12 +108,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const log = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('id-ID')
-    console.warn(`[ATLAS ${ts}] ${msg}`)
-    setData(prev => ({ ...prev, debugLog: [...prev.debugLog.slice(-19), `[${ts}] ${msg}`] }))
+    if (import.meta.env.DEV) {
+      console.warn(`[ATLAS ${ts}] ${msg}`)
+      setData(prev => ({ ...prev, debugLog: [...prev.debugLog.slice(-19), `[${ts}] ${msg}`] }))
+    }
   }, [])
 
   const reload = useCallback(async (nik: string) => {
-    setData(prev => ({ ...prev, loading: true, error: null, debugLog: [`[${new Date().toLocaleTimeString('id-ID')}] reload() untuk NIK: ${nik}`] }))
+    setData(prev => ({
+      ...prev,
+      loading: true,
+      error: null,
+      debugLog: import.meta.env.DEV ? [`[${new Date().toLocaleTimeString('id-ID')}] reload() untuk NIK: ${nik}`] : [],
+    }))
 
     log('Test koneksi ke Google…')
     void fetch('https://docs.google.com/favicon.ico', { mode: 'no-cors' })
@@ -160,18 +167,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // dari transaksi tidak menimpa nama karyawan.
       teamTodayEmployees = result.teamTodayEmployees.map(employee => {
         const user = liveUsers.find(candidate => niksMatch(candidate.nik, employee.nik))
-        return user?.nama?.trim() ? { ...employee, nama: user.nama.trim() } : employee
+        return {
+          ...employee,
+          ...(user?.nama?.trim() ? { nama: user.nama.trim() } : {}),
+          userZone: user?.userZone,
+        }
       })
-      const officialName = (nik: string) => liveUsers.find(candidate => niksMatch(candidate.nik, nik))?.nama?.trim()
+      const officialUser = (nik: string) => liveUsers.find(candidate => niksMatch(candidate.nik, nik))
       teamMtdEmployees = result.teamMtdEmployees.map(employee => {
-        const name = officialName(employee.nik)
-        return name ? { ...employee, nama: name } : employee
+        const user = officialUser(employee.nik)
+        return {
+          ...employee,
+          ...(user?.nama?.trim() ? { nama: user.nama.trim() } : {}),
+          userZone: user?.userZone,
+        }
       })
       mtdPerf = {
         ...mtdPerf,
         ranking: mtdPerf.ranking.map(employee => {
-          const name = officialName(employee.nik)
-          return name ? { ...employee, nama: name } : employee
+          const user = officialUser(employee.nik)
+          return user?.nama?.trim() ? { ...employee, nama: user.nama.trim() } : employee
         }),
       }
     } catch (e: any) {

@@ -3,7 +3,7 @@ import azkoLogo from '../imports/logo-azko_ratio-16x9__1_.jpg'
 import { formatRupiah, formatRupiahFull, type User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
-import { fetchAllYTD, fetchSIDDataSignature, type YTDEmployee } from '../services/rawDataApi'
+import { fetchAllYTD, fetchSIDDataSignature, SALES_CONTRIBUTION_GROUPS, salesContributionKeyForZone, type YTDEmployee } from '../services/rawDataApi'
 import { niksMatch } from '../services/nik'
 import { fetchPencapaianDept, type DeptPeriodData, type DeptTrendData } from '../services/deptApi'
 import { getTrackerUrl, setTrackerUrl, writeMenuConfigToSheet } from '../services/loginTracker'
@@ -128,7 +128,6 @@ function TVSlideshow({
   deptSbd,
   deptMtd,
   deptTrend,
-  dailyDate,
 }: {
   todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
@@ -141,7 +140,6 @@ function TVSlideshow({
   deptSbd: DeptPeriodData | null
   deptMtd: DeptPeriodData | null
   deptTrend: DeptTrendData | null
-  dailyDate: string
 }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
@@ -302,14 +300,9 @@ function TVSlideshow({
     actualRank: row.rank ?? rankedList.length - 9 + index,
   }))
   const bottomTenRankSet = new Set(bottomTen.map((row) => row.rank ?? row.actualRank ?? 0))
-  const totalTim = rankedList.reduce((sum: number, row: RankingRow) => sum + row.value, 0)
-  const avgAch = rankedList.reduce((sum: number, row: RankingRow) => sum + row.achievement, 0) / Math.max(rankedList.length, 1)
   const topLeader = rankedList[0]
   const bottomLeader = rankedList[rankedList.length - 1]
   const rankingColumns = '24px minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, 0.72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(42px, 0.9fr)'
-  const deptPrimary = deptMtd ?? deptSbd
-  const deptSecondary = deptSbd ?? deptMtd
-  const sbdDeptRows = deptSbd?.departments?.filter((item) => item.kind !== 'zone') ?? []
   const mtdDeptRows = deptMtd?.departments?.filter((item) => item.kind !== 'zone') ?? []
   const getDeptAchievement = (item: { achievement?: number; target?: number; value: number }) => {
     if (typeof item.achievement === 'number') return item.achievement
@@ -326,13 +319,6 @@ function TVSlideshow({
   }
   const topDept = [...mtdDeptRows].sort((left, right) => getDeptAchievement(right) - getDeptAchievement(left))[0] ?? null
   const bottomDept = [...mtdDeptRows].sort((left, right) => getDeptAchievement(left) - getDeptAchievement(right))[0] ?? null
-  const deptTrendSeries = (deptTrend?.points ?? []).map(point => ({
-    date: point.date,
-    total: point.deptValues.reduce((sum, value) => sum + value, 0),
-    avgAchievement: point.deptAchievements.length
-      ? point.deptAchievements.reduce((sum, value) => sum + value, 0) / point.deptAchievements.length
-      : 0,
-  }))
   const zoneOrder = ['Hobbies & Lifestyle', 'Home Improvement', 'Home Living']
   const inferDeptZone = (label: string) => {
     const normalized = label.toLowerCase()
@@ -783,7 +769,7 @@ function TVSlideshow({
                       <div style={{ color: '#ffe1dc', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>BOTTOM 10 PERFORMANCE</div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
-                      {bottomTen.map((row, index) => (
+                      {bottomTen.map(row => (
                         <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, background: 'rgba(29,21,25,0.62)', minHeight: 0, overflow: 'hidden' }}>
                           <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
                           <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 5 }}>
@@ -919,7 +905,7 @@ function TVSlideshow({
                             <XAxis dataKey="date" tick={{ fill: '#cbd5e1', fontSize: 7 }} minTickGap={12} axisLine={false} tickLine={false} />
                             <YAxis tick={{ fill: '#cbd5e1', fontSize: 7 }} axisLine={false} tickLine={false} width={42} tickFormatter={value => `${Math.round(value / 1000000)} jt`} />
                             <Tooltip
-                              formatter={(value: number) => [formatRupiahFull(Number(value)), activeTrendLabel]}
+                              formatter={value => [formatRupiahFull(Number(value)), activeTrendLabel]}
                               labelStyle={{ color: '#e2e8f0', fontSize: 10 }}
                               contentStyle={{ background: 'rgba(29,21,25,0.97)', border: '1px solid rgba(214,195,190,0.25)', borderRadius: 10 }}
                             />
@@ -1426,7 +1412,6 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             deptSbd={deptSbd}
             deptMtd={deptMtd}
             deptTrend={deptTrend}
-            dailyDate={dailyDate}
           />
         )}
 
@@ -1572,7 +1557,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                 <span style={{ fontSize: 11, color: S.muted }}>Tampil: {sortedEmployeeRows.length} personil</span>
               </div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1280 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1410 }}>
                   <thead>
                     <tr style={{ background: S.bg, borderBottom: `1px solid ${S.border}` }}>
                       <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>#</th>
@@ -1584,6 +1569,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                       </th>
                       <th onClick={() => applySort('sales')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                         Sales {sortKey === 'sales' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
+                      </th>
+                      <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
+                        Zona · Target 80%
                       </th>
                       <th onClick={() => applySort('achievement')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                         Ach {sortKey === 'achievement' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
@@ -1614,6 +1602,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                       const medals = ['🥇', '🥈', '🥉']
                       const salesGap = r.targetSales - r.sales
                       const trxGap = r.targetTransaksi - r.transaksi
+                      const zoneKey = salesContributionKeyForZone(r.userZone)
+                      const zoneGroup = SALES_CONTRIBUTION_GROUPS.find(group => group.key === zoneKey)
+                      const zoneSales = zoneKey ? (r.salesContributions[zoneKey] ?? 0) : 0
+                      const zonePercentage = r.sales > 0 ? zoneSales / r.sales * 100 : 0
                       return (
                         <tr key={r.nik} style={{ borderBottom: `1px solid ${S.border}`, background: i % 2 === 0 ? '#fff' : S.bg }}>
                           <td style={{ padding: '11px 14px', fontSize: 14, textAlign: 'center', minWidth: 36 }}>
@@ -1629,6 +1621,14 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                             <div style={{ fontSize: 10, color: S.muted, marginTop: 1, whiteSpace: 'nowrap' }}>
                               Tgt {formatRupiah(r.targetSales)} · {salesGap > 0 ? `Gap ${formatRupiah(salesGap)}` : `+${formatRupiah(Math.abs(salesGap))}`}
                             </div>
+                          </td>
+                          <td style={{ padding: '11px 14px', minWidth: 170 }}>
+                            {zoneGroup ? (
+                              <div>
+                                <div style={{ color: zoneGroup.color, fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap' }}>{zoneGroup.label}</div>
+                                <div style={{ color: zonePercentage >= 80 ? '#15803d' : '#b45309', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{zonePercentage.toFixed(1)}% · target 80%</div>
+                              </div>
+                            ) : <span style={{ color: S.muted }}>—</span>}
                           </td>
                           <td style={{ padding: '11px 14px', minWidth: 150 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

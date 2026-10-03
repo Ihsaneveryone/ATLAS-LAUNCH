@@ -5,7 +5,9 @@ import { formatRupiah, formatRupiahFull, type PerformanceData, type KPIItem, typ
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { useAdminSettings } from '../context/AdminSettingsContext'
+import { SALES_CONTRIBUTION_GROUPS, salesContributionKeyForZone } from '../services/rawDataApi'
 import YTDPage, { AzkoMascot } from './YTDPage'
+import SalesContributionBar from './SalesContributionBar'
 
 type Period = 'today' | 'mtd' | 'fullmonth' | 'ytd'
 interface Props { user: User; onBack: () => void }
@@ -23,6 +25,15 @@ const jakartaDateFormatter = new Intl.DateTimeFormat('id-ID', {
   month: 'long',
   year: 'numeric',
 })
+const HIDDEN_USER_KPI_LABELS = new Set([
+  'new member',
+  'tebus hemat',
+  'tebus hematik',
+  'tematik',
+  'new product',
+  'krisbow sync',
+  'fokus item store',
+])
 
 function pctToZone(pct: number): string {
   if (pct >= 100) return 'biru'
@@ -193,6 +204,25 @@ export default function PerformanceSales({ user, onBack }: Props) {
   }
 
   const data = period === 'today' ? todayData : period === 'mtd' ? mtdData : fullMonthData
+  const salesContributions = data.salesContributions ?? {}
+  const userZoneKey = salesContributionKeyForZone(user.userZone)
+  const userZoneGroup = SALES_CONTRIBUTION_GROUPS.find(group => group.key === userZoneKey)
+  const knownZoneSales = SALES_CONTRIBUTION_GROUPS
+    .filter(group => group.key !== 'other')
+    .reduce((total, group) => total + (salesContributions[group.key] ?? 0), 0)
+  const contributionAmounts: Record<string, number> = {
+    ...salesContributions,
+    other: Math.max(salesContributions.other ?? 0, data.actual - knownZoneSales),
+  }
+  const contributionTotal = SALES_CONTRIBUTION_GROUPS.reduce((total, group) => total + (contributionAmounts[group.key] ?? 0), 0)
+  const otherContributionGroups = SALES_CONTRIBUTION_GROUPS
+    .filter(group => group.key !== userZoneKey && group.key !== 'other')
+    .sort((left, right) => (contributionAmounts[right.key] ?? 0) - (contributionAmounts[left.key] ?? 0))
+  const contributionGroups = [
+    ...(userZoneGroup ? [userZoneGroup] : otherContributionGroups.slice(0, 1)),
+    ...otherContributionGroups.filter(group => group.key !== userZoneGroup?.key),
+    SALES_CONTRIBUTION_GROUPS.find(group => group.key === 'other')!,
+  ]
   const trend = data.dailyTrend ?? data.monthlyTrend ?? []
   const mainColor = ac(data.achievement)
   const px = isMobile ? '16px' : '32px'
@@ -346,11 +376,22 @@ export default function PerformanceSales({ user, onBack }: Props) {
           )}
         </div>
 
+        <SalesContributionBar
+          salesContributions={data.salesContributions}
+          totalSales={data.actual}
+          userZone={user.userZone}
+          periodLabel={PERIODS.find(item => item.key === period)?.label ?? 'Sales'}
+          isMobile={isMobile}
+          cardRadius={cardRadius}
+        />
+
         {/* KPI grid */}
         <div>
           <div style={{ color: S.muted, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 10 }}>Pencapaian per KPI</div>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(165px, 1fr))', gap: 10 }}>
-            {data.kpis.map(k => <KPICard key={k.label} {...k} isMobile={isMobile}/>)}
+            {data.kpis
+              .filter(kpi => !HIDDEN_USER_KPI_LABELS.has(kpi.label.trim().toLowerCase()))
+              .map(k => <KPICard key={k.label} {...k} isMobile={isMobile}/>)}
           </div>
         </div>
 

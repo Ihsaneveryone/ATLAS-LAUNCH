@@ -16,7 +16,7 @@ export function setMenuSetting(key: string, val: boolean) {
   localStorage.setItem(MENU_SETTINGS_KEY, JSON.stringify(s))
 }
 
-type MenuKey = 'performance' | 'forecasting' | 'toko' | 'spreadsheet' | 'admin'
+type MenuKey = 'performance' | 'forecasting' | 'toko' | 'search-receipt' | 'spreadsheet' | 'admin'
 interface Props { user: User; onNavigate: (m: MenuKey) => void; onLogout: () => void }
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b' }
@@ -63,6 +63,19 @@ const MENUS = [
         <path d="M13 14V10a7 7 0 0114 0v4" stroke="#0e7490" strokeWidth="2" strokeLinecap="round"/>
         <rect x="15" y="23" width="10" height="7" rx="2" fill="#0e7490" opacity="0.6"/>
         <circle cx="20" cy="27" r="1.5" fill="#fff"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'search-receipt' as MenuKey,
+    title: 'Search Receipt', subtitle: 'Database Transaksi COPAS S2',
+    desc: 'Cari transaksi berdasarkan NIK, artikel, tanggal, receipt, nama, dan kolom lainnya.',
+    tags: ['NIK', 'Artikel', 'Tanggal', 'Receipt'], color: '#b45309', light: '#fff7ed',
+    icon: (
+      <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+        <circle cx="17" cy="17" r="10" stroke="#b45309" strokeWidth="2.5" opacity="0.75"/>
+        <path d="m24.5 24.5 8 8" stroke="#b45309" strokeWidth="3" strokeLinecap="round"/>
+        <path d="M12.5 17h9M17 12.5v9" stroke="#b45309" strokeWidth="1.8" strokeLinecap="round" opacity="0.55"/>
       </svg>
     ),
   },

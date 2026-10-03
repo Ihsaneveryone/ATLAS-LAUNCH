@@ -48,6 +48,7 @@ export interface PerformanceData {
   actual: number
   acv: number           // computed: actual / workingDays
   workingDays: number
+  salesContributions?: Record<string, number>
   kpis: KPIItem[]
   dailyTrend?: DailyTrend[]
   monthlyTrend?: DailyTrend[]

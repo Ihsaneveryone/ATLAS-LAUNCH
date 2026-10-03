@@ -14,6 +14,10 @@ const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
 const SID_RAW_DATA_GID = 1092675108
 
+function debugWarn(...values: unknown[]): void {
+  if (import.meta.env.DEV) console.warn(...values)
+}
+
 function sheetUrl(name: string, gid?: number) {
   // Jika ada gid, gunakan gid (lebih reliable dari sheet name)
   if (gid !== undefined) {
@@ -161,7 +165,31 @@ function resolveTransactionDate(value: string, today: Date, preferUS: boolean): 
 
 interface RawTxn {
   nik: string; nama: string; tanggal: string; date: Date | null
-  receiptNo: string; artikel: string; qty: number; totalValue: number
+  receiptNo: string; artikel: string; subCategory: string; qty: number; totalValue: number
+}
+
+export const SALES_CONTRIBUTION_GROUPS = [
+  { key: 'homeLiving', label: 'HOME LIVING', color: '#16a34a', subcategories: ['Cleaning Supplies', 'Home Storage', 'Kitchenware', 'Appliances', 'Home Decor & Fragrance', 'Home Textile', 'Cleaning Appliances', 'Horecaba Supplies'] },
+  { key: 'homeImprovement', label: 'HOME IMPROVMENT', color: '#eab308', subcategories: ['Paint & Sundries', 'Safes, Office, & Security Systems', 'Plumbing', 'Hardware', 'Electrical', 'Sanitary Ware', 'Building Supplies', 'Tools', 'Ladder', 'Locker, Cabinet, & Racking', 'Lighting', 'Fans & Air Treatment', 'Power Supply'] },
+  { key: 'hobbiesLifestyle', label: 'HOBBIES & LIFESTYLE', color: '#db2777', subcategories: ['Automotive', 'Lawn Garden', 'Outdoor Living', 'Aqua Pet', 'Sports', 'Outdoor Comfort', 'Travels, Seasonal, Baby & Kids', 'Health Supports', 'Trendy Goods', 'Bicycles'] },
+  { key: 'other', label: 'LAINNYA', color: '#64748b', subcategories: ['Lainnya'] },
+] as const
+
+export type SalesContributionKey = typeof SALES_CONTRIBUTION_GROUPS[number]['key']
+export type SalesContributions = Record<SalesContributionKey, number>
+
+const subcategoryToContributionGroup = new Map<string, SalesContributionKey>(
+  SALES_CONTRIBUTION_GROUPS.flatMap(group => group.subcategories.map(subcategory => [subcategory.trim().toLowerCase(), group.key] as const)),
+)
+
+function calculateSalesContributions(txns: RawTxn[], employeeNik: string): SalesContributions {
+  const totals: SalesContributions = { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }
+  for (const txn of txns) {
+    if (!niksMatch(txn.nik, employeeNik)) continue
+    const key = subcategoryToContributionGroup.get(txn.subCategory.trim().toLowerCase()) ?? 'other'
+    totals[key] += txn.totalValue
+  }
+  return totals
 }
 
 // ─── SKU category sets ────────────────────────────────────────────────────────
@@ -197,8 +225,8 @@ export async function fetchSkuMap(): Promise<SkuMap> {
     return cat?.articles ?? new Set<string>()
   }
 
-  console.warn('[ATLAS SKU] Headers:', headers.join(' | '))
-  console.warn('[ATLAS SKU] Kolom:', categories.map(cat => `${cat.name}(${cat.articles.size} SKU)`).join(', '))
+  debugWarn('[ATLAS SKU] Headers:', headers.join(' | '))
+  debugWarn('[ATLAS SKU] Kolom:', categories.map(cat => `${cat.name}(${cat.articles.size} SKU)`).join(', '))
 
   return {
     categories,
@@ -225,7 +253,7 @@ async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
     }
     
     if (!raw) {
-      console.warn('[NIK Mapping] Neither ATLAS DATABASE nor COPAS available')
+      debugWarn('[NIK Mapping] Neither ATLAS DATABASE nor COPAS available')
       return new Map()
     }
     
@@ -248,7 +276,7 @@ async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
     }
     
     if (found < 3) {
-      console.warn('[NIK Mapping] Incomplete target names in primary source, checking USERS sheet...')
+      debugWarn('[NIK Mapping] Incomplete target names in primary source, checking USERS sheet...')
       try {
         const usersRaw = await fetchCSV('USERS').catch(() => null)
         if (usersRaw) {
@@ -262,26 +290,26 @@ async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
               }
             }
           }
-          console.warn('[NIK Mapping] Added from USERS sheet, total now:', nikNameMap.size)
+          debugWarn('[NIK Mapping] Added from USERS sheet, total now:', nikNameMap.size)
         }
       } catch (e2) {
-        console.warn('[NIK Mapping] USERS sheet fallback failed:', e2)
+        debugWarn('[NIK Mapping] USERS sheet fallback failed:', e2)
       }
     }
     
-    console.warn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
+    debugWarn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
     // Log sample entries
     const debugEntries = Array.from(nikNameMap.entries()).slice(0, 5)
-    console.warn('[NIK Mapping] Sample:', debugEntries.map(([k,v]) => `${k}→${v}`).join(', '))
+    debugWarn('[NIK Mapping] Sample:', debugEntries.map(([k,v]) => `${k}→${v}`).join(', '))
     // Check target names
     found = 0
     for (const [nik, nama] of nikNameMap) {
       if (nama.includes('GWEN') || nama.includes('ADITYA') || nama.includes('ROZIAN')) {
-        console.warn(`[NIK Mapping] TARGET: ${nik} = ${nama}`)
+        debugWarn(`[NIK Mapping] TARGET: ${nik} = ${nama}`)
         found++
       }
     }
-    console.warn(`[NIK Mapping] Found ${found} target names (GWEN/ADITYA/ROZIAN)`)
+    debugWarn(`[NIK Mapping] Found ${found} target names (GWEN/ADITYA/ROZIAN)`)
     // Hardcoded fallbacks for known mixed-format NIKs that sometimes
     // appear blank or with an I-prefix in the COPAS S2 sheet export.
     // This ensures the parser can associate sales rows (even if A is empty)
@@ -293,14 +321,14 @@ async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
     }
     for (const [name, nik] of Object.entries(hardcoded)) {
       if (!nikNameMap.has(nik)) {
-        console.warn(`[NIK Mapping] Adding hardcoded fallback: ${nik} -> ${name}`)
+        debugWarn(`[NIK Mapping] Adding hardcoded fallback: ${nik} -> ${name}`)
         nikNameMap.set(nik, name)
       }
     }
 
     return nikNameMap
   } catch (e) {
-    console.warn('[NIK Mapping] Failed:', e)
+    debugWarn('[NIK Mapping] Failed:', e)
     return new Map()
   }
 }
@@ -386,6 +414,7 @@ function parseMatrixDailySheet(rows: string[][], nikNameMap: Map<string, string>
         date: parseDate(headers[idx]),
         receiptNo: '',
         artikel: '',
+        subCategory: '',
         qty: val,
         totalValue: val,
       })
@@ -425,6 +454,26 @@ function looksLikeRealTransactionData(rows: string[][], startIdx: number, isMatr
   // Perlu minimal 2 nilai besar dari sample cells yang dicek (bukan kebetulan)
   // Atau: minimal 5% dari cells adalah nilai besar
   return largeValueCount >= 2 || (totalCellsChecked > 0 && largeValueCount / totalCellsChecked > 0.05)
+}
+
+export interface CopasS2TableData {
+  headers: string[]
+  rows: string[][]
+}
+
+export async function fetchCopasS2TableData(): Promise<CopasS2TableData> {
+  const raw = await fetchCSV('COPAS S2', SID_RAW_DATA_GID)
+  if (raw.some(row => row.some(cell => cell.includes('#REF!')))) {
+    throw new Error('Sheet COPAS S2 berisi error referensi (#REF!).')
+  }
+  if (raw.length === 0) throw new Error('Sheet COPAS S2 kosong atau tidak dapat dibaca.')
+
+  const firstRow = raw[0]
+  const hasHeader = firstRow.some(cell => /NIK|NAMA|TANGGAL|RECEIPT|ARTIKEL/i.test(cell))
+  return {
+    headers: hasHeader ? firstRow.slice(0, 12) : [],
+    rows: (hasHeader ? raw.slice(1) : raw).filter(row => row.some(cell => cell.trim())),
+  }
 }
 
 // Deteksi COPAS S2 format ketat: header kosong, tapi data rows punya struktur transaksi
@@ -663,6 +712,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   const artikelIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_ARTIKEL', 4)
   const qtyIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_QTY', 7)
   const totalValueIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TOTAL_VALUE', 11)
+  const subCategoryIdx = 14
 
   for (const row of raw.slice(dataStart)) {
     const nikVal  = c(row, nikIdx)
@@ -685,17 +735,17 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
         if (normalizeNameForMatch(nama) === normalizedLastNama) {
           lastNik = nik
           found = true
-          console.warn(`[COPAS S2 Fallback] Match: "${lastNama}" → NIK "${nik}"`)
+          debugWarn(`[COPAS S2 Fallback] Match: "${lastNama}" → NIK "${nik}"`)
           break
         }
       }
       if (!found && (lastNama.includes('GWEN') || lastNama.includes('ADITYA') || lastNama.includes('ROZIAN'))) {
-        console.warn(`[COPAS S2 Fallback] NO EXACT MATCH for "${lastNama}"`)
+        debugWarn(`[COPAS S2 Fallback] NO EXACT MATCH for "${lastNama}"`)
         for (const [nik, nama] of nikNameMap) {
           const normNama = normalizeNameForMatch(nama)
           if (normNama.includes(normalizedLastNama) || normalizedLastNama.includes(normNama)) {
             lastNik = nik
-            console.warn(`[COPAS S2 Fallback] Fuzzy match: "${lastNama}" → NIK "${nik}"`)
+            debugWarn(`[COPAS S2 Fallback] Fuzzy match: "${lastNama}" → NIK "${nik}"`)
             break
           }
         }
@@ -716,6 +766,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       date:       null,
       receiptNo:  c(row, receiptIdx),
       artikel:    c(row, artikelIdx),
+      subCategory: c(row, subCategoryIdx),
       qty:        numVal(c(row, qtyIdx)),
       totalValue: tv,
     })
@@ -828,7 +879,7 @@ function setTargetEntry(map: Map<string, TargetData>, key: string, entry: Target
 
 export async function fetchTargets(): Promise<Map<string, TargetData>> {
   try {
-    console.warn('[TARGET] fetching...')
+    debugWarn('[TARGET] fetching...')
     const raw = await fetchCSV('TARGET')
     const nikNameMapping = await fetchNikNameMapping()  // Get ATLAS DATABASE mapping for reverse lookup
     const headers = (raw[0] ?? []).map(value => value.trim().toUpperCase())
@@ -838,10 +889,10 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
       return headerIndex >= 0 ? headerIndex : fallbackIndex
     }
     
-    console.warn('[TARGET] rows:', raw.length, '| tail 5 col0:', raw.slice(-5).map(r=>JSON.stringify(r[0])+'/'+JSON.stringify(r[1])).join(', '))
+    debugWarn('[TARGET] rows:', raw.length, '| tail 5 col0:', raw.slice(-5).map(r=>JSON.stringify(r[0])+'/'+JSON.stringify(r[1])).join(', '))
     // Log baris dengan NIK kosong (intern biasanya null di gviz)
     const emptyNikRows = raw.slice(1).filter(r => !c(r, 0) && c(r, 1))
-    if (emptyNikRows.length > 0) console.warn('[TARGET] Baris NIK kosong (nama-only):', emptyNikRows.map(r=>JSON.stringify(c(r,1))).join(', '))
+    if (emptyNikRows.length > 0) debugWarn('[TARGET] Baris NIK kosong (nama-only):', emptyNikRows.map(r=>JSON.stringify(c(r,1))).join(', '))
     const normN = (s: string) => s.toUpperCase().replace(/[.\-,]/g, ' ').replace(/\s+/g, ' ').trim()
     const map = new Map<string, TargetData>()
     const nikIdx = findTargetHeaderIndex([/^NIK$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NIK', 0))
@@ -879,7 +930,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
         for (const [mappedNik, mappedNama] of nikNameMapping) {
           if (normN(mappedNama) === normalizedNama) {
             nik = mappedNik
-            console.warn(`[TARGET fallback] NAMA "${nama}" → NIK "${nik}" dari ATLAS`)
+            debugWarn(`[TARGET fallback] NAMA "${nama}" → NIK "${nik}" dari ATLAS`)
             break
           }
         }
@@ -902,7 +953,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
     }
     return map
   } catch (e) {
-    console.warn('[TARGET] ERROR:', e)
+    debugWarn('[TARGET] ERROR:', e)
     return new Map()
   }
 }
@@ -967,6 +1018,7 @@ interface EmpPerf {
   sales: number; qty: number; transaksi: number
   basketSize: number; upt: number; aur: number
   newMember:     number
+  salesContributions: SalesContributions
   categorySales: Record<string, number>  // category name → total value (Rp)
   categoryQty:   Record<string, number>  // category name → sum of qty
 }
@@ -987,6 +1039,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
   const byNik = new Map<string, {
     nik: string; nama: string; sales: number; qty: number
     receipts: Set<string>
+    salesContributions: SalesContributions
     categorySales: Map<string, number>
     categoryQty:   Map<string, number>
   }>()
@@ -997,6 +1050,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
       byNik.set(t.nik, {
         nik: t.nik, nama: t.nama, sales: 0, qty: 0,
         receipts: new Set(),
+        salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
         categorySales: new Map(),
         categoryQty:   new Map(),
       })
@@ -1005,6 +1059,8 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     e.sales += t.totalValue
     e.qty   += t.qty
     if (t.receiptNo) e.receipts.add(t.receiptNo)
+    const contributionKey = subcategoryToContributionGroup.get(t.subCategory.trim().toLowerCase()) ?? 'other'
+    e.salesContributions[contributionKey] += t.totalValue
 
     const cats = articleToCategories.get(normalizeArticleCode(t.artikel))
     if (cats) {
@@ -1027,6 +1083,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
       qty:         e.qty,
       transaksi:   tr,
       newMember:   0,  // filled after merging MEMBER sheet
+      salesContributions: e.salesContributions,
       categorySales,
       categoryQty,
       basketSize:  tr > 0 ? Math.round(e.sales / tr) : 0,
@@ -1202,6 +1259,7 @@ function buildRanking(
         qty: 0,
         transaksi: 0,
         newMember: 0,
+        salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
         categorySales: {},
         categoryQty: {},
         basketSize: 0,
@@ -1267,6 +1325,18 @@ export interface TeamEmployeeSummary {
   basketSize: number
   targetBasketSize: number
   newMember: number
+  userZone?: string
+  salesContributions: SalesContributions
+  topSalesGroup: string
+  topSalesGroupPct: number
+}
+
+export function salesContributionKeyForZone(zone?: string): Exclude<SalesContributionKey, 'other'> | null {
+  const normalizedZone = (zone ?? '').normalize('NFKC').toLowerCase().replace(/[^a-z]/g, '')
+  if (normalizedZone.includes('homeliving')) return 'homeLiving'
+  if (normalizedZone.includes('homeimprov')) return 'homeImprovement'
+  if (normalizedZone.includes('hobbies') || normalizedZone.includes('lifestyle')) return 'hobbiesLifestyle'
+  return null
 }
 
 function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetData>, workingDays = 1, validNiks: Set<string> = new Set(), useMtdTarget = false): TeamEmployeeSummary[] {
@@ -1287,6 +1357,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       qty: 0,
       transaksi: 0,
       newMember: 0,
+      salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
       categorySales: {},
       categoryQty: {},
       basketSize: 0,
@@ -1307,6 +1378,9 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
     const rawNama = e.nama && e.nama.trim() && e.nama.trim().toUpperCase() !== 'NONAME'
       ? e.nama
       : (tData?.nama ?? e.nik)
+    const largestContribution = SALES_CONTRIBUTION_GROUPS.reduce((largest, group) =>
+      e.salesContributions[group.key] > e.salesContributions[largest.key] ? group : largest,
+    SALES_CONTRIBUTION_GROUPS[0])
 
     return {
       rank: 0,
@@ -1326,6 +1400,9 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       basketSize: e.basketSize,
       targetBasketSize,
       newMember: e.newMember,
+      salesContributions: e.salesContributions,
+      topSalesGroup: e.sales > 0 ? largestContribution.label : '',
+      topSalesGroupPct: e.sales > 0 ? parseFloat(((e.salesContributions[largestContribution.key] / e.sales) * 100).toFixed(1)) : 0,
     }
   })
 
@@ -1353,7 +1430,7 @@ function normNik(nik: string): string {
 }
 
 export async function buildRawPerformance(currentNik: string, onLog?: (s: string) => void, validNiks: Set<string> = new Set()): Promise<RawPerfResult> {
-  const log = (s: string) => { console.warn('[ATLAS RAW]', s); onLog?.(s) }
+  const log = (s: string) => { debugWarn('[ATLAS RAW]', s); onLog?.(s) }
   // Normalize currentNik to canonical format (I01902 → 101902) so it matches transaction NIKs
   const canonicalCurrent = canonicalNik(currentNik)
   const normCurrent = normNik(canonicalCurrent)
@@ -1444,6 +1521,8 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   const mtdTxns   = parsedTxns.filter(t => t.date && sameMonth(t.date, today) && t.date <= yesterday)
   const mtdDateTo = sameMonth(yesterday, today) ? yesterday : today
   log(`Transaksi MTD (s.d. ${mtdDateTo.getDate()}): ${mtdTxns.length} baris`)
+  const todaySalesContributions = calculateSalesContributions(todayTxns, canonicalCurrent)
+  const mtdSalesContributions = calculateSalesContributions(mtdTxns, canonicalCurrent)
 
   const dailyPerfs = aggregate(dailyTxns, skuMap)
   const mtdPerfs   = aggregate(mtdTxns,   skuMap)
@@ -1513,7 +1592,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   }
 
   // Find current user's perf
-  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
+  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
   const myDaily = dailyPerfs.find(e => niksMatch(e.nik, canonicalCurrent)) ?? dailyPerfs.find(e => normNik(e.nik) === normCurrent) ?? emptyPerf()
   const myMTD   = mtdPerfs.find(e => niksMatch(e.nik, canonicalCurrent))   ?? mtdPerfs.find(e => normNik(e.nik) === normCurrent)   ?? emptyPerf()
 
@@ -1600,6 +1679,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       actual:      myDaily.sales,
       acv:         myDaily.sales,
       workingDays: 1,
+      salesContributions: todaySalesContributions,
       kpis:        makeKPIs(myDaily, dailyTarget, false, 1, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(dailyPerfs, targets, 1, false, undefined, false, validNiks),
       dailyTrend:  todayTrendEntry,
@@ -1614,6 +1694,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       actual:      myMTD.sales,
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
+      salesContributions: mtdSalesContributions,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true, validNiks),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(mtdDateTo)}`, actual: myMTD.sales, target: mtdTargetProrated }],
@@ -1731,7 +1812,7 @@ export async function fetchYTDData(currentNik: string): Promise<YTDEmployee | nu
       avgSales, avgTrx, avgBS,
     }
   } catch (e) {
-    console.warn('[ATLAS YTD] Error:', e)
+    debugWarn('[ATLAS YTD] Error:', e)
     return null
   }
 }
@@ -1779,7 +1860,7 @@ export async function fetchAllYTD(): Promise<YTDEmployee[]> {
     }
     return results
   } catch (e) {
-    console.warn('[ATLAS YTD ALL] Error:', e)
+    debugWarn('[ATLAS YTD ALL] Error:', e)
     return []
   }
 }

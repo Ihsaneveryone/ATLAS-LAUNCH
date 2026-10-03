@@ -9,10 +9,11 @@ import type { User } from './data/mockData'
 const PerformanceSales = lazy(() => import('./components/PerformanceSales'))
 const ForecastingInsentif = lazy(() => import('./components/ForecastingInsentif'))
 const PencapaianToko = lazy(() => import('./components/PencapaianToko'))
+const SearchReceipt = lazy(() => import('./components/SearchReceipt'))
 const SpreadsheetGuide = lazy(() => import('./components/SpreadsheetGuide'))
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'))
 
-type Page = 'login' | 'menu' | 'performance' | 'forecasting' | 'toko' | 'spreadsheet' | 'admin'
+type Page = 'login' | 'menu' | 'performance' | 'forecasting' | 'toko' | 'search-receipt' | 'spreadsheet' | 'admin'
 
 function getJakartaMonthKey(): string {
   const parts = new Intl.DateTimeFormat('en', {
@@ -73,6 +74,7 @@ function AppInner() {
       {page === 'performance' ? <PerformanceSales user={user} onBack={() => setPage('menu')} /> : null}
       {page === 'forecasting' ? <ForecastingInsentif user={user} onBack={() => setPage('menu')} /> : null}
       {page === 'toko' ? <PencapaianToko user={user} onBack={() => setPage('menu')} /> : null}
+      {page === 'search-receipt' ? <SearchReceipt user={user} onBack={() => setPage('menu')} /> : null}
       {page === 'spreadsheet' ? <SpreadsheetGuide user={user} onBack={() => setPage('menu')} /> : null}
       {page === 'admin' ? <AdminDashboard user={user} onLogout={handleLogout} /> : null}
     </Suspense>

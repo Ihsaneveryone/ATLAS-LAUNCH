@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildRawPerformance } from './rawDataApi'
+import { buildRawPerformance, fetchCopasS2TableData, salesContributionKeyForZone } from './rawDataApi'
 
 function csvResponse(text: string) {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/csv' } })
@@ -12,6 +12,28 @@ describe('buildRawPerformance', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('loads COPAS S2 A:L rows for Search Receipt', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => csvResponse([
+      'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,I,J,K,TOTAL VALUE,,TANGGAL',
+      '123702,Sales User,,R1,SKU1,Desc,Code,1,1,2,3,100000,,01/10/2026',
+    ].join('\n'))))
+
+    const data = await fetchCopasS2TableData()
+
+    expect(data.headers).toHaveLength(12)
+    expect(data.rows).toHaveLength(1)
+    expect(data.rows[0]?.slice(0, 12)).toEqual(['123702', 'Sales User', '', 'R1', 'SKU1', 'Desc', 'Code', '1', '1', '2', '3', '100000'])
+  })
+
+  it('maps USERS zones to target groups and leaves support roles without a zone target', () => {
+    expect(salesContributionKeyForZone('Home Living')).toBe('homeLiving')
+    expect(salesContributionKeyForZone('Home Improvment')).toBe('homeImprovement')
+    expect(salesContributionKeyForZone('Hobbies & LifeStyle')).toBe('hobbiesLifestyle')
+    expect(salesContributionKeyForZone('Support')).toBeNull()
+    expect(salesContributionKeyForZone('Cashier')).toBeNull()
+    expect(salesContributionKeyForZone('ONLINE')).toBeNull()
   })
 
   it('includes sales rows for users whose NIK uses an alternate format', async () => {
@@ -131,10 +153,31 @@ describe('buildRawPerformance', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const sheet = new URL(String(input)).searchParams.get('sheet')
 
-      if (sheet === 'COPAS S2') return csvResponse([
-        'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
-        '123702,Sales User,,R1,SKU1,Desc,Code,1,,,,100000,,01/10/2026',
-      ].join('\n'))
+      if (sheet === 'COPAS S2') {
+        const transaction = (nik: string, receipt: string, value: number, subcategory: string) => {
+          const row = Array(15).fill('')
+          row[0] = nik
+          row[1] = nik === '123702' ? 'Sales User' : 'Other User'
+          row[3] = receipt
+          row[4] = 'SKU1'
+          row[5] = 'Desc'
+          row[6] = 'Code'
+          row[7] = '1'
+          row[11] = String(value)
+          row[13] = '01/10/2026'
+          row[14] = subcategory
+          return row.join(',')
+        }
+        return csvResponse([
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,I,J,K,TOTAL VALUE,,TANGGAL,SUBKATEGORI',
+          transaction('123702', 'R1', 100000, 'Cleaning Supplies'),
+          transaction('123702', 'R2', 50000, 'Appliances'),
+          transaction('123702', 'R3', 250000, 'Paint & Sundries'),
+          transaction('123702', 'R4', 300000, 'Bicycles'),
+          transaction('123702', 'R5', 50000, 'Lainnya'),
+          transaction('123703', 'R6', 999000, 'Cleaning Supplies'),
+        ].join('\n'))
+      }
       if (sheet === 'TARGET') return csvResponse([
         'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
         '123702,Sales User,100000,3000000',
@@ -153,6 +196,21 @@ describe('buildRawPerformance', () => {
       expect(result.dailyDate).toBe('01/10/2026')
       expect(result.dateFrom).toBe('01/10/2026')
       expect(result.dateTo).toBe('01/10/2026')
+      expect(result.todayPerf.actual).toBe(750000)
+      expect(result.todayPerf.salesContributions).toEqual({
+        homeLiving: 150000,
+        homeImprovement: 250000,
+        hobbiesLifestyle: 300000,
+        other: 50000,
+      })
+      expect(result.teamTodayEmployees[0]?.topSalesGroup).toBe('HOBBIES & LIFESTYLE')
+      expect(result.teamTodayEmployees[0]?.topSalesGroupPct).toBe(40)
+      expect(result.mtdPerf.salesContributions).toEqual({
+        homeLiving: 0,
+        homeImprovement: 0,
+        hobbiesLifestyle: 0,
+        other: 0,
+      })
       expect(result.mtdPerf.workingDays).toBe(0)
       expect(result.mtdPerf.targetMTD).toBe(0)
       expect(result.mtdPerf.target).toBe(3000000)
