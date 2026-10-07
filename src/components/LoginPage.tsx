@@ -69,7 +69,9 @@ export default function LoginPage({ onLogin }: Props) {
         const fetched = await fetchUsers()
         if (fetched.length > 0) user = findAuthenticatedUser(fetched, inputNik, inputPassword)
       } catch {
-        // fallback to cached auth result above
+        setError('Tidak dapat menghubungi spreadsheet akun. Periksa koneksi lalu coba lagi.')
+        setLoading(false)
+        return
       }
     }
 

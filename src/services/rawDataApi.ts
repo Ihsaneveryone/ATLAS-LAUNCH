@@ -30,8 +30,10 @@ function sheetUrl(name: string, gid?: number) {
 async function fetchCSV(name: string, gid?: number, retries = 2): Promise<string[][]> {
   let lastErr: unknown
   for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 25_000)
     try {
-      const res = await fetch(sheetUrl(name, gid), { cache: 'no-store' })
+      const res = await fetch(sheetUrl(name, gid), { cache: 'no-store', signal: controller.signal })
       const text = await res.text()
       if (!res.ok || text.trimStart().startsWith('<!')) throw new Error(`Sheet "${name}" tidak bisa dibaca`)
       // Koneksi yang terputus di tengah download (umum utk sheet besar) tidak selalu
@@ -42,9 +44,12 @@ async function fetchCSV(name: string, gid?: number, retries = 2): Promise<string
       return parseCSV(text)
     } catch (e) {
       lastErr = e
+      if (e instanceof DOMException && e.name === 'AbortError') break
       // Google Sheets gviz kadang gagal sesaat (rate-limit/hiccup/koneksi terputus untuk sheet besar)
       // — beri jeda lalu coba lagi sebelum menyerah ke nama sheet kandidat lain yang bisa nyasar ke tab yang salah.
       if (attempt < retries) await new Promise(r => setTimeout(r, 200 * (attempt + 1)))
+    } finally {
+      clearTimeout(timeout)
     }
   }
   throw lastErr

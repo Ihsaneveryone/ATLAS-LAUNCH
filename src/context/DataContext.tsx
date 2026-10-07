@@ -128,6 +128,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .catch((pingErr: any) => log(`GAGAL koneksi: ${pingErr?.message ?? pingErr}`))
 
     const tokoRowsPromise = fetchPencapaianToko()
+      .then(rows => ({ rows, error: null as unknown }))
+      .catch(error => ({ rows: [] as TokoRow[], error }))
 
     // ── USERS ────────────────────────────────────────────────────
     let liveUsers: User[] = []
@@ -195,14 +197,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       log(`❌ Error: ${msg}`)
     }
 
-    // ── PENCAPAIAN TOKO ───────────────────────────────────────────
-    let tokoRows: TokoRow[] = []
-    try {
-      log('Mengambil data Pencapaian Toko…')
-      tokoRows = await tokoRowsPromise
-      log(`✅ Pencapaian Toko: ${tokoRows.length} baris`)
-    } catch (e: any) { log(`❌ Pencapaian Toko gagal: ${e?.message ?? e}`) }
-
     const anyLive = liveUsers.length > 0 || todayPerf.actual > 0 || mtdPerf.actual > 0
     const ts = new Date().toLocaleTimeString('id-ID')
     setData(prev => ({
@@ -216,12 +210,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
       teamMtdTrend,
       teamTodayEmployees,
       teamMtdEmployees,
-      tokoRows,
       loading:   false,
       error:     rawPerfError,
       usingLive: anyLive,
-      debugLog:  [...prev.debugLog, `[${ts}] ${anyLive ? '✅ Selesai (live)' : '⚠ Selesai (fallback kosong)'}`],
+      debugLog:  [...prev.debugLog, `[${ts}] ${anyLive ? '✅ Data sales siap' : '⚠ Data sales kosong'}`],
     }))
+
+    // Store-level and MGB data load independently after the sales dashboard is ready.
+    log('Mengambil data Pencapaian Toko…')
+    const tokoResult = await tokoRowsPromise
+    if (tokoResult.error) {
+      const message = tokoResult.error instanceof Error ? tokoResult.error.message : String(tokoResult.error)
+      log(`❌ Pencapaian Toko gagal: ${message}`)
+      return
+    }
+
+    log(`✅ Pencapaian Toko: ${tokoResult.rows.length} baris`)
+    setData(prev => ({ ...prev, tokoRows: tokoResult.rows }))
   }, [log])
 
   return (

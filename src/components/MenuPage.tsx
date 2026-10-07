@@ -5,7 +5,6 @@ import type { User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow } from '../services/tokoApi'
-import { LoadingSkeleton, DataLoadingOverlay } from './LoadingSkeletons'
 import MgbReviewCard from './MgbReviewCard'
 
 export const MENU_SETTINGS_KEY = 'atlas_menu_settings'
@@ -18,7 +17,7 @@ export function setMenuSetting(key: string, val: boolean) {
 }
 
 type MenuKey = 'performance' | 'forecasting' | 'toko' | 'search-receipt' | 'spreadsheet' | 'admin'
-interface Props { user: User; mgbReady: boolean; onNavigate: (m: MenuKey) => void; onLogout: () => void }
+interface Props { user: User; onNavigate: (m: MenuKey) => void; onLogout: () => void }
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b' }
 
@@ -233,7 +232,7 @@ function OffCard() {
   )
 }
 
-export default function MenuPage({ user, mgbReady, onNavigate, onLogout }: Props) {
+export default function MenuPage({ user, onNavigate, onLogout }: Props) {
   const { error, loading, reload, menuConfig } = useAtlasData()
   const isMobile = useMobile()
   const px = isMobile ? '16px' : '32px'
@@ -242,16 +241,6 @@ export default function MenuPage({ user, mgbReady, onNavigate, onLogout }: Props
   const refreshMenuData = () => {
     reload(user.nik)
     setMgbRefreshKey(key => key + 1)
-  }
-
-  // Show loading skeleton on first load
-  if (loading || !mgbReady) {
-    return (
-      <>
-        <LoadingSkeleton />
-        <DataLoadingOverlay />
-      </>
-    )
   }
 
   return (

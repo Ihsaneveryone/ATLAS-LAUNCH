@@ -13,8 +13,16 @@ function sheetUrl(name: string, bust = false) {
 async function fetchCSV(sheetName: string, bustCache = false): Promise<string[][]> {
   const url = sheetUrl(sheetName, bustCache)
   if (IS_DEV) console.warn(`[ATLAS] Fetching: "${sheetName}"`, url)
-  const res = await fetch(url, bustCache ? { cache: 'no-store' } : {})
-  const text = await res.text()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15_000)
+  let res: Response
+  let text: string
+  try {
+    res = await fetch(url, { ...(bustCache ? { cache: 'no-store' as RequestCache } : {}), signal: controller.signal })
+    text = await res.text()
+  } finally {
+    clearTimeout(timeout)
+  }
   if (IS_DEV) console.warn(`[ATLAS] "${sheetName}" → status=${res.status}, length=${text.length}`)
   if (!res.ok) throw new Error(`HTTP ${res.status} untuk sheet "${sheetName}"`)
   if (text.trimStart().startsWith('<!')) throw new Error(`Sheet "${sheetName}" mengembalikan halaman HTML — pastikan spreadsheet di-share "Anyone with the link can view" (bukan hanya link biasa)`)

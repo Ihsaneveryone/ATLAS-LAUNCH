@@ -79,8 +79,16 @@ export interface TokoRow {
 
 export async function fetchPencapaianToko(): Promise<TokoRow[]> {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Pencapaian Toko')}&_t=${Date.now()}`
-  const res  = await fetch(url, { cache: 'no-store' })
-  const text = await res.text()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 20_000)
+  let res: Response
+  let text: string
+  try {
+    res = await fetch(url, { cache: 'no-store', signal: controller.signal })
+    text = await res.text()
+  } finally {
+    clearTimeout(timeout)
+  }
   if (!res.ok || text.trimStart().startsWith('<!')) throw new Error('Sheet "Pencapaian Toko" tidak bisa dibaca')
   const raw = parseCSV(text)
   const dateIdx = getConfiguredColumnIndex('Pencapaian Toko', 'TOKO_DATE', 1)
