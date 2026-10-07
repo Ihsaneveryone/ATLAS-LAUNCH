@@ -5,6 +5,7 @@ import { useAtlasData } from './context/useAtlasData'
 import LoginPage from './components/LoginPage'
 import MenuPage from './components/MenuPage'
 import type { User } from './data/mockData'
+import { loadYesterdayMgbReviews } from './services/mgbReviewApi'
 
 const PerformanceSales = lazy(() => import('./components/PerformanceSales'))
 const ForecastingInsentif = lazy(() => import('./components/ForecastingInsentif'))
@@ -60,6 +61,7 @@ function AppInner() {
     setUser(u)
     setPage('menu')
     void reload(u.nik)
+    void loadYesterdayMgbReviews(u)
   }
 
   const handleLogout = () => {

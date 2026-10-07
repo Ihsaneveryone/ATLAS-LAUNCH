@@ -5,6 +5,7 @@ import type { User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow } from '../services/tokoApi'
+import { LoadingSkeleton, DataLoadingOverlay } from './LoadingSkeletons'
 import MgbReviewCard from './MgbReviewCard'
 
 export const MENU_SETTINGS_KEY = 'atlas_menu_settings'
@@ -241,6 +242,15 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
   const refreshMenuData = () => {
     reload(user.nik)
     setMgbRefreshKey(key => key + 1)
+  }
+
+  if (loading) {
+    return (
+      <>
+        <LoadingSkeleton />
+        <DataLoadingOverlay />
+      </>
+    )
   }
 
   return (
