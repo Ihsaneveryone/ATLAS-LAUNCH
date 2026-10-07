@@ -167,6 +167,21 @@ const LEAF_DEPT_INDEXES = DEPT_NODES
   .filter(({ node }) => node.kind === 'dept')
   .map(({ index }) => index)
 
+async function fetchSheetRange(range: string): Promise<string[][]> {
+  const url = new URL(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq`)
+  url.searchParams.set('tqx', 'out:csv')
+  url.searchParams.set('sheet', 'Pencapaian Dept')
+  url.searchParams.set('range', range)
+  url.searchParams.set('_t', String(Date.now()))
+
+  const res = await fetch(url, { cache: 'no-store' })
+  const text = await res.text()
+  if (!res.ok || text.trimStart().startsWith('<!')) {
+    throw new Error(`Range "${range}" di sheet "Pencapaian Dept" tidak bisa dibaca`)
+  }
+  return parseCSV(text)
+}
+
 function buildPeriodData(date: string | undefined, labels: string[], values: string[], targetsByIndex?: number[]): DeptPeriodData {
   const departments: DeptMetric[] = labels.map((label, index) => {
     const node = DEPT_NODES[index]
@@ -319,22 +334,21 @@ function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbd
 }
 
 export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
-  const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent('Pencapaian Dept')}&_t=${Date.now()}`
-  const res = await fetch(url, { cache: 'no-store' })
-  const text = await res.text()
-  if (!res.ok || text.trimStart().startsWith('<!')) throw new Error('Sheet "Pencapaian Dept" tidak bisa dibaca')
+  const [salesRange, targetRange] = await Promise.all([
+    fetchSheetRange('M76:AS98'),
+    fetchSheetRange('U3:AQ33'),
+  ])
+  if (salesRange.length < 23) return { sbd: null, mtd: null, trend: { labels: [], points: [] } }
 
-  const raw = parseCSV(text)
-  if (raw.length < 40) return { sbd: null, mtd: null, trend: { labels: [], points: [] } }
-
-  // Sales harian: baris 81 = tanggal, baris 82:103 = nama zone/dept + sales harian
-  const sbdHeaderRow = raw[80] ?? []
-  const sbdDataRows = raw.slice(81, 103)
+  // Row 76 contains dates in N:AR; rows 77:98 contain names in M and sales in N:AS.
+  // Prefix columns to preserve the existing zero-based column indexes used below.
+  const sbdHeaderRow = ['', '', ...(salesRange[0] ?? []).slice(1)]
+  const sbdDataRows = salesRange.slice(1, 23).map(row => ['', row[0] ?? '', ...row.slice(1)])
   const sbdLabels = sbdDataRows.map(row => g(row, 1))
   const sbdDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
   const mtdSalesDateInfo = sbdDateInfo
 
-  const mtdDateRows = raw.slice(2, 33)
+  const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
   
   // SBD target must stay flat at day-1 target values.
