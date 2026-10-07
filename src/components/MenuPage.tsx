@@ -6,6 +6,7 @@ import { useAtlasData } from '../context/useAtlasData'
 import { useMobile } from '../hooks/useMobile'
 import { latestTokoRow } from '../services/tokoApi'
 import { LoadingSkeleton, DataLoadingOverlay } from './LoadingSkeletons'
+import MgbReviewCard from './MgbReviewCard'
 
 export const MENU_SETTINGS_KEY = 'atlas_menu_settings'
 export function getMenuSettings(): Record<string, boolean> {
@@ -17,7 +18,7 @@ export function setMenuSetting(key: string, val: boolean) {
 }
 
 type MenuKey = 'performance' | 'forecasting' | 'toko' | 'search-receipt' | 'spreadsheet' | 'admin'
-interface Props { user: User; onNavigate: (m: MenuKey) => void; onLogout: () => void }
+interface Props { user: User; mgbReady: boolean; onNavigate: (m: MenuKey) => void; onLogout: () => void }
 
 const S = { bg: '#f0f4ff', card: '#fff', border: '#e8edf8', muted: '#94a3b8', text: '#1e293b', sub: '#64748b' }
 
@@ -232,14 +233,19 @@ function OffCard() {
   )
 }
 
-export default function MenuPage({ user, onNavigate, onLogout }: Props) {
+export default function MenuPage({ user, mgbReady, onNavigate, onLogout }: Props) {
   const { error, loading, reload, menuConfig } = useAtlasData()
   const isMobile = useMobile()
   const px = isMobile ? '16px' : '32px'
   const [menuSettings] = useState(getMenuSettings)
+  const [mgbRefreshKey, setMgbRefreshKey] = useState(0)
+  const refreshMenuData = () => {
+    reload(user.nik)
+    setMgbRefreshKey(key => key + 1)
+  }
 
   // Show loading skeleton on first load
-  if (loading) {
+  if (loading || !mgbReady) {
     return (
       <>
         <LoadingSkeleton />
@@ -263,7 +269,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
                 <div style={{ color: S.muted, fontSize: 11 }}>{user.nik} · {user.jobTitle}</div>
               </div>
             )}
-            <button onClick={() => reload(user.nik)} disabled={loading}
+            <button onClick={refreshMenuData} disabled={loading}
               style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${S.border}`, background: '#f8faff', color: S.muted, fontSize: 12, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.6 : 1 }}
               title="Refresh data">
               {loading ? '⟳' : '↻'}
@@ -284,7 +290,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
       {error && (
         <div style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: `10px ${px}`, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: '#9a3412' }}>
           <span style={{ flex: 1 }}>⚠ {error}</span>
-          <button onClick={() => reload(user.nik)} style={{ border: '1px solid #fed7aa', background: '#fff', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#9a3412', cursor: 'pointer' }}>Coba Lagi</button>
+          <button onClick={refreshMenuData} style={{ border: '1px solid #fed7aa', background: '#fff', borderRadius: 7, padding: '4px 10px', fontSize: 12, fontWeight: 700, color: '#9a3412', cursor: 'pointer' }}>Coba Lagi</button>
         </div>
       )}
 
@@ -297,6 +303,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
           <p style={{ color: S.muted, fontSize: 13 }}>Pilih menu untuk mulai memantau performa penjualan</p>
         </div>
         <OffCard/>
+        <MgbReviewCard user={user} refreshKey={mgbRefreshKey}/>
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(290px, 1fr))', gap: 14 }}>
           {MENUS.filter(m => !m.adminOnly || user.role === 'admin').map(m => {
             // Sheet (global semua device) → localStorage (lokal device) → default enabled

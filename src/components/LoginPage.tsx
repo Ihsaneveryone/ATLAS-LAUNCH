@@ -73,7 +73,10 @@ export default function LoginPage({ onLogin }: Props) {
       }
     }
 
-    if (user) { trackLogin(user.nik, user.nama).catch(() => {}); onLogin(user) } else {
+    if (user) {
+      trackLogin(user.nik, user.nama).catch(() => {})
+      onLogin(user)
+    } else {
       setError('NIK atau password salah. Silakan coba lagi.')
       setLoading(false)
     }

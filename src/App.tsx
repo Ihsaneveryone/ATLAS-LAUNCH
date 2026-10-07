@@ -5,6 +5,7 @@ import { useAtlasData } from './context/useAtlasData'
 import LoginPage from './components/LoginPage'
 import MenuPage from './components/MenuPage'
 import type { User } from './data/mockData'
+import { prefetchYesterdayMgbReviews } from './services/mgbReviewApi'
 
 const PerformanceSales = lazy(() => import('./components/PerformanceSales'))
 const ForecastingInsentif = lazy(() => import('./components/ForecastingInsentif'))
@@ -29,6 +30,7 @@ function getJakartaMonthKey(): string {
 function AppInner() {
   const [page, setPage] = useState<Page>('login')
   const [user, setUser] = useState<User | null>(null)
+  const [menuDataReady, setMenuDataReady] = useState(false)
   const { reload } = useAtlasData()
 
   useEffect(() => {
@@ -50,18 +52,28 @@ function AppInner() {
   }, [reload, user])
 
   const handleLogin = (u: User) => {
+    if (u.role === 'admin') {
+      setUser(u)
+      setPage('admin')
+      reload(u.nik)
+      return
+    }
+
+    setMenuDataReady(false)
     setUser(u)
-    setPage(u.role === 'admin' ? 'admin' : 'menu')
-    reload(u.nik)
+    setPage('menu')
+    void Promise.all([reload(u.nik), prefetchYesterdayMgbReviews(u)])
+      .then(() => setMenuDataReady(true))
   }
 
   const handleLogout = () => {
+    setMenuDataReady(false)
     setUser(null)
     setPage('login')
   }
 
   if (page === 'login' || !user) return <LoginPage onLogin={handleLogin} />
-  if (page === 'menu') return <MenuPage user={user} onNavigate={p => setPage(p as Page)} onLogout={handleLogout} />
+  if (page === 'menu') return <MenuPage user={user} mgbReady={menuDataReady} onNavigate={p => setPage(p as Page)} onLogout={handleLogout} />
 
   return (
     <Suspense
