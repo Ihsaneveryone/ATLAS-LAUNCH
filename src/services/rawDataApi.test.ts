@@ -220,7 +220,7 @@ describe('buildRawPerformance', () => {
     }
   })
 
-  it('parses daily matrix rows when COPAS S2 is blank but COPAS has the data', async () => {
+  it('does not use another sheet as a sales fallback when COPAS S2 is unavailable', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       const sheet = new URL(url).searchParams.get('sheet')
@@ -267,11 +267,59 @@ describe('buildRawPerformance', () => {
       return csvResponse('')
     }))
 
-    const result = await buildRawPerformance('I01902', undefined, new Set(['OTHER']))
+    await expect(buildRawPerformance('I01902', undefined, new Set(['OTHER'])))
+      .rejects.toThrow('Data sales COPAS S2 tidak dapat dibaca')
+  })
 
-    expect(result.todayPerf.actual).toBe(0)
-    expect(result.todayPerf.ranking).toHaveLength(0)
-    expect(result.mtdPerf.ranking.some(entry => entry.nik === '101902')).toBe(false)
+  it('matches NIK 116566 Today sales to the COPAS S2 total value column', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-07T12:00:00+07:00'))
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const sheet = url.searchParams.get('sheet')
+
+      if (sheet === 'COPAS S2') {
+        const transaction = (receipt: string, article: string, value: number) => {
+          const row = Array(15).fill('')
+          row[0] = '116566'
+          row[1] = 'Kuncara Adi Wijaya'
+          row[3] = receipt
+          row[4] = article
+          row[7] = '1'
+          row[11] = String(value)
+          row[13] = '07-Okt-2026'
+          return row.join(',')
+        }
+        const unassignedRow = Array(15).fill('')
+        unassignedRow[0] = '0'
+        unassignedRow[3] = 'A321.78.261007.45'
+        unassignedRow[4] = '70110976'
+        unassignedRow[5] = 'Unassigned item'
+        unassignedRow[7] = '1'
+        unassignedRow[10] = '55500'
+        unassignedRow[11] = '55500'
+        unassignedRow[13] = '07-Okt-2026'
+        return csvResponse([
+          'NIK,NAMA,DATE,NO RECEIPT,ARTICLE CODE,ARTICLE NAME,DEPARTMENT,QUANTITY,PRICE,DISCOUNT,INCLUDE PPN,EXCLUDE PPN,JOBTITLE,TANGGAL,ZONA',
+          transaction('A321.78.261007.45', '10562164', 2297027),
+          transaction('A321.1.261007.14', '10687760', 5315),
+          unassignedRow.join(','),
+        ].join('\n'))
+      }
+      if (sheet === 'KUNCIAN SKU') return csvResponse(['SKU', 'SKU1'].join('\n'))
+      if (sheet === 'TARGET') return csvResponse(['NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN', '116566,Kuncara Adi Wijaya,1000000,3000000'].join('\n'))
+      if (sheet === 'SETTING') return csvResponse(['SECTION,NAMA,AKTIF', ''].join('\n'))
+      if (sheet === 'MEMBER') return csvResponse(['TANGGAL,TYPE,NAMA', ''].join('\n'))
+      if (sheet === 'ATLAS DATABASE') return csvResponse(['NIK,NAMA', '116566,Kuncara Adi Wijaya'].join('\n'))
+      if (sheet === 'USERS') return csvResponse(['NIK,NAMA,ROLE,JOBTITLE,PASSWORD', '116566,Kuncara Adi Wijaya,user,Sales,123456'].join('\n'))
+      return csvResponse('')
+    }))
+
+    const result = await buildRawPerformance('116566', undefined, new Set(['116566']))
+
+    expect(result.todayPerf.actual).toBe(2302342)
+    expect(result.todayPerf.ranking[0]?.value).toBe(2302342)
+    expect(result.teamTodayEmployees[0]?.sales).toBe(2302342)
   })
 
   it('derives qty and aur targets from target transaksi and target upt', async () => {

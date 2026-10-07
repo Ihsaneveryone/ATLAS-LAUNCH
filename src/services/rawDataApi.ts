@@ -558,27 +558,18 @@ function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
 
 export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
   const nikNameMap = await fetchNikNameMapping()
-  // Candidates dengan gid (lebih reliable dari sheet name yang prone to silent fallback)
-  // Format: [name, gid] atau [name, undefined] untuk nama-only fallback
+  // Hanya baca COPAS S2: sheet lain tidak boleh menjadi sumber fallback sales.
   const candidates = [
     ['COPAS S2', 1092675108],
-    ['COPAS S2', undefined],  // Fallback: try dengan sheet name
-    ['COPAS', undefined],
-    ['COPAS S2 ', undefined],
-    ['COPAS S2 (1)', undefined],
-    ['COPAS S2 (2)', undefined],
-    ['RAW DATA', undefined],
-    ['TRANSAKSI', undefined],
-    ['DAILY SALES', undefined],
+    ['COPAS S2', undefined],
   ] as const
 
   const debugRows: string[] = []
   let raw: string[][] | null = null
   let usedSheet = ''
 
-  // Prefer a "raw" row-based sheet (has TANGGAL / RECEIPT) over a
-  // matrix-style sheet (dates as columns). If no raw sheet is found,
-  // fall back to the first matrix-style candidate.
+  // Prefer the COPAS S2 raw transaction layout; accept its matrix layout only
+  // if the same sheet contains a validated transaction matrix.
   let matrixFallback: { rows: string[][]; name: string } | null = null
   for (const [candidate, gid] of candidates) {
     try {
@@ -615,8 +606,8 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       // (yang mana bisa indikasi kita baca sheet yang salah via gviz fallback)
       const hasReasonableData = looksLikeRealTransactionData(candidateRows, hasKnownHeaderLabel ? 1 : 2)
       
-      // Log deteksi untuk debug
-      if (candidate === 'COPAS S2' || candidate === 'COPAS') {
+      // Log detection for the only permitted sales source.
+      if (candidate === 'COPAS S2') {
         debugRows.push(`[DETECT] ${candidate}: looksLikeRaw=${looksLikeRaw}, dataLooksLikeRaw=${dataLooksLikeRaw}, hasCopasS2EmptyHeader=${hasCopasS2EmptyHeader}, hasReasonableData=${hasReasonableData}, looksLikeMatrix=${looksLikeMatrix}`)
       }
 
@@ -657,7 +648,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       try {
         const candidateRows = await fetchCSV(candidate, gid)
         if (candidateRows.length > 10) {
-          // Ada data minimal 10 baris, terima saja. Parsing logic akan handle format.
+          // Keep any permissive fallback confined to COPAS S2 itself.
           debugRows.push(`[FALLBACK-DATA] ${candidate} punya ${candidateRows.length} baris, accept dengan fallback`)
           raw = candidateRows
           usedSheet = candidate
@@ -670,8 +661,8 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   }
 
   if (!raw) {
-    debugRows.push('Tidak ada sheet transaksi yang valid ditemukan')
-    return { txns: [], debugRows }
+    debugRows.push('Sheet COPAS S2 tidak berisi format transaksi yang dapat diproses')
+    throw new Error('Data sales COPAS S2 tidak dapat dibaca; tidak memakai sheet lain sebagai pengganti.')
   }
 
   debugRows.push(`Source transaksi: ${usedSheet}`)
@@ -689,11 +680,16 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     return { txns, debugRows }
   }
 
-  // Auto-detect baris data: cari baris pertama di mana kolom A berisi angka ≥ 4 digit (format NIK)
-  // Row0 = header, Row1+ = data tapi NIK hanya di baris pertama tiap blok (sparse/fill-down)
-  let dataStart = 1  // skip header row
-  for (let i = 0; i < Math.min(5, raw.length); i++) {
-    if (/^[A-Z]/.test((raw[i][0] ?? '').trim())) { dataStart = i + 1; break }
+  // Some COPAS S2 exports omit the header row; preserve the first transaction.
+  const firstRowLooksLikeTransaction =
+    /^(I?\d{4,})$/i.test((raw[0]?.[0] ?? '').trim())
+    && Boolean((raw[0]?.[1] ?? '').trim())
+    && looksLikeDateHeader((raw[0]?.[13] ?? '').trim())
+  let dataStart = firstRowLooksLikeTransaction ? 0 : 1
+  if (!firstRowLooksLikeTransaction) {
+    for (let i = 0; i < Math.min(5, raw.length); i++) {
+      if (/^[A-Z]/.test((raw[i][0] ?? '').trim())) { dataStart = i + 1; break }
+    }
   }
   debugRows.push(`dataStart: baris ${dataStart}`)
 
@@ -721,6 +717,10 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
 
     // Row NONAME = transaksi sistem/retur tanpa pemilik — reset fill-down agar tidak terpakai
     if (namaVal.toUpperCase() === 'NONAME') { lastNik = ''; lastNama = ''; continue }
+
+    // NIK "0" is an explicit unassigned marker, not an empty continuation row.
+    // Clear fill-down so its sales cannot be attributed to the previous SID.
+    if (/^0+(?:\.0+)?$/.test(nikVal)) { lastNik = ''; lastNama = ''; continue }
 
     // Update NIK & NAMA kalau ada nilai baru
     // Accept: \d{4,} (pure digits) or I\d{5} (I-prefix format like I01902)
@@ -755,9 +755,8 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     // Skip kalau NIK belum terisi atau tidak ada tanggal
     if (!lastNik || !tgl) continue
 
-    // Skip transaksi dengan nilai negatif (retur sistem, bukan transaksi penjualan)
+    // Include negative sales/returns so totals reconcile to COPAS S2 net values.
     const tv = numVal(c(row, totalValueIdx))
-    if (tv < 0) continue
 
     txns.push({
       nik:        lastNik,
