@@ -1,4 +1,5 @@
 export const TV_MEDIA_FOLDER_URL = 'https://drive.google.com/drive/folders/164ITV_OLwMXw9LtWYY6Fo_JmmfzFQMda'
+const TV_MEDIA_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyIL8ZMvUw81mrYBVUKpN2DqelSJm7wkgtR-5vHkeLvDbu0qORZxhc86RBdRp5hUrme/exec'
 
 export interface TvMediaSlide {
   id: string
@@ -47,15 +48,10 @@ export function parseTvMediaList(value: unknown): TvMediaSlide[] {
 }
 
 export async function fetchTvMedia(): Promise<TvMediaSlide[]> {
-  const endpoint = import.meta.env.VITE_TV_MEDIA_ENDPOINT?.trim()
-  if (!endpoint) {
-    throw new Error('Endpoint Apps Script TV Media belum dikonfigurasi.')
-  }
-
   return new Promise((resolve, reject) => {
     const callbackName = `__atlasTvMediaCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`
     const script = document.createElement('script')
-    const url = new URL(endpoint)
+    const url = new URL(TV_MEDIA_ENDPOINT)
     url.searchParams.set('action', 'listTvMedia')
     url.searchParams.set('callback', callbackName)
     url.searchParams.set('t', String(Date.now()))
