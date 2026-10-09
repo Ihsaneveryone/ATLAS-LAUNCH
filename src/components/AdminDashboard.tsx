@@ -225,7 +225,7 @@ function TVSlideshow({
   const eligibleProductPages = chunkProducts(eligibleProducts)
   const sortedReceiptRows = [...receiptRows].sort((left, right) => right.qualifyingReceipt - left.qualifyingReceipt || right.totalValueReceipt - left.totalValueReceipt)
   const receiptPages: IncentiveReceiptRow[][] = []
-  for (let index = 0; index < sortedReceiptRows.length; index += 12) receiptPages.push(sortedReceiptRows.slice(index, index + 12))
+  for (let index = 0; index < sortedReceiptRows.length; index += 8) receiptPages.push(sortedReceiptRows.slice(index, index + 8))
   if (receiptPages.length === 0) receiptPages.push([])
 
   const contentSlides: Array<{
@@ -304,7 +304,7 @@ function TVSlideshow({
     subtitle: '',
     ranking: [] as RankingRow[],
   }
-  const receiptGridColumns = 'minmax(150px, 1.55fr) minmax(108px, 0.9fr) minmax(118px, 0.95fr) minmax(130px, 1.05fr) minmax(145px, 1.15fr) minmax(145px, 1.15fr) minmax(145px, 1.15fr) minmax(104px, 0.9fr)'
+  const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
   const topTen = rankedList.slice(0, 10)
   const bottomTen = [...rankedList].slice(-10).map((row, index) => ({
@@ -613,7 +613,7 @@ function TVSlideshow({
                   style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />
               ) : (
-                <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
+                <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', placeItems: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
                   {failedTvMediaId === active.media.id ? (
                     <div role="alert" style={{ padding: 24, color: '#e2e8f0', textAlign: 'center', fontSize: 'clamp(16px, 1.4vw, 24px)' }}>
                       Gambar tidak dapat dimuat. Pastikan file Drive dapat dilihat oleh siapa pun yang memiliki tautan.
@@ -623,13 +623,13 @@ function TVSlideshow({
                       src={active.media.url}
                       alt={active.media.name}
                       onError={() => setFailedTvMediaId(active.media?.id ?? '')}
-                      style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'contain', objectPosition: 'center', flexShrink: 1 }}
+                      style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', minWidth: 0, minHeight: 0, objectFit: 'contain', objectPosition: 'center', flexShrink: 1 }}
                     />
                   )}
                 </div>
               )
             ) : active.key.startsWith('receipt-') ? (
-              <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 8, height: '100%', minHeight: 0 }}>
+              <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 8, width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 2px' }}>
                   <div style={{ color: '#f8df83', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                     {receiptLoading ? 'Memuat insentif receipt...' : `${receiptRows.length} karyawan`}
@@ -638,41 +638,41 @@ function TVSlideshow({
                 {receiptLoading ? (
                   <div style={{ display: 'grid', placeItems: 'center', color: '#cbd5e1', fontSize: 14 }}>Memuat data insentif receipt...</div>
                 ) : (
-                  <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', minHeight: 0, overflow: 'hidden', borderRadius: 14, border: '1px solid rgba(214,195,190,0.2)', background: 'rgba(29,21,25,0.88)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 12, padding: '14px 18px', color: '#e4d8d5', fontSize: 'clamp(11px, 0.82vw, 16px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', background: 'rgba(45,31,35,0.95)', borderBottom: '1px solid rgba(214,195,190,0.2)' }}>
-                      <div>Nama & NIK</div>
-                      <div style={{ textAlign: 'right' }}>Qualifying Receipt</div>
-                      <div style={{ textAlign: 'right' }}>Target Minimal Cair</div>
-                      <div>Progress</div>
-                      <div style={{ textAlign: 'right' }}>Total Value Receipt</div>
-                      <div style={{ textAlign: 'right' }}>Insentif / Receipt</div>
-                      <div style={{ textAlign: 'right' }}>Total Insentif</div>
-                      <div style={{ textAlign: 'center' }}>Status</div>
+                  <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', width: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 14, border: '1px solid rgba(214,195,190,0.2)', background: 'rgba(29,21,25,0.88)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 'clamp(4px, 0.7vw, 12px)', padding: 'clamp(7px, 1vh, 14px) clamp(8px, 1vw, 18px)', color: '#e4d8d5', fontSize: 'clamp(9px, 0.72vw, 14px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', background: 'rgba(45,31,35,0.95)', borderBottom: '1px solid rgba(214,195,190,0.2)', minWidth: 0 }}>
+                      <div style={{ minWidth: 0 }}>Nama & NIK</div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>Qualifying Receipt</div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>Target Minimal Cair</div>
+                      <div style={{ minWidth: 0 }}>Progress</div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>Total Value Receipt</div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>Insentif / Receipt</div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>Total Insentif</div>
+                      <div style={{ minWidth: 0, textAlign: 'center' }}>Status</div>
                     </div>
                     {(active.receipts ?? []).length === 0 ? (
                       <div style={{ display: 'grid', placeItems: 'center', color: '#cbd5e1', fontSize: 13 }}>Data Insentif Receipt belum tersedia.</div>
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateRows: `repeat(${(active.receipts ?? []).length}, minmax(0, 1fr))`, minHeight: 0 }}>
+                      <div style={{ display: 'grid', gridTemplateRows: `repeat(${(active.receipts ?? []).length}, minmax(0, 1fr))`, minWidth: 0, minHeight: 0 }}>
                         {(active.receipts ?? []).map((row, index) => {
                           const eligible = row.status.toLowerCase().includes('eligible') && !row.status.toLowerCase().includes('non')
                           const progress = Math.min(100, Math.max(0, row.progressToMinimal))
                           return (
-                            <div key={`${row.nik}-${row.no}-${index}`} style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 12, padding: '8px 18px', color: '#f8fafc', fontSize: 'clamp(13px, 0.95vw, 18px)', borderBottom: index === (active.receipts?.length ?? 0) - 1 ? 'none' : '1px solid rgba(214,195,190,0.12)', background: index % 2 === 0 ? 'rgba(45,31,35,0.45)' : 'transparent', minHeight: 0 }}>
+                            <div key={`${row.nik}-${row.no}-${index}`} style={{ display: 'grid', gridTemplateColumns: receiptGridColumns, alignItems: 'center', gap: 'clamp(4px, 0.7vw, 12px)', padding: 'clamp(3px, 0.6vh, 8px) clamp(8px, 1vw, 18px)', color: '#f8fafc', fontSize: 'clamp(12px, 0.95vw, 18px)', borderBottom: index === (active.receipts?.length ?? 0) - 1 ? 'none' : '1px solid rgba(214,195,190,0.12)', background: index % 2 === 0 ? 'rgba(45,31,35,0.45)' : 'transparent', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
                               <div style={{ minWidth: 0, overflow: 'hidden' }}>
                                 <div style={{ fontSize: 'clamp(14px, 1.05vw, 20px)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.nama || 'Nama belum tersedia'}</div>
                                 <div style={{ marginTop: 3, color: '#94a3b8', fontSize: 'clamp(11px, 0.75vw, 14px)', fontFamily: 'monospace' }}>{row.nik || 'NIK belum tersedia'}</div>
                               </div>
-                              <div style={{ textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{row.qualifyingReceipt.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
-                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{row.targetMinimalCair.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
+                              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', fontWeight: 800, whiteSpace: 'nowrap' }}>{row.qualifyingReceipt.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
+                              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{row.targetMinimalCair.toLocaleString('id-ID')} <span style={{ color: '#94a3b8', fontSize: 10 }}>Receipt</span></div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                                 <div style={{ flex: 1, minWidth: 18, height: 6, background: 'rgba(148,163,184,0.2)', borderRadius: 99, overflow: 'hidden' }}>
                                   <div style={{ width: `${progress}%`, height: '100%', background: eligible ? '#10b981' : '#f97316', borderRadius: 99 }} />
                                 </div>
                                 <span style={{ color: eligible ? '#6ee7b7' : '#fdba74', fontSize: 'clamp(12px, 0.8vw, 15px)', fontWeight: 800 }}>{progress.toFixed(0)}%</span>
                               </div>
-                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalValueReceipt)}</div>
-                              <div style={{ textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.incentivePerReceipt)}</div>
-                              <div style={{ textAlign: 'right', color: '#6ee7b7', fontWeight: 900, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalIncentive)}</div>
+                              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalValueReceipt)}</div>
+                              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', color: '#cbd5e1', whiteSpace: 'nowrap' }}>{formatRupiahFull(row.incentivePerReceipt)}</div>
+                              <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', color: '#6ee7b7', fontWeight: 900, whiteSpace: 'nowrap' }}>{formatRupiahFull(row.totalIncentive)}</div>
                               <div style={{ display: 'flex', justifyContent: 'center', minWidth: 0 }}>
                                 <span style={{ maxWidth: '100%', color: eligible ? '#6ee7b7' : '#fdba74', background: eligible ? 'rgba(16,185,129,0.14)' : 'rgba(249,115,22,0.14)', border: `1px solid ${eligible ? 'rgba(110,231,183,0.32)' : 'rgba(253,186,116,0.32)'}`, borderRadius: 999, padding: '5px 10px', fontSize: 'clamp(10px, 0.7vw, 14px)', fontWeight: 900, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.status || 'BELUM ADA STATUS'}</span>
                               </div>
