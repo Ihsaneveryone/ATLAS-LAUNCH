@@ -263,7 +263,7 @@ function findLatestSalesDateColumn(headerRow: string[], dataRows: string[][]): {
 
 function findRowByDay(rows: string[][], day: number): { row: string[]; date: string; day: number } | null {
   for (const row of rows) {
-    const date = g(row, 20)
+    const date = g(row, 19)
     if (parseDay(date) === day) {
       return { row, date, day }
     }
@@ -274,7 +274,7 @@ function findRowByDay(rows: string[][], day: number): { row: string[]; date: str
 function findLatestTargetRow(rows: string[][]): { row: string[]; date: string; day: number } | null {
   let latest: { row: string[]; date: string; day: number } | null = null
   for (const row of rows) {
-    const date = g(row, 20)
+    const date = g(row, 19)
     const day = parseDay(date)
     if (!day) continue
     if (!latest || day > latest.day) {
@@ -286,21 +286,30 @@ function findLatestTargetRow(rows: string[][]): { row: string[]; date: string; d
 
 function buildTargetValues(row: string[] | null | undefined): number[] | undefined {
   if (!row) return undefined
-  const targets: number[] = []
-  for (let index = 0; index < DEPT_NODES.length; index++) {
-    targets.push(n(g(row, 21 + index)))
+  const targets = DEPT_NODES.map((_, index) => n(g(row, 20 + index)))
+  for (const group of DEPT_GROUPS) {
+    const zoneTarget = targets[group.start]
+    const departmentIndexes = Array.from(
+      { length: group.end - group.start - 1 },
+      (_, index) => group.start + index + 1,
+    )
+    const missingIndexes = departmentIndexes.filter(index => targets[index] <= 0)
+    if (zoneTarget <= 0 || missingIndexes.length !== 1) continue
+
+    const knownDepartmentTarget = departmentIndexes.reduce(
+      (sum, index) => sum + (index === missingIndexes[0] ? 0 : targets[index]),
+      0,
+    )
+    const missingTarget = zoneTarget - knownDepartmentTarget
+    if (missingTarget > Math.max(1, zoneTarget * 0.005)) {
+      targets[missingIndexes[0]] = missingTarget
+    }
   }
   return targets
 }
 
 function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undefined {
-  if (!row) return undefined
-  const targets: number[] = []
-  // Read from columns V (21), W (22), X (23), ... AQ (42) for SBD flat targets
-  for (let index = 0; index < DEPT_NODES.length; index++) {
-    targets.push(n(g(row, 21 + index)))
-  }
-  return targets
+  return buildTargetValues(row)
 }
 
 function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
@@ -336,7 +345,7 @@ function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbd
 export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const [salesRange, targetRange] = await Promise.all([
     fetchSheetRange('M76:AS98'),
-    fetchSheetRange('U3:AQ33'),
+    fetchSheetRange('U3:AR33'),
   ])
   if (salesRange.length < 23) return { sbd: null, mtd: null, trend: { labels: [], points: [] } }
 
@@ -351,8 +360,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
   
-  // SBD target must stay flat at day-1 target values.
-  // In this sheet, later days are cumulative MTD targets.
+  // SBD uses the fixed target from day 1; later target rows are cumulative MTD targets.
   const sbdFlatTargetRow = findRowByDay(mtdDateRows, 1)?.row ?? mtdDateRows[0] ?? null
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)

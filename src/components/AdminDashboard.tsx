@@ -613,7 +613,7 @@ function TVSlideshow({
                   style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />
               ) : (
-                <div style={{ display: 'grid', placeItems: 'center', height: '100%', minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a' }}>
+                <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a' }}>
                   {failedTvMediaId === active.media.id ? (
                     <div role="alert" style={{ padding: 24, color: '#e2e8f0', textAlign: 'center', fontSize: 'clamp(16px, 1.4vw, 24px)' }}>
                       Gambar tidak dapat dimuat. Pastikan file Drive dapat dilihat oleh siapa pun yang memiliki tautan.
@@ -623,7 +623,7 @@ function TVSlideshow({
                       src={active.media.url}
                       alt={active.media.name}
                       onError={() => setFailedTvMediaId(active.media?.id ?? '')}
-                      style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+                      style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center', flexShrink: 0 }}
                     />
                   )}
                 </div>
