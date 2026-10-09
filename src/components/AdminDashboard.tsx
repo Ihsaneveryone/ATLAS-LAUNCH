@@ -14,6 +14,7 @@ import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
 import { getTrackedProductArticleKey, seedNewlyQualifiedProducts, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
 import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from '../services/sidUpdateTracker'
+import { fetchTvMedia, TV_MEDIA_FOLDER_URL, type TvMediaSlide } from '../services/tvMediaApi'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -128,6 +129,7 @@ function TVSlideshow({
   deptSbd,
   deptMtd,
   deptTrend,
+  tvMedia,
 }: {
   todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
@@ -140,6 +142,7 @@ function TVSlideshow({
   deptSbd: DeptPeriodData | null
   deptMtd: DeptPeriodData | null
   deptTrend: DeptTrendData | null
+  tvMedia: TvMediaSlide[]
 }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
@@ -233,6 +236,7 @@ function TVSlideshow({
     fullRanking?: RankingRow[]
     receipts?: IncentiveReceiptRow[]
     products?: IncentiveBoomsaleRow[]
+    media?: TvMediaSlide
   }> = [
     ...[
       { key: 'today' as const, label: 'PERFORMANCE TODAY', subtitle: '', ranking: chunkRanking(todayRanking) },
@@ -265,6 +269,13 @@ function TVSlideshow({
       ranking: [] as RankingRow[],
       products,
     })) : []),
+    ...tvMedia.map(media => ({
+      key: `media-${media.id}`,
+      label: media.name,
+      subtitle: 'MEDIA TV',
+      ranking: [] as RankingRow[],
+      media,
+    })),
   ]
   const slides = [
     {
@@ -381,7 +392,8 @@ function TVSlideshow({
     const isDeptSlide = activeSlideKey === 'dept'
     const isProductSlide = activeSlideKey?.startsWith('incentive-products-') ?? false
     const isReceiptSlide = activeSlideKey?.startsWith('receipt-') ?? false
-    const duration = isDeptSlide ? Math.max(deptCycleDuration, 7000) : isProductSlide ? 12000 : isReceiptSlide ? 5000 : 7000
+    const isMediaSlide = slides[activeSlide]?.key.startsWith('media-') ?? false
+    const duration = isDeptSlide ? Math.max(deptCycleDuration, 7000) : isProductSlide ? 12000 : isReceiptSlide ? 5000 : isMediaSlide ? 10000 : 7000
     const timer = window.setTimeout(() => {
       onSlideEndRef.current()
       const nextSlide = activeSlide === slides.length - 1 ? 0 : activeSlide + 1
@@ -409,6 +421,7 @@ function TVSlideshow({
     visibleSlides.dept,
     visibleSlides.receipt,
     visibleSlides.incentive_products,
+    tvMedia,
   ])
 
   useEffect(() => {
@@ -591,6 +604,22 @@ function TVSlideshow({
                   </div>
                 </div>
               </div>
+            ) : active.media ? (
+              active.media.mimeType === 'application/pdf' ? (
+                <iframe
+                  title={active.media.name}
+                  src={active.media.url}
+                  style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#fff' }}
+                />
+              ) : (
+                <div style={{ display: 'grid', placeItems: 'center', height: '100%', minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a' }}>
+                  <img
+                    src={active.media.url}
+                    alt={active.media.name}
+                    style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+                </div>
+              )
             ) : active.key.startsWith('receipt-') ? (
               <div style={{ display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 8, height: '100%', minHeight: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 2px' }}>
@@ -1029,6 +1058,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [trackerSaved, setTrackerSaved]  = useState(false)
   const [menuCfg, setMenuCfg] = useState(getMenuSettings)
   const [tvDisplaySettings, setTVDisplaySettings] = useState<Record<TVSlideKey, boolean>>(getTVDisplaySettings)
+  const [tvMedia, setTvMedia] = useState<TvMediaSlide[]>([])
+  const [tvMediaLoading, setTvMediaLoading] = useState(false)
+  const [tvMediaError, setTvMediaError] = useState('')
+  const [tvMediaRefreshKey, setTvMediaRefreshKey] = useState(0)
   const [jobFilter, setJobFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('achievement')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -1037,6 +1070,37 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const sidSignatureRef = useRef<string | null>(sidUpdateState.signature)
   const sidCheckInProgressRef = useRef(false)
   const isMobile = useMobile()
+
+  useEffect(() => {
+    if (page !== 'tv' && page !== 'setting') return
+
+    let cancelled = false
+    const loadTvMedia = async () => {
+      setTvMediaLoading(true)
+      try {
+        const media = await fetchTvMedia()
+        if (!cancelled) {
+          setTvMedia(media)
+          setTvMediaError('')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error)
+          setTvMediaError(message)
+          console.error('[TV] Gagal memuat media dari Google Drive:', error)
+        }
+      } finally {
+        if (!cancelled) setTvMediaLoading(false)
+      }
+    }
+
+    void loadTvMedia()
+    const interval = window.setInterval(() => { void loadTvMedia() }, 60_000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [page, tvMediaRefreshKey])
 
   // Declare these early to avoid temporal dead zone issues
   const targetFormula = settings.targetFormula
@@ -1296,7 +1360,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   return (
     <div style={{ minHeight: '100vh', background: S.bg, display: 'flex', flexDirection: isDisplayMode || isMobile ? 'column' : 'row' }}>
-      {loading && <DataLoadingOverlay />}
+      {loading && !isDisplayMode && <DataLoadingOverlay />}
 
       {!isDisplayMode && !isMobile ? (
         <aside style={{
@@ -1412,6 +1476,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             deptSbd={deptSbd}
             deptMtd={deptMtd}
             deptTrend={deptTrend}
+            tvMedia={tvMedia}
           />
         )}
 
@@ -1879,6 +1944,42 @@ export default function AdminDashboard({ user, onLogout }: Props) {
         {page === 'setting' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 640 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: S.text, marginBottom: 4 }}>Pengaturan</div>
+
+            <div style={{ padding: '22px 24px', background: '#fff', borderRadius: 18, border: `1.5px solid ${S.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Media TV Display</div>
+              <div style={{ fontSize: 12, color: S.sub, marginBottom: 14, lineHeight: 1.6 }}>
+                Tambahkan gambar atau PDF ke folder bersama. File yang didukung akan otomatis menjadi slide TV selama folder dapat diakses oleh Apps Script.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <a
+                  href={TV_MEDIA_FOLDER_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 9, padding: '9px 14px', background: S.red, color: '#fff', textDecoration: 'none', fontSize: 12, fontWeight: 800 }}
+                >
+                  Kelola media di Google Drive
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setTvMediaRefreshKey(value => value + 1)}
+                  disabled={tvMediaLoading}
+                  style={{ border: `1px solid ${S.border}`, borderRadius: 9, padding: '9px 14px', background: '#fff', color: S.text, fontSize: 12, fontWeight: 700, cursor: tvMediaLoading ? 'wait' : 'pointer' }}
+                >
+                  {tvMediaLoading ? 'Memuat daftar…' : 'Perbarui daftar'}
+                </button>
+                <span style={{ color: S.muted, fontSize: 12 }}>
+                  {tvMediaLoading ? 'Menyinkronkan media' : `${tvMedia.length} media TV`}
+                </span>
+              </div>
+              {tvMediaError && (
+                <div role="alert" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 9, background: '#fff7ed', color: '#9a3412', fontSize: 12 }}>
+                  Gagal memuat media TV: {tvMediaError}
+                </div>
+              )}
+              <div style={{ marginTop: 12, color: S.muted, fontSize: 11, lineHeight: 1.6 }}>
+                Gunakan gambar (JPG, PNG, dan format gambar lain) atau PDF. File yang dimasukkan ke folder akan ditayangkan otomatis selama 10 detik per slide. File media dapat dilihat oleh siapa pun yang memiliki tautannya.
+              </div>
+            </div>
 
             {/* Visibilitas TV Display */}
             <div style={{ padding: '22px 24px', background: '#fff', borderRadius: 18, border: `1.5px solid ${S.border}`, boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
