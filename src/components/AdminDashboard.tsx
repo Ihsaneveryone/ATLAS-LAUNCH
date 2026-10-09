@@ -529,10 +529,10 @@ function TVSlideshow({
         }
       `}</style>
 
-      <div style={{ position: 'relative', minHeight: '100vh', height: '100vh', background: 'radial-gradient(circle at top left, #b95046 0%, #a7463f 36%, #8d3e47 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
+      <div style={{ position: 'relative', width: '100vw', minHeight: '100vh', height: '100dvh', background: 'radial-gradient(circle at top left, #b95046 0%, #a7463f 36%, #8d3e47 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(225,38,28,0.12), rgba(242,197,17,0.05), rgba(104,70,199,0.08))' }} />
 
-        <div style={{ position: 'relative', zIndex: 1, height: '100%', display: 'grid', gridTemplateRows: 'auto auto 1fr', padding: '10px 18px 8px' }}>
+        <div style={{ position: 'relative', zIndex: 1, width: '100%', height: '100%', minWidth: 0, minHeight: 0, boxSizing: 'border-box', display: 'grid', gridTemplateRows: 'auto auto minmax(0, 1fr)', padding: 'clamp(14px, 2.5vh, 36px) clamp(20px, 3vw, 56px)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 0 }}>
             <div>
               <div style={{ color: '#e2e8f0', fontWeight: 800, letterSpacing: '0.16em', fontSize: 10, textTransform: 'uppercase' }}>ATLAS</div>
@@ -613,7 +613,7 @@ function TVSlideshow({
                   style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />
               ) : (
-                <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a' }}>
+                <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minWidth: 0, minHeight: 0, overflow: 'hidden', borderRadius: 16, background: '#0f172a', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
                   {failedTvMediaId === active.media.id ? (
                     <div role="alert" style={{ padding: 24, color: '#e2e8f0', textAlign: 'center', fontSize: 'clamp(16px, 1.4vw, 24px)' }}>
                       Gambar tidak dapat dimuat. Pastikan file Drive dapat dilihat oleh siapa pun yang memiliki tautan.
@@ -623,7 +623,7 @@ function TVSlideshow({
                       src={active.media.url}
                       alt={active.media.name}
                       onError={() => setFailedTvMediaId(active.media?.id ?? '')}
-                      style={{ display: 'block', width: 'auto', height: 'auto', maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', objectPosition: 'center', flexShrink: 0 }}
+                      style={{ display: 'block', width: '100%', height: '100%', minWidth: 0, minHeight: 0, objectFit: 'contain', objectPosition: 'center', flexShrink: 1 }}
                     />
                   )}
                 </div>

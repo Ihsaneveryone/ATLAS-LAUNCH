@@ -11,7 +11,7 @@ describe('parseTvMediaList', () => {
       { id: 'external-image', name: 'External.png', mimeType: 'image/png', url: 'https://example.com/image.png' },
       null,
     ])).toEqual([
-      { id: 'image-1', name: 'Poster.jpg', mimeType: 'image/jpeg', updatedAt: '2026-10-09T00:00:00Z', url: 'https://drive.google.com/thumbnail?id=image-1&sz=w1920' },
+      { id: 'image-1', name: 'Poster.jpg', mimeType: 'image/jpeg', updatedAt: '2026-10-09T00:00:00Z', url: 'https://drive.google.com/uc?id=image-1' },
       { id: 'pdf-1', name: 'Schedule.pdf', mimeType: 'application/pdf', updatedAt: '2026-10-09T00:00:00Z', url: 'https://drive.google.com/file/d/pdf-1/preview' },
     ])
   })
