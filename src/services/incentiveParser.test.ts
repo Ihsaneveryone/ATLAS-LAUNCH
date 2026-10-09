@@ -235,6 +235,27 @@ describe('parseIncentiveSheets', () => {
     ])
   })
 
+  it('parses receipt metrics using the live sheet headers', () => {
+    const result = parseIncentiveSheets({
+      'INSENTIF RECEIPT': [
+        ['NIK', 'NAMA', 'QTY', 'TRX', 'AVG VALUE RECEIPT', 'QUALIFYING RECEIPT', 'TARGET CAIR', 'PROGRESS TO MINIMAL', 'Total Value', 'INSENTIF', 'TOTAL INSENTIF', 'STATUS INSENTIF'],
+        ['130011', 'NURUL KADIBAN', '', '', '', '8', '10', '80,00%', 'Rp8.000.000', 'Rp10.000', 'Rp80.000', 'ELIGIBLE'],
+      ],
+    })
+
+    expect(result.receipt.rows[0]).toMatchObject({
+      nik: '130011',
+      nama: 'NURUL KADIBAN',
+      qualifyingReceipt: 8,
+      targetMinimalCair: 10,
+      progressToMinimal: 80,
+      totalValueReceipt: 8000000,
+      incentivePerReceipt: 10000,
+      totalIncentive: 80000,
+      status: 'ELIGIBLE',
+    })
+  })
+
   it('parses sales product name from description column instead of user name column', () => {
     const sheets = {
       'COMPARE DATA COPAS S2': [

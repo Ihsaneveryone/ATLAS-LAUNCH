@@ -333,6 +333,13 @@ function parseReceiptRow(row: string[], headers: string[]): IncentiveReceiptRow 
   const departemenIndex = findHeaderIndex(normalizedHeaders, /\b(departemen|department|dept|dept grp|department group|nama departemen|name department)\b/i)
   const targetValueIndex = findHeaderIndex(normalizedHeaders, /\b(minimum receipt value|minimum value receipt|target value receipt|target receipt|target value|target|value receipt)\b/i)
   const percentageIndex = findHeaderIndex(normalizedHeaders, [/INCENTIVE\s*%/i, /incentive percentage/i, /persentase insentif/i, /persentase/i, /percentage/i, /insentif/i])
+  const qualifyingReceiptIndex = findHeaderIndex(normalizedHeaders, /\bqualifying receipt\b/i)
+  const targetMinimalIndex = findHeaderIndex(normalizedHeaders, /\b(target minimal cair|target cair|minimal cair)\b/i)
+  const progressIndex = findHeaderIndex(normalizedHeaders, /\b(progress to minimal|progress|progress receipt)\b/i)
+  const totalValueIndex = findHeaderIndex(normalizedHeaders, [/\btotal value receipt\b/i, /^total value$/i, /\bvalue receipt\b/i])
+  const incentivePerReceiptIndex = findHeaderIndex(normalizedHeaders, /\b(insentif per receipt|incentive per receipt|insentif|incentive)\b/i)
+  const totalIncentiveIndex = findHeaderIndex(normalizedHeaders, /\b(total insentif|total incentive)\b/i)
+  const statusIndex = findHeaderIndex(normalizedHeaders, /\b(status insentif|status incentive|status)\b/i)
 
   const nik = normalizeText(row[nikHeaderIndex] ?? '')
   const nama = normalizeText(row[namaHeaderIndex] ?? '')
@@ -342,7 +349,7 @@ function parseReceiptRow(row: string[], headers: string[]): IncentiveReceiptRow 
   const percentageRaw = normalizeText(row[percentageIndex] ?? '')
   const percentageValue = percentageRaw.replace('%', '')
   const percentage = percentageValue ? Number.parseFloat(percentageValue.replace(',', '.')) || 0 : 0
-  const progressRaw = normalizeText(row[7] ?? '')
+  const progressRaw = normalizeText(row[progressIndex >= 0 ? progressIndex : 7] ?? '')
   const progressNumber = Number.parseFloat(progressRaw.replace('%', '').replace(',', '.')) || 0
   const progressToMinimal = progressRaw.includes('%') ? progressNumber : progressNumber <= 1 ? progressNumber * 100 : progressNumber
   const fields = headers.map((header, index) => ({ label: header, value: normalizeText(row[index] ?? '') }))
@@ -351,13 +358,13 @@ function parseReceiptRow(row: string[], headers: string[]): IncentiveReceiptRow 
     nama,
     no,
     departemen,
-    qualifyingReceipt: toNumber(row[5] ?? ''),
-    targetMinimalCair: toNumber(row[6] ?? ''),
+    qualifyingReceipt: toNumber(row[qualifyingReceiptIndex >= 0 ? qualifyingReceiptIndex : 5] ?? ''),
+    targetMinimalCair: toNumber(row[targetMinimalIndex >= 0 ? targetMinimalIndex : 6] ?? ''),
     progressToMinimal,
-    totalValueReceipt: toNumber(row[8] ?? ''),
-    incentivePerReceipt: toNumber(row[9] ?? ''),
-    totalIncentive: toNumber(row[10] ?? ''),
-    status: normalizeText(row[11] ?? ''),
+    totalValueReceipt: toNumber(row[totalValueIndex >= 0 ? totalValueIndex : 8] ?? ''),
+    incentivePerReceipt: toNumber(row[incentivePerReceiptIndex >= 0 ? incentivePerReceiptIndex : 9] ?? ''),
+    totalIncentive: toNumber(row[totalIncentiveIndex >= 0 ? totalIncentiveIndex : 10] ?? ''),
+    status: normalizeText(row[statusIndex >= 0 ? statusIndex : 11] ?? ''),
     targetValue,
     percentage,
     fields,

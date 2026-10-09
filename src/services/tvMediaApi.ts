@@ -42,7 +42,9 @@ export function parseTvMediaList(value: unknown): TvMediaSlide[] {
       name,
       mimeType,
       updatedAt: typeof updatedAt === 'string' ? updatedAt : '',
-      url,
+      url: mimeType.startsWith('image/')
+        ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1920`
+        : url,
     }]
   })
 }
