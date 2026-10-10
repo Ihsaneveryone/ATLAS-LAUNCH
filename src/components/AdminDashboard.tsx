@@ -434,35 +434,35 @@ function TVSlideshow({
         setBlockedTvVideoId(activeVideoId)
         return
       }
-      const enableSocialAudio = () => {
-        socialAudioEnabledRef.current = true
-        setSocialAudioEnabled(true)
-        try {
-          window.localStorage.setItem(TV_SOCIAL_AUDIO_STORAGE_KEY, 'true')
-        } catch (error) {
-          console.warn('[TV] Preferensi audio tidak dapat disimpan di browser ini:', error)
-        }
-
-        if (activeTikTokId) {
-          tiktokPlayerRef.current?.contentWindow?.postMessage(
-            { 'x-tiktok-player': true, type: 'unMute' },
-            'https://www.tiktok.com',
-          )
-          tiktokPlayerRef.current?.contentWindow?.postMessage(
-            { 'x-tiktok-player': true, type: 'play' },
-            'https://www.tiktok.com',
-          )
-        } else if (activeYouTubeId) {
-          youtubePlayerInstanceRef.current?.unMute()
-          youtubePlayerInstanceRef.current?.playVideo()
-        }
-      }
       console.error('[TV] Gagal memutar video Drive:', error)
       setFailedTvVideoId(activeVideoId)
     })
   }
   const activeTikTokId = active.media?.mimeType === 'video/tiktok' ? active.media.id : ''
   const activeYouTubeId = active.media?.mimeType === 'video/youtube' ? active.media.id : ''
+  const enableSocialAudio = () => {
+    socialAudioEnabledRef.current = true
+    setSocialAudioEnabled(true)
+    try {
+      window.localStorage.setItem(TV_SOCIAL_AUDIO_STORAGE_KEY, 'true')
+    } catch (error) {
+      console.warn('[TV] Preferensi audio tidak dapat disimpan di browser ini:', error)
+    }
+
+    if (activeTikTokId) {
+      tiktokPlayerRef.current?.contentWindow?.postMessage(
+        { 'x-tiktok-player': true, type: 'unMute' },
+        'https://www.tiktok.com',
+      )
+      tiktokPlayerRef.current?.contentWindow?.postMessage(
+        { 'x-tiktok-player': true, type: 'play' },
+        'https://www.tiktok.com',
+      )
+    } else if (activeYouTubeId) {
+      youtubePlayerInstanceRef.current?.unMute()
+      youtubePlayerInstanceRef.current?.playVideo()
+    }
+  }
   const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
   const topTen = rankedList.slice(0, 10)
