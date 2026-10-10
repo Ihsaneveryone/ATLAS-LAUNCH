@@ -48,6 +48,7 @@ const getYouTubePlayerUrl = (videoId: string) => {
   url.searchParams.set('playsinline', '1')
   url.searchParams.set('rel', '0')
   url.searchParams.set('origin', window.location.origin)
+  url.searchParams.set('widget_referrer', window.location.href)
   return url.toString()
 }
 
@@ -932,6 +933,7 @@ function TVSlideshow({
                     ref={youtubePlayerRef}
                     title={active.media.name}
                     src={active.media.url}
+                    referrerPolicy="strict-origin-when-cross-origin"
                     allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                     allowFullScreen
                     style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#000' }}
@@ -959,7 +961,11 @@ function TVSlideshow({
                   )}
                   {failedTvVideoId === active.media.id && (
                     <div role="alert" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', gap: 12, padding: 24, background: 'rgba(0,0,0,.82)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
-                      <span>YouTube tidak dapat memutar video ini{tvVideoErrorCode ? ` (kode ${tvVideoErrorCode})` : ''}.</span>
+                      <span>{tvVideoErrorCode === 153
+                        ? 'YouTube menolak player karena browser tidak mengirim identitas halaman. Muat ulang TV Display dan pastikan dibuka langsung melalui website Atlas.'
+                        : tvVideoErrorCode === 101 || tvVideoErrorCode === 150
+                          ? 'Pemilik video YouTube ini menonaktifkan pemutaran di website lain.'
+                          : `YouTube tidak dapat memutar video ini${tvVideoErrorCode ? ` (kode ${tvVideoErrorCode})` : ''}.`}</span>
                       <button type="button" onClick={advanceToNextSlide} style={{ justifySelf: 'center', border: '1px solid rgba(255,255,255,.3)', borderRadius: 6, padding: '9px 14px', background: 'rgba(255,255,255,.08)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Lanjut</button>
                     </div>
                   )}
@@ -2085,6 +2091,9 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                       <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
                         Zona · Target 80%
                       </th>
+                      <th style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>
+                        Online · Offline
+                      </th>
                       <th onClick={() => applySort('achievement')} style={{ padding: '9px 14px', fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', textAlign: 'left', letterSpacing: '0.07em', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                         Ach {sortKey === 'achievement' ? (sortOrder === 'asc' ? '▲' : '▼') : ''}
                       </th>
@@ -2118,6 +2127,11 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                       const zoneGroup = SALES_CONTRIBUTION_GROUPS.find(group => group.key === zoneKey)
                       const zoneSales = zoneKey ? (r.salesContributions[zoneKey] ?? 0) : 0
                       const zonePercentage = r.sales > 0 ? zoneSales / r.sales * 100 : 0
+                      const onlineSales = r.salesChannelContributions.online
+                      const offlineSales = r.salesChannelContributions.offline
+                      const channelTotal = onlineSales + offlineSales
+                      const onlinePercentage = channelTotal > 0 ? onlineSales / channelTotal * 100 : 0
+                      const offlinePercentage = channelTotal > 0 ? offlineSales / channelTotal * 100 : 0
                       return (
                         <tr key={r.nik} style={{ borderBottom: `1px solid ${S.border}`, background: i % 2 === 0 ? '#fff' : S.bg }}>
                           <td style={{ padding: '11px 14px', fontSize: 14, textAlign: 'center', minWidth: 36 }}>
@@ -2141,6 +2155,16 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                                 <div style={{ color: zonePercentage >= 80 ? '#15803d' : '#b45309', fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap' }}>{zonePercentage.toFixed(1)}% · target 80%</div>
                               </div>
                             ) : <span style={{ color: S.muted }}>—</span>}
+                          </td>
+                          <td style={{ padding: '11px 14px', minWidth: 190 }}>
+                            <div aria-label={`Online ${onlinePercentage.toFixed(1)}%, Offline ${offlinePercentage.toFixed(1)}%`} style={{ display: 'flex', width: '100%', height: 9, overflow: 'hidden', borderRadius: 999, background: '#edf1f5', marginBottom: 6 }}>
+                              <div title={`Online ${onlinePercentage.toFixed(1)}% · ${formatRupiahFull(onlineSales)}`} style={{ width: `${onlinePercentage}%`, background: '#eab308', transition: 'width 0.35s ease' }} />
+                              <div title={`Offline ${offlinePercentage.toFixed(1)}% · ${formatRupiahFull(offlineSales)}`} style={{ width: `${offlinePercentage}%`, background: '#16a34a', transition: 'width 0.35s ease' }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 10, whiteSpace: 'nowrap' }}>
+                              <span style={{ color: '#a16207' }}>Online {formatRupiah(onlineSales)}</span>
+                              <span style={{ color: '#15803d' }}>Offline {formatRupiah(offlineSales)}</span>
+                            </div>
                           </td>
                           <td style={{ padding: '11px 14px', minWidth: 150 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

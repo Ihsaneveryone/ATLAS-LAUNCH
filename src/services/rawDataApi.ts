@@ -197,6 +197,16 @@ function calculateSalesContributions(txns: RawTxn[], employeeNik: string): Sales
   return totals
 }
 
+function calculateSalesChannelContributions(txns: RawTxn[], employeeNik: string): Record<'online' | 'offline', number> {
+  const totals = { online: 0, offline: 0 }
+  for (const txn of txns) {
+    if (!niksMatch(txn.nik, employeeNik)) continue
+    const channel = /\.78(?:$|[^0-9])/i.test(txn.receiptNo) ? 'online' : 'offline'
+    totals[channel] += txn.totalValue
+  }
+  return totals
+}
+
 // ─── SKU category sets ────────────────────────────────────────────────────────
 
 interface SkuMap {
@@ -1023,6 +1033,7 @@ interface EmpPerf {
   basketSize: number; upt: number; aur: number
   newMember:     number
   salesContributions: SalesContributions
+  salesChannelContributions: Record<'online' | 'offline', number>
   categorySales: Record<string, number>  // category name → total value (Rp)
   categoryQty:   Record<string, number>  // category name → sum of qty
 }
@@ -1044,6 +1055,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     nik: string; nama: string; sales: number; qty: number
     receipts: Set<string>
     salesContributions: SalesContributions
+    salesChannelContributions: Record<'online' | 'offline', number>
     categorySales: Map<string, number>
     categoryQty:   Map<string, number>
   }>()
@@ -1055,6 +1067,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
         nik: t.nik, nama: t.nama, sales: 0, qty: 0,
         receipts: new Set(),
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
+        salesChannelContributions: { online: 0, offline: 0 },
         categorySales: new Map(),
         categoryQty:   new Map(),
       })
@@ -1065,6 +1078,8 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     if (t.receiptNo) e.receipts.add(t.receiptNo)
     const contributionKey = subcategoryToContributionGroup.get(t.subCategory.trim().toLowerCase()) ?? 'other'
     e.salesContributions[contributionKey] += t.totalValue
+    const channel = /\.78(?:$|[^0-9])/i.test(t.receiptNo) ? 'online' : 'offline'
+    e.salesChannelContributions[channel] += t.totalValue
 
     const cats = articleToCategories.get(normalizeArticleCode(t.artikel))
     if (cats) {
@@ -1088,6 +1103,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
       transaksi:   tr,
       newMember:   0,  // filled after merging MEMBER sheet
       salesContributions: e.salesContributions,
+      salesChannelContributions: e.salesChannelContributions,
       categorySales,
       categoryQty,
       basketSize:  tr > 0 ? Math.round(e.sales / tr) : 0,
@@ -1331,6 +1347,7 @@ export interface TeamEmployeeSummary {
   newMember: number
   userZone?: string
   salesContributions: SalesContributions
+  salesChannelContributions: Record<'online' | 'offline', number>
   topSalesGroup: string
   topSalesGroupPct: number
 }
@@ -1362,6 +1379,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       transaksi: 0,
       newMember: 0,
       salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
+      salesChannelContributions: { online: 0, offline: 0 },
       categorySales: {},
       categoryQty: {},
       basketSize: 0,
@@ -1405,6 +1423,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       targetBasketSize,
       newMember: e.newMember,
       salesContributions: e.salesContributions,
+      salesChannelContributions: e.salesChannelContributions,
       topSalesGroup: e.sales > 0 ? largestContribution.label : '',
       topSalesGroupPct: e.sales > 0 ? parseFloat(((e.salesContributions[largestContribution.key] / e.sales) * 100).toFixed(1)) : 0,
     }
@@ -1527,6 +1546,8 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   log(`Transaksi MTD (s.d. ${mtdDateTo.getDate()}): ${mtdTxns.length} baris`)
   const todaySalesContributions = calculateSalesContributions(todayTxns, canonicalCurrent)
   const mtdSalesContributions = calculateSalesContributions(mtdTxns, canonicalCurrent)
+  const todaySalesChannelContributions = calculateSalesChannelContributions(todayTxns, canonicalCurrent)
+  const mtdSalesChannelContributions = calculateSalesChannelContributions(mtdTxns, canonicalCurrent)
 
   const dailyPerfs = aggregate(dailyTxns, skuMap)
   const mtdPerfs   = aggregate(mtdTxns,   skuMap)
@@ -1684,6 +1705,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         myDaily.sales,
       workingDays: 1,
       salesContributions: todaySalesContributions,
+      salesChannelContributions: todaySalesChannelContributions,
       kpis:        makeKPIs(myDaily, dailyTarget, false, 1, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(dailyPerfs, targets, 1, false, undefined, false, validNiks),
       dailyTrend:  todayTrendEntry,
@@ -1699,6 +1721,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       acv:         wdays > 0 ? Math.round(myMTD.sales / wdays) : 0,
       workingDays: wdays,
       salesContributions: mtdSalesContributions,
+      salesChannelContributions: mtdSalesChannelContributions,
       kpis:        makeKPIs(myMTD, dailyTarget, true, wdays, skuMap.categories, tgtData, settings),
       ranking:     buildRanking(mtdPerfs, targets, wdays, false, canonicalCurrent, true, validNiks),
       monthlyTrend: mtdTrend.length > 0 ? mtdTrend : [{ date: `${fmt(firstOfMonth)} – ${fmt(mtdDateTo)}`, actual: myMTD.sales, target: mtdTargetProrated }],

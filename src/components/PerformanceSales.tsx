@@ -7,6 +7,7 @@ import { useMobile } from '../hooks/useMobile'
 import { useAdminSettings } from '../context/AdminSettingsContext'
 import YTDPage, { AzkoMascot } from './YTDPage'
 import SalesContributionBar from './SalesContributionBar'
+import SalesChannelBar from './SalesChannelBar'
 
 type Period = 'today' | 'mtd' | 'fullmonth' | 'ytd'
 interface Props { user: User; onBack: () => void }
@@ -364,6 +365,15 @@ export default function PerformanceSales({ user, onBack }: Props) {
           isMobile={isMobile}
           cardRadius={cardRadius}
         />
+        {data.salesChannelContributions && (
+          <SalesChannelBar
+            contributions={data.salesChannelContributions}
+            totalSales={data.actual}
+            periodLabel={PERIODS.find(item => item.key === period)?.label ?? 'Sales'}
+            isMobile={isMobile}
+            cardRadius={cardRadius}
+          />
+        )}
 
         {/* KPI grid */}
         <div>

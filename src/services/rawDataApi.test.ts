@@ -170,10 +170,10 @@ describe('buildRawPerformance', () => {
         }
         return csvResponse([
           'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,I,J,K,TOTAL VALUE,,TANGGAL,SUBKATEGORI',
-          transaction('123702', 'R1', 100000, 'Cleaning Supplies'),
-          transaction('123702', 'R2', 50000, 'Appliances'),
-          transaction('123702', 'R3', 250000, 'Paint & Sundries'),
-          transaction('123702', 'R4', 300000, 'Bicycles'),
+          transaction('123702', 'A321.78', 100000, 'Cleaning Supplies'),
+          transaction('123702', 'UA321.78', 50000, 'Appliances'),
+          transaction('123702', 'R3.780', 250000, 'Paint & Sundries'),
+          transaction('123702', 'A321.78.261007.45', 300000, 'Bicycles'),
           transaction('123702', 'R5', 50000, 'Lainnya'),
           transaction('123703', 'R6', 999000, 'Cleaning Supplies'),
         ].join('\n'))
@@ -197,6 +197,14 @@ describe('buildRawPerformance', () => {
       expect(result.dateFrom).toBe('01/10/2026')
       expect(result.dateTo).toBe('01/10/2026')
       expect(result.todayPerf.actual).toBe(750000)
+      expect(result.todayPerf.salesChannelContributions).toEqual({
+        online: 450000,
+        offline: 300000,
+      })
+      expect(
+        (result.todayPerf.salesChannelContributions?.online ?? 0)
+        + (result.todayPerf.salesChannelContributions?.offline ?? 0),
+      ).toBe(result.todayPerf.actual)
       expect(result.todayPerf.salesContributions).toEqual({
         homeLiving: 150000,
         homeImprovement: 250000,
@@ -205,12 +213,17 @@ describe('buildRawPerformance', () => {
       })
       expect(result.teamTodayEmployees[0]?.topSalesGroup).toBe('HOBBIES & LIFESTYLE')
       expect(result.teamTodayEmployees[0]?.topSalesGroupPct).toBe(40)
+      expect(result.teamTodayEmployees[0]?.salesChannelContributions).toEqual({
+        online: 450000,
+        offline: 300000,
+      })
       expect(result.mtdPerf.salesContributions).toEqual({
         homeLiving: 0,
         homeImprovement: 0,
         hobbiesLifestyle: 0,
         other: 0,
       })
+      expect(result.mtdPerf.salesChannelContributions).toEqual({ online: 0, offline: 0 })
       expect(result.mtdPerf.workingDays).toBe(0)
       expect(result.mtdPerf.targetMTD).toBe(0)
       expect(result.mtdPerf.target).toBe(3000000)
