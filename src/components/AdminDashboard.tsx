@@ -14,7 +14,7 @@ import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
 import { getTrackedProductArticleKey, seedNewlyQualifiedProducts, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
 import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from '../services/sidUpdateTracker'
-import { fetchTvMedia, fetchTvTikTokPostIds, TV_MEDIA_FOLDER_URL, type TvMediaSlide } from '../services/tvMediaApi'
+import { fetchTvMedia, fetchTvSocialVideos, TV_MEDIA_FOLDER_URL, type TvMediaSlide, type TvSocialVideo } from '../services/tvMediaApi'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -39,7 +39,78 @@ const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 const DEPT_TREND_INTERVAL_MS = 3000
 const TV_DRIVE_TIKTOK_MEDIA_ID = '1no3gMaS3Z_dPO2dAU1t7QdZZwgUgGUz4'
 const DEFAULT_TV_TIKTOK_POST_ID = '7694569713191505172'
+const TV_SOCIAL_AUDIO_STORAGE_KEY = 'atlas-tv-social-audio-enabled'
 const getTikTokPlayerUrl = (postId: string) => `https://www.tiktok.com/player/v1/${postId}?autoplay=1&controls=1&volume_control=1&fullscreen_button=1&rel=0`
+const getYouTubePlayerUrl = (videoId: string) => {
+  const url = new URL(`https://www.youtube.com/embed/${encodeURIComponent(videoId)}`)
+  url.searchParams.set('enablejsapi', '1')
+  url.searchParams.set('autoplay', '1')
+  url.searchParams.set('playsinline', '1')
+  url.searchParams.set('rel', '0')
+  url.searchParams.set('origin', window.location.origin)
+  return url.toString()
+}
+
+interface YouTubePlayerInstance {
+  playVideo(): void
+  unMute(): void
+  destroy(): void
+}
+
+interface YouTubePlayerEvent {
+  target: YouTubePlayerInstance
+  data?: number
+}
+
+interface YouTubeIframeApi {
+  PlayerState: { ENDED: number; PLAYING: number; BUFFERING: number }
+  Player: new (
+    element: HTMLIFrameElement,
+    options: {
+      events: {
+        onReady: (event: YouTubePlayerEvent) => void
+        onStateChange: (event: YouTubePlayerEvent) => void
+        onAutoplayBlocked: () => void
+        onError: (event: YouTubePlayerEvent) => void
+      }
+    },
+  ) => YouTubePlayerInstance
+}
+
+type YouTubeWindow = Window & {
+  YT?: YouTubeIframeApi
+  onYouTubeIframeAPIReady?: () => void
+}
+
+let youTubeApiPromise: Promise<YouTubeIframeApi> | null = null
+
+function loadYouTubeIframeApi(): Promise<YouTubeIframeApi> {
+  const youtubeWindow = window as YouTubeWindow
+  if (youtubeWindow.YT?.Player) return Promise.resolve(youtubeWindow.YT)
+  if (youTubeApiPromise) return youTubeApiPromise
+
+  youTubeApiPromise = new Promise((resolve, reject) => {
+    const previousReady = youtubeWindow.onYouTubeIframeAPIReady
+    youtubeWindow.onYouTubeIframeAPIReady = () => {
+      previousReady?.()
+      if (youtubeWindow.YT?.Player) resolve(youtubeWindow.YT)
+      else reject(new Error('YouTube Player API selesai dimuat tanpa player yang tersedia.'))
+    }
+
+    let script = document.getElementById('youtube-iframe-api') as HTMLScriptElement | null
+    if (!script) {
+      script = document.createElement('script')
+      script.id = 'youtube-iframe-api'
+      script.src = 'https://www.youtube.com/iframe_api'
+      script.onerror = () => {
+        youTubeApiPromise = null
+        reject(new Error('YouTube Player API gagal dimuat.'))
+      }
+      document.head.appendChild(script)
+    }
+  })
+  return youTubeApiPromise
+}
 
 function getTVDisplaySettings(): Record<TVSlideKey, boolean> {
   const saved = getMenuSettings()
@@ -134,7 +205,7 @@ function TVSlideshow({
   deptMtd,
   deptTrend,
   tvMedia,
-  tiktokPostIds,
+  socialVideos,
 }: {
   todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
@@ -148,7 +219,7 @@ function TVSlideshow({
   deptMtd: DeptPeriodData | null
   deptTrend: DeptTrendData | null
   tvMedia: TvMediaSlide[]
-  tiktokPostIds: string[]
+  socialVideos: TvSocialVideo[]
 }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
@@ -161,8 +232,19 @@ function TVSlideshow({
   const [failedTvVideoId, setFailedTvVideoId] = useState('')
   const [drivePlayerTvVideoId, setDrivePlayerTvVideoId] = useState('')
   const [tvVideoErrorCode, setTvVideoErrorCode] = useState<number | null>(null)
+  const [socialAudioEnabled, setSocialAudioEnabled] = useState(() => {
+    try {
+      return window.localStorage.getItem(TV_SOCIAL_AUDIO_STORAGE_KEY) === 'true'
+    } catch (error) {
+      console.warn('[TV] Preferensi audio tidak dapat dibaca dari penyimpanan browser:', error)
+      return false
+    }
+  })
+  const socialAudioEnabledRef = useRef(socialAudioEnabled)
   const tvVideoRef = useRef<HTMLVideoElement>(null)
   const tiktokPlayerRef = useRef<HTMLIFrameElement>(null)
+  const youtubePlayerRef = useRef<HTMLIFrameElement>(null)
+  const youtubePlayerInstanceRef = useRef<YouTubePlayerInstance | null>(null)
   const onSlideEndRef = useRef(onSlideEnd)
 
   useEffect(() => {
@@ -292,17 +374,17 @@ function TVSlideshow({
         ranking: [] as RankingRow[],
         media,
       })),
-    ...tiktokPostIds.map((postId, index) => ({
-      key: `media-tiktok-${postId}`,
-      label: tiktokPostIds.length > 1 ? `TIKTOK ${index + 1}` : 'TIKTOK',
+    ...socialVideos.map((video, index) => ({
+      key: `media-${video.provider}-${video.id}`,
+      label: 'SOSIAL MEDIA',
       subtitle: 'MEDIA TV',
       ranking: [] as RankingRow[],
       media: {
-        id: postId,
-        name: tiktokPostIds.length > 1 ? `TIKTOK ${index + 1}` : 'TIKTOK',
-        mimeType: 'video/tiktok',
+        id: `${video.provider}-${video.id}`,
+        name: `SOSIAL MEDIA ${index + 1}`,
+        mimeType: video.provider === 'tiktok' ? 'video/tiktok' : 'video/youtube',
         updatedAt: '',
-        url: getTikTokPlayerUrl(postId),
+        url: video.provider === 'tiktok' ? getTikTokPlayerUrl(video.id) : getYouTubePlayerUrl(video.id),
       },
     })),
   ]
@@ -352,11 +434,35 @@ function TVSlideshow({
         setBlockedTvVideoId(activeVideoId)
         return
       }
+      const enableSocialAudio = () => {
+        socialAudioEnabledRef.current = true
+        setSocialAudioEnabled(true)
+        try {
+          window.localStorage.setItem(TV_SOCIAL_AUDIO_STORAGE_KEY, 'true')
+        } catch (error) {
+          console.warn('[TV] Preferensi audio tidak dapat disimpan di browser ini:', error)
+        }
+
+        if (activeTikTokId) {
+          tiktokPlayerRef.current?.contentWindow?.postMessage(
+            { 'x-tiktok-player': true, type: 'unMute' },
+            'https://www.tiktok.com',
+          )
+          tiktokPlayerRef.current?.contentWindow?.postMessage(
+            { 'x-tiktok-player': true, type: 'play' },
+            'https://www.tiktok.com',
+          )
+        } else if (activeYouTubeId) {
+          youtubePlayerInstanceRef.current?.unMute()
+          youtubePlayerInstanceRef.current?.playVideo()
+        }
+      }
       console.error('[TV] Gagal memutar video Drive:', error)
       setFailedTvVideoId(activeVideoId)
     })
   }
-  const activeTikTok = active.media?.mimeType === 'video/tiktok' ? active.media : null
+  const activeTikTokId = active.media?.mimeType === 'video/tiktok' ? active.media.id : ''
+  const activeYouTubeId = active.media?.mimeType === 'video/youtube' ? active.media.id : ''
   const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
   const topTen = rankedList.slice(0, 10)
@@ -452,7 +558,7 @@ function TVSlideshow({
   }, [nextSlideHasSameLabel, nextSlideIndex, nextSlideIsWelcome])
 
   useEffect(() => {
-    if (!activeTikTok) return
+    if (!activeTikTokId) return
 
     const handleTikTokPlayerMessage = (event: MessageEvent<unknown>) => {
       if (
@@ -466,6 +572,12 @@ function TVSlideshow({
       if (message['x-tiktok-player'] !== true) return
 
       if (message.type === 'onPlayerReady') {
+        if (socialAudioEnabledRef.current) {
+          tiktokPlayerRef.current?.contentWindow?.postMessage(
+            { 'x-tiktok-player': true, type: 'unMute' },
+            'https://www.tiktok.com',
+          )
+        }
         tiktokPlayerRef.current?.contentWindow?.postMessage(
           { 'x-tiktok-player': true, type: 'play' },
           'https://www.tiktok.com',
@@ -474,14 +586,57 @@ function TVSlideshow({
         advanceToNextSlide()
       } else if (message.type === 'onPlayerError') {
         const error = message.value as { errorCode?: unknown } | undefined
-        if (error?.errorCode === 3002) setBlockedTvVideoId(activeTikTok?.id ?? '')
+        if (error?.errorCode === 3002) setBlockedTvVideoId(activeTikTokId)
         else console.error('[TV] TikTok player reported an error:', message.value)
       }
     }
 
     window.addEventListener('message', handleTikTokPlayerMessage)
     return () => window.removeEventListener('message', handleTikTokPlayerMessage)
-  }, [activeTikTok, advanceToNextSlide])
+  }, [activeTikTokId, advanceToNextSlide])
+
+  useEffect(() => {
+    if (!activeYouTubeId || !youtubePlayerRef.current) return
+
+    let cancelled = false
+    let player: YouTubePlayerInstance | null = null
+    void loadYouTubeIframeApi().then((youtube) => {
+      const iframe = youtubePlayerRef.current
+      if (cancelled || !iframe) return
+
+      player = new youtube.Player(iframe, {
+        events: {
+          onReady: (event) => {
+            if (socialAudioEnabledRef.current) event.target.unMute()
+            event.target.playVideo()
+          },
+          onStateChange: (event) => {
+            if (event.data === youtube.PlayerState.PLAYING) setLoadedTvVideoId(activeYouTubeId)
+            else if (event.data === youtube.PlayerState.BUFFERING) setLoadedTvVideoId('')
+            else if (event.data === youtube.PlayerState.ENDED) advanceToNextSlide()
+          },
+          onAutoplayBlocked: () => setBlockedTvVideoId(activeYouTubeId),
+          onError: (event) => {
+            console.error('[TV] YouTube player reported an error:', event.data)
+            setTvVideoErrorCode(event.data ?? null)
+            setFailedTvVideoId(activeYouTubeId)
+          },
+        },
+      })
+      youtubePlayerInstanceRef.current = player
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        console.error('[TV] Gagal memuat YouTube Player API:', error)
+        setFailedTvVideoId(activeYouTubeId)
+      }
+    })
+
+    return () => {
+      cancelled = true
+      player?.destroy()
+      if (youtubePlayerInstanceRef.current === player) youtubePlayerInstanceRef.current = null
+    }
+  }, [activeYouTubeId, advanceToNextSlide])
 
   useEffect(() => {
     if (transitionSlide !== null || slides.length === 0) return
@@ -751,17 +906,66 @@ function TVSlideshow({
                   />
                   {blockedTvVideoId === active.media.id && (
                     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 12, background: 'rgba(0,0,0,.58)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
-                      <span>Browser memblokir autoplay TikTok.</span>
+                      <span>Aktifkan audio agar video sosial media diputar dengan suara.</span>
                       <button
                         type="button"
-                        onClick={() => tiktokPlayerRef.current?.contentWindow?.postMessage(
-                          { 'x-tiktok-player': true, type: 'play' },
-                          'https://www.tiktok.com',
-                        )}
+                        onClick={enableSocialAudio}
                         style={{ border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '12px 18px', background: '#d9271c', color: '#fff', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}
                       >
-                        Putar TikTok
+                        Aktifkan audio
                       </button>
+                    </div>
+                  )}
+                  {!socialAudioEnabled && blockedTvVideoId !== active.media.id && (
+                    <button
+                      type="button"
+                      onClick={enableSocialAudio}
+                      style={{ position: 'absolute', top: 16, right: 16, border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '10px 14px', background: 'rgba(20,20,20,.86)', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Aktifkan audio
+                    </button>
+                  )}
+                </div>
+              ) : active.media.mimeType === 'video/youtube' ? (
+                <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
+                  <iframe
+                    ref={youtubePlayerRef}
+                    title={active.media.name}
+                    src={active.media.url}
+                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                    allowFullScreen
+                    style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#000' }}
+                  />
+                  {blockedTvVideoId === active.media.id && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 12, background: 'rgba(0,0,0,.58)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                      <span>Aktifkan audio agar video sosial media diputar dengan suara.</span>
+                      <button
+                        type="button"
+                        onClick={enableSocialAudio}
+                        style={{ border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '12px 18px', background: '#d9271c', color: '#fff', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        Aktifkan audio
+                      </button>
+                    </div>
+                  )}
+                  {!socialAudioEnabled && blockedTvVideoId !== active.media.id && (
+                    <button
+                      type="button"
+                      onClick={enableSocialAudio}
+                      style={{ position: 'absolute', top: 16, right: 16, border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '10px 14px', background: 'rgba(20,20,20,.86)', color: '#fff', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Aktifkan audio
+                    </button>
+                  )}
+                  {failedTvVideoId === active.media.id && (
+                    <div role="alert" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', gap: 12, padding: 24, background: 'rgba(0,0,0,.82)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                      <span>YouTube tidak dapat memutar video ini{tvVideoErrorCode ? ` (kode ${tvVideoErrorCode})` : ''}.</span>
+                      <button type="button" onClick={advanceToNextSlide} style={{ justifySelf: 'center', border: '1px solid rgba(255,255,255,.3)', borderRadius: 6, padding: '9px 14px', background: 'rgba(255,255,255,.08)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Lanjut</button>
+                    </div>
+                  )}
+                  {!failedTvVideoId && blockedTvVideoId !== active.media.id && loadedTvVideoId !== active.media.id && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', background: 'rgba(0,0,0,.3)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                      Memuat video YouTube…
                     </div>
                   )}
                 </div>
@@ -1290,8 +1494,8 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [tvMediaLoading, setTvMediaLoading] = useState(false)
   const [tvMediaError, setTvMediaError] = useState('')
   const [tvMediaRefreshKey, setTvMediaRefreshKey] = useState(0)
-  const [tvTikTokPostIds, setTvTikTokPostIds] = useState<string[]>([DEFAULT_TV_TIKTOK_POST_ID])
-  const [tvTikTokError, setTvTikTokError] = useState('')
+  const [tvSocialVideos, setTvSocialVideos] = useState<TvSocialVideo[]>([{ provider: 'tiktok', id: DEFAULT_TV_TIKTOK_POST_ID }])
+  const [tvSocialVideosError, setTvSocialVideosError] = useState('')
   const [jobFilter, setJobFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('achievement')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -1309,7 +1513,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       setTvMediaLoading(true)
       const [mediaResult, tiktokResult] = await Promise.allSettled([
         fetchTvMedia(),
-        fetchTvTikTokPostIds(),
+        fetchTvSocialVideos(),
       ])
       if (mediaResult.status === 'fulfilled') {
         if (!cancelled) {
@@ -1325,13 +1529,13 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       }
       if (tiktokResult.status === 'fulfilled') {
         if (!cancelled) {
-          setTvTikTokPostIds(tiktokResult.value.length > 0 ? tiktokResult.value : [DEFAULT_TV_TIKTOK_POST_ID])
-          setTvTikTokError('')
+          setTvSocialVideos(tiktokResult.value.length > 0 ? tiktokResult.value : [{ provider: 'tiktok', id: DEFAULT_TV_TIKTOK_POST_ID }])
+          setTvSocialVideosError('')
         }
       } else if (!cancelled) {
         const message = tiktokResult.reason instanceof Error ? tiktokResult.reason.message : String(tiktokResult.reason)
-        setTvTikTokError(message)
-        console.error('[TV] Gagal membaca link TikTok dari sheet MEDIA TV:', tiktokResult.reason)
+        setTvSocialVideosError(message)
+        console.error('[TV] Gagal membaca link video dari sheet MEDIA TV:', tiktokResult.reason)
       }
       if (!cancelled) setTvMediaLoading(false)
     }
@@ -1719,7 +1923,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             deptMtd={deptMtd}
             deptTrend={deptTrend}
             tvMedia={tvMedia}
-            tiktokPostIds={tvTikTokPostIds}
+            socialVideos={tvSocialVideos}
           />
         )}
 
@@ -2220,10 +2424,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                 </div>
               )}
               <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, background: '#f8fafc', color: S.sub, fontSize: 12, lineHeight: 1.6 }}>
-                <strong style={{ color: S.text }}>Link video TikTok:</strong> tempel link TikTok pada sel mana pun di sheet{' '}
+                <strong style={{ color: S.text }}>Link video TikTok/YouTube:</strong> tempel link video TikTok atau YouTube di baris terpisah pada sheet{' '}
                 <a href="https://docs.google.com/spreadsheets/d/1CBz9oPc9FMiEu545NX-wJZl_fzUsX_rqggtVwaAlM7k/edit?gid=1579358833#gid=1579358833" target="_blank" rel="noreferrer" style={{ color: S.red, fontWeight: 800 }}>MEDIA TV</a>.
-                Atlas akan memutar semua link TikTok yang ditemukan berurutan dan memperbarui daftar otomatis setiap 1 menit.
-                {tvTikTokError && <div role="alert" style={{ marginTop: 6, color: '#9a3412' }}>Link TikTok belum bisa dibaca: {tvTikTokError}</div>}
+                Atlas akan memutar link TikTok dan YouTube sesuai urutan baris, lalu memperbarui daftar otomatis setiap 1 menit.
+                {tvSocialVideosError && <div role="alert" style={{ marginTop: 6, color: '#9a3412' }}>Link TikTok/YouTube belum bisa dibaca: {tvSocialVideosError}</div>}
               </div>
               <div style={{ marginTop: 12, color: S.muted, fontSize: 11, lineHeight: 1.6 }}>
                 Gunakan gambar (JPG, PNG, dan format gambar lain) atau PDF. File yang dimasukkan ke folder akan ditayangkan otomatis selama 10 detik per slide. File media dapat dilihat oleh siapa pun yang memiliki tautannya.

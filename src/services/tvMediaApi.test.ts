@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchTvTikTokPostIds, parseTvMediaList } from './tvMediaApi'
+import { fetchTvSocialVideos, getYouTubeVideoId, parseTvMediaList } from './tvMediaApi'
 
 describe('parseTvMediaList', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -36,9 +36,9 @@ describe('parseTvMediaList', () => {
     expect(() => parseTvMediaList({ error: 'Drive is unavailable' })).toThrow('daftar media TV yang tidak sesuai')
   })
 
-  it('resolves multiple TikTok links from the MEDIA TV sheet in sheet order', async () => {
+  it('resolves TikTok and YouTube links from the MEDIA TV sheet in sheet order', async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response('"Link TikTok"\n"https://vt.tiktok.com/ZSbG9TSNe/"\n"https://www.tiktok.com/@azko/video/1234567890123456789"', { status: 200 }))
+      .mockResolvedValueOnce(new Response('"LINK VIDEO"\n"https://vt.tiktok.com/ZSbG9TSNe/"\n"https://youtu.be/eXPb1DY83Zo?si=test"\n"https://www.tiktok.com/@azko/video/1234567890123456789"', { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         html: '<blockquote data-video-id="7694569713191505172"></blockquote>',
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
@@ -47,13 +47,24 @@ describe('parseTvMediaList', () => {
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await expect(fetchTvTikTokPostIds()).resolves.toEqual(['7694569713191505172', '1234567890123456789'])
+    await expect(fetchTvSocialVideos()).resolves.toEqual([
+      { provider: 'tiktok', id: '7694569713191505172' },
+      { provider: 'youtube', id: 'eXPb1DY83Zo' },
+      { provider: 'tiktok', id: '1234567890123456789' },
+    ])
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('uses the fallback TikTok video when the MEDIA TV sheet has no link', async () => {
+  it('uses the fallback TikTok video when the MEDIA TV sheet has no social links', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response('', { status: 200 })))
 
-    await expect(fetchTvTikTokPostIds()).resolves.toEqual([])
+    await expect(fetchTvSocialVideos()).resolves.toEqual([])
+  })
+
+  it('accepts standard YouTube watch, short, and shorts URLs', () => {
+    expect(getYouTubeVideoId('https://youtu.be/eXPb1DY83Zo?si=test')).toBe('eXPb1DY83Zo')
+    expect(getYouTubeVideoId('https://www.youtube.com/watch?v=eXPb1DY83Zo')).toBe('eXPb1DY83Zo')
+    expect(getYouTubeVideoId('https://youtube.com/shorts/eXPb1DY83Zo')).toBe('eXPb1DY83Zo')
+    expect(getYouTubeVideoId('https://example.com/watch?v=eXPb1DY83Zo')).toBeNull()
   })
 })

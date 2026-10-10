@@ -17,6 +17,8 @@ interface TvMediaResponse {
   error?: string
 }
 
+export type TvSocialVideo = { provider: 'tiktok' | 'youtube'; id: string }
+
 function parseCsvRows(text: string): string[][] {
   const rows: string[][] = []
   let row: string[] = []
@@ -55,7 +57,28 @@ function parseCsvRows(text: string): string[][] {
   return rows
 }
 
-export async function fetchTvTikTokPostIds(): Promise<string[]> {
+export function getYouTubeVideoId(link: string): string | null {
+  let url: URL
+  try {
+    url = new URL(link)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:') return null
+
+  const host = url.hostname.toLowerCase()
+  let videoId: string | null = null
+  if (host === 'youtu.be') {
+    videoId = url.pathname.split('/').filter(Boolean)[0] ?? null
+  } else if (['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com'].includes(host)) {
+    videoId = url.searchParams.get('v')
+      ?? url.pathname.match(/^\/(?:shorts|embed|live)\/([^/?]+)/)?.[1]
+      ?? null
+  }
+  return videoId && /^[\w-]{11}$/.test(videoId) ? videoId : null
+}
+
+export async function fetchTvSocialVideos(): Promise<TvSocialVideo[]> {
   const sheetUrl = new URL(`https://docs.google.com/spreadsheets/d/${TV_SETTINGS_SHEET_ID}/gviz/tq`)
   sheetUrl.searchParams.set('tqx', 'out:csv')
   sheetUrl.searchParams.set('gid', TV_SETTINGS_MEDIA_GID)
@@ -78,9 +101,12 @@ export async function fetchTvTikTokPostIds(): Promise<string[]> {
   const links = parseCsvRows(csv)
     .flat()
     .map(value => value.trim())
-    .filter(value => /^https?:\/\/(?:www\.)?(?:vt\.|vm\.)?tiktok\.com\//i.test(value))
+    .filter(value => /^https?:\/\/(?:www\.)?(?:vt\.|vm\.)?tiktok\.com\//i.test(value) || getYouTubeVideoId(value) !== null)
   const uniqueLinks = [...new Set(links)]
-  const postIds = await Promise.all(uniqueLinks.map(async (link) => {
+  const videos = await Promise.all(uniqueLinks.map(async (link): Promise<TvSocialVideo> => {
+    const youtubeId = getYouTubeVideoId(link)
+    if (youtubeId) return { provider: 'youtube', id: youtubeId }
+
     const embedUrl = new URL('https://www.tiktok.com/oembed')
     embedUrl.searchParams.set('url', link)
     const embedController = new AbortController()
@@ -99,9 +125,11 @@ export async function fetchTvTikTokPostIds(): Promise<string[]> {
     }
     const postId = embedData.html.match(/data-video-id=["'](\d+)["']/)?.[1]
     if (!postId) throw new Error('ID video tidak ditemukan pada salah satu link TikTok di sheet MEDIA TV.')
-    return postId
+    return { provider: 'tiktok', id: postId }
   }))
-  return [...new Set(postIds)]
+  return videos.filter((video, index) =>
+    videos.findIndex(candidate => candidate.provider === video.provider && candidate.id === video.id) === index,
+  )
 }
 
 export function parseTvMediaList(value: unknown): TvMediaSlide[] {
