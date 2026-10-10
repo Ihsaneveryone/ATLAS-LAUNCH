@@ -22,7 +22,7 @@ The template uses the following tabs. Header matching is case-insensitive and su
 | `TV RECEIPT` | NIK, Nama, Qualifying Receipt, Target Minimal Cair, Progress, Total Value Receipt, Insentif per Receipt, Total Insentif, Status |
 | `INSENTIF BOOMSALE` | Artikel, Nama Produk, Target Qty, optional Image URL |
 
-Sales rankings and product quantity totals are calculated from `COPAS S2`. The SID/source rows are treated as the intended current-month dataset and are not filtered by month in the template; the Today slide alone matches the transaction date to today's Jakarta date. Department and receipt tabs are precomputed/imported presentation tables. TV media is read from the configured Drive folder; supported files are images and PDFs. To display Drive media on the TV, ensure the TV browser account can view each file or that the file's sharing policy permits the display URL to load.
+Sales rankings and product quantity totals are calculated from `COPAS S2`. The SID/source rows are treated as the intended current-month dataset and are not filtered by month in the template; the Today slide alone matches the transaction date to today's Jakarta date. Department and receipt tabs are precomputed/imported presentation tables. TV media is read from the configured Drive folder; supported files are images, PDFs, and videos. Images render directly; PDFs and videos use the Google Drive preview player. The default video slide duration is 60 seconds (`TV_CONFIG.videoSlideSeconds`); change it in `Code.gs` to suit the video length. Ensure the Google account used to view the TV is allowed to play each Drive file. Autoplay may be blocked by browser/device policy; if so, start playback once with the TV remote or mouse.
 
 ## TV controls
 

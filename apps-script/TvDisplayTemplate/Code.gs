@@ -4,6 +4,7 @@ const TV_CONFIG = {
   timezone: 'Asia/Jakarta',
   refreshSeconds: 60,
   slideSeconds: 10000,
+  videoSlideSeconds: 60000,
   sheetNames: {
     sales: 'COPAS S2',
     targets: 'TARGET',
@@ -38,6 +39,7 @@ function getTvDisplayData() {
     todayLabel: Utilities.formatDate(now, TV_CONFIG.timezone, 'yyyy-MM-dd'),
     refreshSeconds: TV_CONFIG.refreshSeconds,
     slideSeconds: TV_CONFIG.slideSeconds,
+    videoSlideSeconds: TV_CONFIG.videoSlideSeconds,
     rankings: rankings.periods,
     departments: mapDepartmentRows_(departmentRows),
     receipts: mapReceiptRows_(receiptRows),
@@ -273,13 +275,17 @@ function listDriveMedia_() {
   while (files.hasNext()) {
     const file = files.next()
     const mimeType = file.getMimeType()
-    if (mimeType.indexOf('image/') !== 0 && mimeType !== 'application/pdf') continue
+    const isImage = mimeType.indexOf('image/') === 0
+    const isVideo = mimeType.indexOf('video/') === 0
+    const isPdf = mimeType === 'application/pdf'
+    if (!isImage && !isVideo && !isPdf) continue
     const id = file.getId()
     media.push({
       id: id,
       name: file.getName(),
       mimeType: mimeType,
-      url: mimeType === 'application/pdf'
+      type: isVideo ? 'video' : isPdf ? 'pdf' : 'image',
+      url: isVideo || isPdf
         ? 'https://drive.google.com/file/d/' + encodeURIComponent(id) + '/preview'
         : 'https://drive.google.com/uc?export=view&id=' + encodeURIComponent(id),
     })

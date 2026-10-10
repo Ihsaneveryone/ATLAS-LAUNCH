@@ -14,7 +14,7 @@ import ColumnMappingPanel from './ColumnMappingPanel'
 import { parseIncentiveSheets, type IncentiveBoomsaleRow, type IncentiveReceiptRow } from '../services/incentiveParser'
 import { getTrackedProductArticleKey, seedNewlyQualifiedProducts, trackNewlyQualifiedProducts } from '../services/incentiveProductTracker'
 import { readSIDUpdateState, saveSIDUpdateState, updateSIDSignature } from '../services/sidUpdateTracker'
-import { fetchTvMedia, TV_MEDIA_FOLDER_URL, type TvMediaSlide } from '../services/tvMediaApi'
+import { fetchTvMedia, fetchTvTikTokPostIds, TV_MEDIA_FOLDER_URL, type TvMediaSlide } from '../services/tvMediaApi'
 import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -37,6 +37,9 @@ const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: s
 
 const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 const DEPT_TREND_INTERVAL_MS = 3000
+const TV_DRIVE_TIKTOK_MEDIA_ID = '1no3gMaS3Z_dPO2dAU1t7QdZZwgUgGUz4'
+const DEFAULT_TV_TIKTOK_POST_ID = '7694569713191505172'
+const getTikTokPlayerUrl = (postId: string) => `https://www.tiktok.com/player/v1/${postId}?autoplay=1&controls=1&volume_control=1&fullscreen_button=1&rel=0`
 
 function getTVDisplaySettings(): Record<TVSlideKey, boolean> {
   const saved = getMenuSettings()
@@ -131,6 +134,7 @@ function TVSlideshow({
   deptMtd,
   deptTrend,
   tvMedia,
+  tiktokPostIds,
 }: {
   todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
@@ -144,6 +148,7 @@ function TVSlideshow({
   deptMtd: DeptPeriodData | null
   deptTrend: DeptTrendData | null
   tvMedia: TvMediaSlide[]
+  tiktokPostIds: string[]
 }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
@@ -151,6 +156,13 @@ function TVSlideshow({
   const [newProductArticles, setNewProductArticles] = useState<Set<string>>(() => new Set())
   const [productsLoading, setProductsLoading] = useState(true)
   const [failedTvMediaId, setFailedTvMediaId] = useState('')
+  const [loadedTvVideoId, setLoadedTvVideoId] = useState('')
+  const [blockedTvVideoId, setBlockedTvVideoId] = useState('')
+  const [failedTvVideoId, setFailedTvVideoId] = useState('')
+  const [drivePlayerTvVideoId, setDrivePlayerTvVideoId] = useState('')
+  const [tvVideoErrorCode, setTvVideoErrorCode] = useState<number | null>(null)
+  const tvVideoRef = useRef<HTMLVideoElement>(null)
+  const tiktokPlayerRef = useRef<HTMLIFrameElement>(null)
   const onSlideEndRef = useRef(onSlideEnd)
 
   useEffect(() => {
@@ -271,12 +283,27 @@ function TVSlideshow({
       ranking: [] as RankingRow[],
       products,
     })) : []),
-    ...tvMedia.map(media => ({
-      key: `media-${media.id}`,
-      label: media.name,
+    ...tvMedia
+      .filter(media => media.id !== TV_DRIVE_TIKTOK_MEDIA_ID)
+      .map(media => ({
+        key: `media-${media.id}`,
+        label: media.name,
+        subtitle: 'MEDIA TV',
+        ranking: [] as RankingRow[],
+        media,
+      })),
+    ...tiktokPostIds.map((postId, index) => ({
+      key: `media-tiktok-${postId}`,
+      label: tiktokPostIds.length > 1 ? `TIKTOK ${index + 1}` : 'TIKTOK',
       subtitle: 'MEDIA TV',
       ranking: [] as RankingRow[],
-      media,
+      media: {
+        id: postId,
+        name: tiktokPostIds.length > 1 ? `TIKTOK ${index + 1}` : 'TIKTOK',
+        mimeType: 'video/tiktok',
+        updatedAt: '',
+        url: getTikTokPlayerUrl(postId),
+      },
     })),
   ]
   const slides = [
@@ -305,6 +332,31 @@ function TVSlideshow({
     subtitle: '',
     ranking: [] as RankingRow[],
   }
+  const activeVideo = active.media?.mimeType.startsWith('video/') ? active.media : null
+  const activeVideoId = activeVideo?.id ?? ''
+  useEffect(() => {
+    setLoadedTvVideoId('')
+    setBlockedTvVideoId('')
+    setFailedTvVideoId('')
+    setDrivePlayerTvVideoId('')
+    setTvVideoErrorCode(null)
+  }, [activeVideoId])
+
+  const startActiveVideo = () => {
+    const player = tvVideoRef.current
+    if (!player) return
+    void player.play().then(() => {
+      setBlockedTvVideoId('')
+    }).catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setBlockedTvVideoId(activeVideoId)
+        return
+      }
+      console.error('[TV] Gagal memutar video Drive:', error)
+      setFailedTvVideoId(activeVideoId)
+    })
+  }
+  const activeTikTok = active.media?.mimeType === 'video/tiktok' ? active.media : null
   const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
   const topTen = rankedList.slice(0, 10)
@@ -400,10 +452,46 @@ function TVSlideshow({
   }, [nextSlideHasSameLabel, nextSlideIndex, nextSlideIsWelcome])
 
   useEffect(() => {
+    if (!activeTikTok) return
+
+    const handleTikTokPlayerMessage = (event: MessageEvent<unknown>) => {
+      if (
+        event.origin !== 'https://www.tiktok.com'
+        || event.source !== tiktokPlayerRef.current?.contentWindow
+        || typeof event.data !== 'object'
+        || event.data === null
+      ) return
+
+      const message = event.data as { 'x-tiktok-player'?: unknown; type?: unknown; value?: unknown }
+      if (message['x-tiktok-player'] !== true) return
+
+      if (message.type === 'onPlayerReady') {
+        tiktokPlayerRef.current?.contentWindow?.postMessage(
+          { 'x-tiktok-player': true, type: 'play' },
+          'https://www.tiktok.com',
+        )
+      } else if (message.type === 'onStateChange' && message.value === 0) {
+        advanceToNextSlide()
+      } else if (message.type === 'onPlayerError') {
+        const error = message.value as { errorCode?: unknown } | undefined
+        if (error?.errorCode === 3002) setBlockedTvVideoId(activeTikTok?.id ?? '')
+        else console.error('[TV] TikTok player reported an error:', message.value)
+      }
+    }
+
+    window.addEventListener('message', handleTikTokPlayerMessage)
+    return () => window.removeEventListener('message', handleTikTokPlayerMessage)
+  }, [activeTikTok, advanceToNextSlide])
+
+  useEffect(() => {
     if (transitionSlide !== null || slides.length === 0) return
 
     const activeSlideKey = slides[activeSlide]?.key
     if (activeSlideKey === 'dept') return
+
+    const activeMedia = slides[activeSlide]?.media
+    const isVideoSlide = activeMedia?.mimeType.startsWith('video/') ?? false
+    if (isVideoSlide) return
 
     const isProductSlide = activeSlideKey?.startsWith('incentive-products-') ?? false
     const isReceiptSlide = activeSlideKey?.startsWith('receipt-') ?? false
@@ -651,7 +739,94 @@ function TVSlideshow({
                 </div>
               </div>
             ) : active.media ? (
-              active.media.mimeType === 'application/pdf' ? (
+              active.media.mimeType === 'video/tiktok' ? (
+                <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
+                  <iframe
+                    ref={tiktokPlayerRef}
+                    title={active.media.name}
+                    src={active.media.url}
+                    allow="autoplay; fullscreen"
+                    allowFullScreen
+                    style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#000' }}
+                  />
+                  {blockedTvVideoId === active.media.id && (
+                    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 12, background: 'rgba(0,0,0,.58)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                      <span>Browser memblokir autoplay TikTok.</span>
+                      <button
+                        type="button"
+                        onClick={() => tiktokPlayerRef.current?.contentWindow?.postMessage(
+                          { 'x-tiktok-player': true, type: 'play' },
+                          'https://www.tiktok.com',
+                        )}
+                        style={{ border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '12px 18px', background: '#d9271c', color: '#fff', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}
+                      >
+                        Putar TikTok
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : active.media.mimeType.startsWith('video/') ? (
+                <div style={{ position: 'relative', width: '100%', height: '100%', background: '#000' }}>
+                  {drivePlayerTvVideoId === active.media.id ? (
+                    <iframe
+                      title={active.media.name}
+                      src={`https://drive.google.com/file/d/${encodeURIComponent(active.media.id)}/preview?autoplay=1`}
+                      allow="autoplay; fullscreen"
+                      allowFullScreen
+                      style={{ display: 'block', width: '100%', height: '100%', border: 0, background: '#000' }}
+                    />
+                  ) : (
+                    <>
+                      <video
+                        ref={tvVideoRef}
+                        key={active.media.id}
+                        aria-label={active.media.name}
+                        src={active.media.url}
+                        autoPlay
+                        playsInline
+                        preload="auto"
+                        onCanPlay={startActiveVideo}
+                        onPlaying={() => {
+                          setLoadedTvVideoId(active.media?.id ?? '')
+                          setBlockedTvVideoId('')
+                        }}
+                        onWaiting={() => setLoadedTvVideoId('')}
+                        onEnded={advanceToNextSlide}
+                        onError={(event) => {
+                          const code = event.currentTarget.error?.code ?? null
+                          console.error('[TV] Video Drive gagal dimuat lewat pemutar browser.', { code, mediaId: active.media?.id })
+                          setTvVideoErrorCode(code)
+                          if (code === 4) {
+                            setDrivePlayerTvVideoId(active.media?.id ?? '')
+                          } else {
+                            setFailedTvVideoId(active.media?.id ?? '')
+                          }
+                        }}
+                        style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', border: 0, background: '#000' }}
+                      />
+                      {blockedTvVideoId === active.media.id ? (
+                        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 12, background: 'rgba(0,0,0,.55)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                          <span>Browser memblokir pemutaran otomatis dengan suara.</span>
+                          <button type="button" onClick={startActiveVideo} style={{ border: '1px solid rgba(242,197,17,.65)', borderRadius: 8, padding: '12px 18px', background: '#d9271c', color: '#fff', fontSize: 18, fontWeight: 800, cursor: 'pointer' }}>Putar dengan suara</button>
+                        </div>
+                      ) : failedTvVideoId === active.media.id ? (
+                        <div role="alert" style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', justifyItems: 'center', gap: 12, padding: 24, background: 'rgba(0,0,0,.82)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                          <span>Pemutar browser gagal membuka video Drive{tvVideoErrorCode ? ` (kode ${tvVideoErrorCode})` : ''}.</span>
+                          <span style={{ maxWidth: 680, color: '#cbd5e1', fontSize: 14 }}>Akses link Drive sudah terbuka; coba pemutar resmi Drive atau periksa format video.</span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 10 }}>
+                            <button type="button" onClick={() => setDrivePlayerTvVideoId(active.media?.id ?? '')} style={{ border: '1px solid rgba(242,197,17,.65)', borderRadius: 6, padding: '9px 14px', background: 'rgba(242,197,17,.14)', color: '#fff8e1', fontWeight: 800, cursor: 'pointer' }}>Coba pemutar Google Drive</button>
+                            <button type="button" onClick={advanceToNextSlide} style={{ border: '1px solid rgba(255,255,255,.3)', borderRadius: 6, padding: '9px 14px', background: 'rgba(255,255,255,.08)', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Lanjut</button>
+                          </div>
+                        </div>
+                      ) : loadedTvVideoId !== active.media.id && (
+                        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', background: 'rgba(0,0,0,.3)', color: '#fff', textAlign: 'center', fontSize: 18 }}>
+                          Memuat video dari Google Drive…
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : active.media.mimeType === 'application/pdf' ? (
                 <iframe
                   title={active.media.name}
                   src={active.media.url}
@@ -1115,6 +1290,8 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [tvMediaLoading, setTvMediaLoading] = useState(false)
   const [tvMediaError, setTvMediaError] = useState('')
   const [tvMediaRefreshKey, setTvMediaRefreshKey] = useState(0)
+  const [tvTikTokPostIds, setTvTikTokPostIds] = useState<string[]>([DEFAULT_TV_TIKTOK_POST_ID])
+  const [tvTikTokError, setTvTikTokError] = useState('')
   const [jobFilter, setJobFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('achievement')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
@@ -1130,21 +1307,33 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     let cancelled = false
     const loadTvMedia = async () => {
       setTvMediaLoading(true)
-      try {
-        const media = await fetchTvMedia()
+      const [mediaResult, tiktokResult] = await Promise.allSettled([
+        fetchTvMedia(),
+        fetchTvTikTokPostIds(),
+      ])
+      if (mediaResult.status === 'fulfilled') {
         if (!cancelled) {
-          setTvMedia(media)
+          setTvMedia(mediaResult.value)
           setTvMediaError('')
         }
-      } catch (error) {
+      } else {
         if (!cancelled) {
-          const message = error instanceof Error ? error.message : String(error)
+          const message = mediaResult.reason instanceof Error ? mediaResult.reason.message : String(mediaResult.reason)
           setTvMediaError(message)
-          console.error('[TV] Gagal memuat media dari Google Drive:', error)
+          console.error('[TV] Gagal memuat media dari Google Drive:', mediaResult.reason)
         }
-      } finally {
-        if (!cancelled) setTvMediaLoading(false)
       }
+      if (tiktokResult.status === 'fulfilled') {
+        if (!cancelled) {
+          setTvTikTokPostIds(tiktokResult.value.length > 0 ? tiktokResult.value : [DEFAULT_TV_TIKTOK_POST_ID])
+          setTvTikTokError('')
+        }
+      } else if (!cancelled) {
+        const message = tiktokResult.reason instanceof Error ? tiktokResult.reason.message : String(tiktokResult.reason)
+        setTvTikTokError(message)
+        console.error('[TV] Gagal membaca link TikTok dari sheet MEDIA TV:', tiktokResult.reason)
+      }
+      if (!cancelled) setTvMediaLoading(false)
     }
 
     void loadTvMedia()
@@ -1530,6 +1719,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             deptMtd={deptMtd}
             deptTrend={deptTrend}
             tvMedia={tvMedia}
+            tiktokPostIds={tvTikTokPostIds}
           />
         )}
 
@@ -2029,6 +2219,12 @@ export default function AdminDashboard({ user, onLogout }: Props) {
                   Gagal memuat media TV: {tvMediaError}
                 </div>
               )}
+              <div style={{ marginTop: 14, padding: '12px 14px', borderRadius: 10, background: '#f8fafc', color: S.sub, fontSize: 12, lineHeight: 1.6 }}>
+                <strong style={{ color: S.text }}>Link video TikTok:</strong> tempel link TikTok pada sel mana pun di sheet{' '}
+                <a href="https://docs.google.com/spreadsheets/d/1CBz9oPc9FMiEu545NX-wJZl_fzUsX_rqggtVwaAlM7k/edit?gid=1579358833#gid=1579358833" target="_blank" rel="noreferrer" style={{ color: S.red, fontWeight: 800 }}>MEDIA TV</a>.
+                Atlas akan memutar semua link TikTok yang ditemukan berurutan dan memperbarui daftar otomatis setiap 1 menit.
+                {tvTikTokError && <div role="alert" style={{ marginTop: 6, color: '#9a3412' }}>Link TikTok belum bisa dibaca: {tvTikTokError}</div>}
+              </div>
               <div style={{ marginTop: 12, color: S.muted, fontSize: 11, lineHeight: 1.6 }}>
                 Gunakan gambar (JPG, PNG, dan format gambar lain) atau PDF. File yang dimasukkan ke folder akan ditayangkan otomatis selama 10 detik per slide. File media dapat dilihat oleh siapa pun yang memiliki tautannya.
               </div>
