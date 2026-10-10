@@ -13,9 +13,12 @@ function doGet(event) {
   }
 }
 
+function authorizeTvMediaAccess() {
+  return listTvMedia_()
+}
+
 function listTvMedia_() {
   const folder = DriveApp.getFolderById(TV_MEDIA_FOLDER_ID)
-  ensureAnyoneCanView_(folder)
 
   const files = folder.getFiles()
   const media = []
@@ -26,7 +29,6 @@ function listTvMedia_() {
     const isPdf = mimeType === 'application/pdf'
     if (!isImage && !isPdf) continue
 
-    ensureAnyoneCanView_(file)
     const id = file.getId()
     media.push({
       id: id,
@@ -42,15 +44,6 @@ function listTvMedia_() {
   return media.sort(function (left, right) {
     return left.name.localeCompare(right.name)
   })
-}
-
-function ensureAnyoneCanView_(item) {
-  if (
-    item.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK
-    || item.getSharingPermission() !== DriveApp.Permission.VIEW
-  ) {
-    item.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
-  }
 }
 
 function jsonp_(callback, payload) {

@@ -397,7 +397,11 @@ export function parseIncentiveSheets(sheets: Record<string, string[][]>): Parsed
   const compareHeaders = compareSheet[0]?.map(normalizeText) ?? []
 
   const compareArtikelIndex = findHeaderIndex(compareHeaders, [/(^|\b)artikel(\b|$)/i, /sku/i])
-  const compareQtyIndex = findHeaderIndex(compareHeaders, [/(qty actual|actual qty|actual|qty)/i])
+  const compareQtyIndex = findHeaderIndex(compareHeaders, [
+    /^(qty actual|actual qty|qty sold|sold qty|quantity sold|sales qty|qty terjual)$/i,
+    /^(qty|quantity)$/i,
+    /\b(qty actual|actual qty|qty sold|sold qty|quantity sold|sales qty|qty terjual)\b/i,
+  ])
   const compareNikIndex = findHeaderIndex(compareHeaders, /\bnik\b/i)
   const compareNamaIndex = findHeaderIndex(compareHeaders, /\b(nama|name)\b/i)
   const compareProductNameIndex = findHeaderIndex(compareHeaders, /\b(nama produk|product name|deskripsi|description|nama barang|item)\b/i)

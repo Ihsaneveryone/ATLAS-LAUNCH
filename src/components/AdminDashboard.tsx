@@ -543,6 +543,30 @@ function TVSlideshow({
             transform: translateY(0) scale(1);
           }
         }
+        @keyframes tvSpotlightOpen {
+          0% {
+            transform: translate(-50%, -50%) scale(0.015);
+            opacity: 0.9;
+          }
+          72% {
+            transform: translate(-50%, -50%) scale(0.82);
+            opacity: 1;
+          }
+          100% {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+          }
+        }
+        @keyframes tvSpotlightCopy {
+          0%, 28% {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          58%, 100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
       `}</style>
 
       <div style={{ position: 'relative', width: '100vw', minHeight: '100vh', height: '100dvh', background: 'radial-gradient(circle at top left, #b95046 0%, #a7463f 36%, #8d3e47 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
@@ -583,20 +607,25 @@ function TVSlideshow({
               Semua tampilan TV sedang dinonaktifkan oleh admin.
             </div>
           ) : transitionSlide !== null ? (
-            <div style={{
-              display: 'grid',
-              placeItems: 'center',
-              height: '100%',
-              background: 'radial-gradient(circle at center, rgba(55,30,34,0.88), rgba(16,14,18,0.98))',
-              borderRadius: 20,
-              border: '1px solid rgba(148,163,184,0.25)',
-              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04)',
-              animation: 'tvSlideIn 0.5s ease',
-            }}>
-              <div style={{ textAlign: 'center', color: '#f8fafc' }}>
-                <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: '-0.05em', lineHeight: 1.1, textTransform: 'uppercase' }}>{slides[transitionSlide]?.label}</div>
+              <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: '100%', overflow: 'hidden', borderRadius: 20, background: '#21171a', isolation: 'isolate' }}>
+                <div style={{
+                  position: 'absolute',
+                  width: '150vmax',
+                  height: '150vmax',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%) scale(0.015)',
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle at 50% 48%, #ed3828 0%, #d9231b 42%, #b51f1d 72%, #741f25 100%)',
+                  boxShadow: '0 0 0 2px rgba(255,218,125,0.72), 0 0 48px 14px rgba(255,191,86,0.38)',
+                  animation: 'tvSpotlightOpen 1.6s cubic-bezier(0.2, 0.72, 0.18, 1) forwards',
+                  zIndex: -1,
+                }} />
+                <div style={{ textAlign: 'center', color: '#fff8ec', padding: 24, animation: 'tvSpotlightCopy 1.6s ease both' }}>
+                  <div style={{ fontSize: 'clamp(18px, 2vw, 28px)', fontWeight: 900, letterSpacing: '0.16em', textTransform: 'uppercase', color: '#ffffff', marginBottom: 12 }}>AZKO</div>
+                  <div style={{ fontSize: 'clamp(22px, 3vw, 40px)', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{slides[transitionSlide]?.label}</div>
+                </div>
               </div>
-            </div>
           ) : (
           <div key={`${active.key}-${activeSlide}`} style={{ animation: 'tvSlideIn 0.7s cubic-bezier(0.22, 1, 0.36, 1)', willChange: 'transform, opacity', minHeight: 0, overflow: 'hidden', height: '100%' }}>
             {active.key === 'welcome' ? (

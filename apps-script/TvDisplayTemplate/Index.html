@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <base target="_top">
+    <meta charset="utf-8">
+    <style>
+      :root { color-scheme: dark; font-family: Arial, Helvetica, sans-serif; background: #21171a; color: #fff; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { background: radial-gradient(ellipse at 0% 0%, #71383b 0, #392429 34%, #21171a 68%); }
+      .shell { height: 100%; display: grid; grid-template-rows: 12vh minmax(0, 1fr) 30px; gap: 0; padding: 0 2vw 1vh; }
+      .top { display: flex; align-items: center; justify-content: space-between; gap: 2vw; min-height: 0; margin: 0 -2vw; padding: 0 2vw; background: linear-gradient(100deg, rgba(126,57,58,.56), rgba(33,23,26,.25) 68%); }
+      .brand { display: flex; align-items: center; gap: clamp(12px, 1.2vw, 20px); }
+      .brand-mark { width: clamp(48px, 5vw, 68px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #e1261c 0 41%, #fff 43% 51%, #21171a 53% 61%, #f4ca47 63% 70%, transparent 72%); filter: drop-shadow(0 0 8px #f4ca4766); }
+      .brand-name { color: #fff; font-size: clamp(28px, 3vw, 40px); font-weight: 900; letter-spacing: .14em; }
+      .meta { color: #e2dada; text-align: right; font-size: clamp(12px, 1vw, 16px); line-height: 1.5; }
+      .frame { min-height: 0; overflow: hidden; position: relative; border: 1px solid rgba(214,195,190,.2); border-radius: 24px; background: linear-gradient(145deg, rgba(39,27,31,.94), rgba(29,21,25,.96)); box-shadow: inset 0 1px rgba(255,255,255,.04); }
+      .slide { width: 100%; height: 100%; padding: clamp(14px, 2.5vh, 36px) clamp(20px, 2vw, 36px); display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 1vh; animation: reveal .65s ease both; }
+      @keyframes reveal { from { opacity: 0; transform: translateY(14px) scale(.99); } to { opacity: 1; transform: none; } }
+      .title-row { display: flex; justify-content: space-between; align-items: end; gap: 20px; min-height: 55px; }
+      h1 { margin: 0; color: #f8fafc; text-transform: uppercase; letter-spacing: -.035em; line-height: 1.08; font-size: clamp(24px, 2.25vw, 36px); font-weight: 900; }
+      .eyebrow { color: #f2c511; font-size: clamp(10px, .8vw, 13px); font-weight: 900; letter-spacing: .22em; text-transform: uppercase; margin-bottom: .8vh; }
+      .subtle { color: #94a3b8; font-size: clamp(11px, .85vw, 15px); }
+      .content { min-height: 0; overflow: hidden; }
+      .ranking-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, .85fr); gap: 8px; height: 100%; min-height: 0; }
+      .ranking-main { background: rgba(38,27,31,.84); border: 1px solid rgba(245,220,205,.48); border-radius: 16px; padding: 8px; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; min-width: 0; min-height: 0; }
+      .summary-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; height: clamp(64px, 9vh, 78px); margin-bottom: 6px; }
+      .summary { border-radius: 14px; padding: 5px 8px 7px; overflow: hidden; background: linear-gradient(135deg, rgba(242,197,17,.2), rgba(38,27,31,.92)); border: 1px solid rgba(242,197,17,.72); }
+      .summary.bottom { background: linear-gradient(135deg, rgba(225,38,28,.2), rgba(38,27,31,.92)); border-color: rgba(255,145,132,.66); }
+      .summary-label { font-size: clamp(10px, .78vw, 13px); color: #f8df83; text-transform: uppercase; letter-spacing: .09em; font-weight: 800; }
+      .summary.bottom .summary-label { color: #fecaca; }
+      .summary-name { margin-top: 2px; font-size: clamp(12px, .95vw, 16px); font-weight: 900; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .summary-value { margin-top: 3px; font-size: clamp(17px, 1.5vw, 24px); font-weight: 900; color: #fff1a8; line-height: 1; }
+      .summary.bottom .summary-value { color: #fee2e2; }
+      .ranking-table { display: grid; grid-template-rows: clamp(22px, 2.8vh, 30px) repeat(20, minmax(0, 1fr)); gap: 3px; height: 100%; min-height: 0; min-width: 0; }
+      .ranking-row { display: grid; grid-template-columns: 24px minmax(0, 2.2fr) minmax(0, 1fr) minmax(0, .72fr) minmax(0, 1fr) minmax(0, 1fr) minmax(42px, .9fr); align-items: center; gap: 2px; padding: 0 4px; border: 1px solid rgba(245,220,205,.3); border-radius: 6px; background: rgba(29,21,25,.92); overflow: hidden; min-width: 0; max-width: 100%; line-height: 1; }
+      .ranking-row.head { color: #e4d8d5; font-size: clamp(9px, .72vw, 12px); font-weight: 800; text-transform: uppercase; letter-spacing: .02em; background: rgba(45,31,35,.88); border-color: rgba(245,220,205,.42); }
+      .ranking-row:not(.head) { border-color: rgba(245,220,205,.3); }
+      .rank { flex: 0 0 14px; width: 14px; height: 14px; display: grid; place-items: center; border-radius: 4px; color: #cbd5e1; background: rgba(148,163,184,.12); font-weight: 900; font-size: clamp(9px, .68vw, 11px); }
+      .rank.top { background: linear-gradient(135deg, #b491ff, #6846c7); color: #21172f; }
+      .rank.second { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #0f172a; }
+      .rank.bottom { background: linear-gradient(135deg, rgba(239,68,68,.34), rgba(127,29,29,.24)); color: #fee2e2; border: 1px solid rgba(248,113,113,.42); }
+      .cell { min-width: 0; overflow: hidden; color: #d1d9e3; font-size: clamp(10px, .78vw, 14px); font-weight: 700; white-space: nowrap; text-overflow: ellipsis; }
+      .cell.name { color: #f8fafc; font-size: clamp(11px, .92vw, 16px); font-weight: 800; }
+      .cell.protection { color: #a7f3d0; text-align: right; }
+      .cell.right { text-align: right; }
+      .achievement { min-width: 0; padding: 2px 3px; border-radius: 4px; color: #fff; background: #dc2626; text-align: center; font-size: clamp(10px, .78vw, 14px); font-weight: 900; white-space: nowrap; overflow: hidden; }
+      .achievement.pink { background: #db2777; }
+      .achievement.yellow { background: #eab308; color: #422006; }
+      .achievement.green { background: #16a34a; }
+      .achievement.blue { background: #2563eb; }
+      .leaderboards { display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; min-height: 0; }
+      .leader-panel { background: linear-gradient(180deg, rgba(242,197,17,.18), rgba(48,34,37,.88)); border: 2px solid rgba(248,223,131,.9); border-radius: 14px; padding: 6px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 4px; min-height: 0; }
+      .leader-panel.bottom { background: linear-gradient(180deg, rgba(225,38,28,.2), rgba(48,34,37,.9)); border-color: rgba(255,145,132,.9); }
+      .leader-title { color: #fff1a8; font-size: clamp(10px, .78vw, 13px); font-weight: 900; text-transform: uppercase; letter-spacing: .07em; line-height: 1; padding: 3px 5px 5px; border-bottom: 2px solid rgba(248,223,131,.9); }
+      .leader-panel.bottom .leader-title { color: #ffe1dc; border-color: rgba(255,145,132,.9); }
+      .leader-rows { display: grid; grid-template-rows: repeat(10, minmax(0, 1fr)); gap: 3px; min-height: 0; }
+      .leader-row { display: flex; align-items: center; gap: 5px; padding: 1px 4px; border: 1px solid rgba(245,220,205,.3); border-radius: 6px; background: rgba(29,21,25,.62); min-height: 0; overflow: hidden; }
+      .leader-name { flex: 1; min-width: 0; overflow: hidden; color: #f8fafc; font-weight: 800; font-size: clamp(9px, .75vw, 13px); line-height: 1.1; white-space: nowrap; text-overflow: ellipsis; }
+      .leader-sales { flex-shrink: 0; color: #b7c1cf; font-size: clamp(8px, .58vw, 10px); white-space: nowrap; }
+      .leader-ach { flex-shrink: 0; padding: 3px 4px; border-radius: 5px; background: #dc2626; color: #fff; font-weight: 900; font-size: clamp(8px, .65vw, 11px); white-space: nowrap; }
+      .leader-ach.pink { background: #db2777; }
+      .leader-ach.yellow { background: #eab308; color: #422006; }
+      .leader-ach.green { background: #16a34a; }
+      .leader-ach.blue { background: #2563eb; }
+      .table { height: 100%; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+      .row { display: grid; grid-template-columns: 7% 2.2fr 1fr .9fr 1.1fr; align-items: center; gap: clamp(6px, 1vw, 14px); padding: 0 1vw; border-bottom: 1px solid rgba(214,195,190,.12); font-size: clamp(13px, 1.05vw, 18px); line-height: 1.05; min-width: 0; min-height: 0; }
+      .row.head { color: #c8b7a4; font-size: clamp(10px, .78vw, 13px); font-weight: 900; text-transform: uppercase; letter-spacing: .08em; min-height: 34px; }
+      .rows { display: grid; grid-auto-rows: minmax(0, 1fr); min-height: 0; overflow: hidden; }
+      .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 800; }
+      .right { text-align: right; white-space: nowrap; }
+      .slide-count { min-width: 58px; padding: 5px 10px; border: 1px solid rgba(242,197,17,.3); border-radius: 99px; color: #fff8e1; background: rgba(39,27,31,.82); text-align: center; font-size: 12px; font-weight: 800; }
+      .badge { display: inline-block; min-width: 76px; padding: 6px 10px; border-radius: 99px; text-align: center; color: #fff; font-weight: 900; background: #c5222b; }
+      .badge.good { background: #2563eb; }
+      .dept-grid { height: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(90px, 1fr); gap: 12px; overflow: auto; }
+      .dept-card, .product-card { border: 1px solid rgba(214,195,190,.18); border-radius: 14px; background: rgba(29,21,25,.82); padding: 16px; min-width: 0; }
+      .dept-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+      .bar { height: 8px; margin-top: 12px; background: #ffffff1b; border-radius: 99px; overflow: hidden; }
+      .bar i { display: block; height: 100%; background: linear-gradient(90deg, #d92722, #f4ca47); border-radius: inherit; }
+      .receipt-table .row { grid-template-columns: 2fr 1fr 1fr 1.1fr 1.3fr 1fr; }
+      .product-grid { height: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(4, minmax(0, 1fr)); gap: 10px; }
+      .product-card { display: grid; grid-template-rows: minmax(0, 1fr) auto; text-align: center; gap: 8px; overflow: hidden; }
+      .product-card img { width: 100%; height: 100%; object-fit: contain; min-height: 0; background: #fff; border-radius: 9px; }
+      .product-card strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .media { height: 100%; display: grid; place-items: center; }
+      .media img { width: 100%; height: 100%; object-fit: contain; }
+      .media iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+      .empty, .loading, .error { height: 100%; display: grid; place-items: center; text-align: center; color: #dfd2d1; padding: 2rem; font-size: clamp(18px, 1.6vw, 28px); }
+      .error { color: #ffb3aa; }
+      .footer { display: flex; align-items: center; justify-content: space-between; color: #94a3b8; font-size: clamp(10px, .72vw, 13px); }
+      .dots { display: flex; gap: 6px; }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(214,195,190,.34); }
+      .dot.active { width: 25px; border-radius: 99px; background: #e1261c; box-shadow: 0 0 12px #e1261c99; }
+      .transition { position: absolute; inset: 0; z-index: 2; display: grid; place-items: center; overflow: hidden; background: #21171a; }
+      .transition::before { content: ''; position: absolute; width: 150vmax; height: 150vmax; border-radius: 50%; background: radial-gradient(circle at 50% 48%, #ed3828, #b51f1d 72%, #741f25); box-shadow: 0 0 0 2px #ffda7db8, 0 0 48px 14px #ffbf865f; animation: spotlight 1.5s cubic-bezier(.2,.72,.18,1) both; }
+      .transition-copy { position: relative; text-align: center; animation: copy 1.5s ease both; }
+      .transition-copy strong { display: block; color: #fff; font-size: clamp(28px, 3vw, 54px); letter-spacing: .18em; }
+      .transition-copy span { display: block; margin-top: 12px; font-size: clamp(22px, 3vw, 42px); font-weight: 900; }
+      @keyframes spotlight { from { transform: scale(.015); } to { transform: scale(1); } }
+      @keyframes copy { 0%, 25% { opacity: 0; transform: translateY(10px); } 60%, 100% { opacity: 1; transform: none; } }
+      .welcome-card { height: 100%; display: grid; place-items: center; overflow: hidden; border-radius: 16px; border: 1px solid rgba(214,195,190,.16); background: rgba(29,21,25,.72); text-align: center; }
+      .welcome-store { color: #d6ad18; font-size: 12px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; margin-bottom: 16px; }
+      .welcome-title { color: #f8fafc; font-size: clamp(28px, 4.2vw, 54px); font-weight: 800; letter-spacing: -.035em; line-height: 1.12; text-transform: uppercase; }
+      .welcome-title span { color: #e7c84b; }
+      .welcome-rule { width: 40px; height: 2px; margin: 22px auto; border-radius: 99px; background: #d6ad18; }
+      .welcome-date { color: #e2e8f0; font-size: 14px; font-weight: 600; letter-spacing: .04em; }
+      .welcome-updated { color: #94a3b8; font-size: 11px; font-weight: 600; margin-top: 14px; }
+      @media (max-width: 1100px) { .ranking-layout { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); } .ranking-row { grid-template-columns: 18px minmax(0, 1.7fr) minmax(0, .8fr) minmax(0, .6fr) minmax(0, .8fr) minmax(0, .8fr) minmax(34px, .8fr); } .cell { font-size: 9px; } .cell.name { font-size: 10px; } .leader-name { font-size: 8px; } .leader-sales { display: none; } }
+      @media (max-width: 800px) { .shell { grid-template-rows: 10vh minmax(0, 1fr) 28px; padding: 0 12px 8px; } .top { margin: 0 -12px; padding: 0 12px; } .dept-grid { grid-template-columns: 1fr; } .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(8, minmax(90px, 1fr)); overflow: auto; } .ranking-layout { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } .ranking-row { grid-template-columns: 18px minmax(0, 1.7fr) minmax(0, .8fr) minmax(0, .6fr) minmax(0, .8fr) minmax(0, .8fr) minmax(34px, .8fr); } .row { grid-template-columns: 8% 1.5fr .9fr .8fr 1fr; gap: 5px; } .receipt-table .row { grid-template-columns: 1.5fr .8fr .8fr 1fr 1fr .8fr; gap: 5px; } }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="top">
+        <div class="brand"><span class="brand-mark"></span><span class="brand-name">AZKO</span></div>
+        <div class="meta"><strong id="date">Memuat tanggal...</strong><br><span id="updated">Menghubungkan ke sumber data...</span></div>
+      </header>
+      <section class="frame" id="frame"><div class="loading">Memuat TV Display...</div></section>
+      <footer class="footer"><span id="slide-label">TEMPLATE TV DISPLAY</span><div class="dots" id="dots"></div><span>Data diperbarui otomatis</span></footer>
+    </main>
+    <script>
+      const state = { data: null, slides: [], index: 0, timer: null, refreshTimer: null }
+
+      function money(value) {
+        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value) || 0)
+      }
+      function number(value) { return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value) || 0) }
+      function safe(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
+      }
+      function empty(message) { return '<div class="empty">' + safe(message) + '</div>' }
+      function achievementClass(value) {
+        const achievement = Number(value) || 0
+        if (achievement >= 100) return 'blue'
+        if (achievement >= 95) return 'green'
+        if (achievement >= 90) return 'yellow'
+        if (achievement >= 80) return 'pink'
+        return ''
+      }
+      function rankingMarkup(rows, fullRows) {
+        if (!rows || !rows.length) return empty('Belum ada data penjualan untuk periode ini.')
+        const sorted = [...rows].sort((a, b) => (a.rank || 0) - (b.rank || 0))
+        const allRanked = [...(fullRows || rows)].sort((a, b) => (a.rank || 0) - (b.rank || 0))
+        const topTen = allRanked.slice(0, 10)
+        const bottomTen = allRanked.slice(-10).map((row, index) => ({ ...row, actualRank: row.rank || allRanked.length - 9 + index }))
+        const top = allRanked[0]
+        const bottom = allRanked[allRanked.length - 1]
+        const rankBadge = (row, index, isBottom) => '<span class="rank ' + (isBottom ? 'bottom' : row.rank === 1 || index === 0 ? 'top' : row.rank === 2 || index === 1 ? 'second' : '') + '">' + number(isBottom ? row.actualRank : row.rank || index + 1) + '</span>'
+        const leaderRows = (items, isBottom) => items.map((row, index) => '<div class="leader-row">' + rankBadge(row, index, isBottom) + '<span class="leader-name">' + safe(row.nama) + '</span><span class="leader-sales">' + money(row.value) + '</span><span class="leader-ach ' + achievementClass(row.achievement) + '">' + (Number(row.achievement) || 0).toFixed(1) + '%</span></div>').join('')
+        const mainRows = sorted.slice(0, 20).map(row => '<div class="ranking-row">' +
+          '<span class="rank ' + (row.rank === 1 ? 'top' : row.rank === 2 ? 'second' : '') + '">' + number(row.rank) + '</span>' +
+          '<span class="cell name">' + safe(row.nama) + '</span>' +
+          '<span class="cell">' + safe(row.jobTitle || '—') + '</span>' +
+          '<span class="cell protection">' + number(row.protectionQty || 0) + '</span>' +
+          '<span class="cell right">' + money(row.target) + '</span>' +
+          '<span class="cell right">' + money(row.value) + '</span>' +
+          '<span class="achievement ' + achievementClass(row.achievement) + '">' + (Number(row.achievement) || 0).toFixed(1) + '%</span></div>').join('')
+        const blankRows = Array.from({ length: Math.max(0, 20 - sorted.length) }, () => '<div class="ranking-row" aria-hidden="true"></div>').join('')
+        return '<div class="ranking-layout"><section class="ranking-main">' +
+          '<div class="summary-cards"><article class="summary"><div class="summary-label">Top Performance</div><div class="summary-name">' + safe(top ? top.nama : '—') + '</div><div class="summary-value">' + (top ? (Number(top.achievement) || 0).toFixed(1) : '0.0') + '%</div></article>' +
+          '<article class="summary bottom"><div class="summary-label">Bottom Performance</div><div class="summary-name">' + safe(bottom ? bottom.nama : '—') + '</div><div class="summary-value">' + (bottom ? (Number(bottom.achievement) || 0).toFixed(1) : '0.0') + '%</div></article></div>' +
+          '<div class="ranking-table"><div class="ranking-row head"><span>#</span><span>Nama</span><span>Job</span><span class="right">Proteksi</span><span class="right">Target</span><span class="right">Sales</span><span class="right">Ach</span></div>' + mainRows + blankRows + '</div></section>' +
+          '<aside class="leaderboards"><section class="leader-panel"><div class="leader-title">TOP 10 PERFORMANCE</div><div class="leader-rows">' + leaderRows(topTen, false) + '</div></section>' +
+          '<section class="leader-panel bottom"><div class="leader-title">BOTTOM 10 PERFORMANCE</div><div class="leader-rows">' + leaderRows(bottomTen, true) + '</div></section></aside></div>'
+      }
+      function slideMarkup(slide) {
+        if (slide.type === 'ranking') return rankingMarkup(slide.rows, slide.fullRows)
+        if (slide.type === 'departments') {
+          if (!slide.rows.length) return empty('Tab TV DEPARTEMEN belum berisi data.')
+          return '<div class="dept-grid">' + slide.rows.map(row => '<article class="dept-card"><div><strong>' + safe(row.name) + '</strong><div class="subtle">' + safe(row.zone) + '</div><div class="bar"><i style="width:' + Math.min(100, Math.max(0, row.mtdAchievement)) + '%"></i></div><div class="subtle" style="margin-top:8px">SBD ' + money(row.today) + ' · ' + row.todayAchievement.toFixed(1) + '%</div></div><div class="right"><span class="badge ' + (row.mtdAchievement >= 100 ? 'good' : '') + '">' + row.mtdAchievement.toFixed(1) + '%</span><div class="subtle" style="margin-top:8px">MTD ' + money(row.mtd) + '</div></div></article>').join('') + '</div>'
+        }
+        if (slide.type === 'receipts') {
+          if (!slide.rows.length) return empty('Tab TV RECEIPT belum berisi data.')
+          return '<div class="table receipt-table"><div class="row head"><span>Nama</span><span class="right">Receipt</span><span class="right">Target</span><span class="right">Progress</span><span class="right">Total Value</span><span class="right">Status</span></div><div class="rows">' + slide.rows.slice(0, 14).map(row => '<div class="row"><span class="name">' + safe(row.nama) + '</span><span class="right">' + number(row.qualifyingReceipt) + '</span><span class="right">' + number(row.targetMinimalCair) + '</span><span class="right">' + row.progress.toFixed(0) + '%</span><span class="right">' + money(row.totalValueReceipt) + '</span><span class="right"><span class="badge ' + (/eligible/i.test(row.status) && !/non/i.test(row.status) ? 'good' : '') + '">' + safe(row.status || '—') + '</span></span></div>').join('') + '</div></div>'
+        }
+        if (slide.type === 'products') {
+          if (!slide.rows.length) return empty('Belum ada produk yang memenuhi target kuantitas toko.')
+          return '<div class="product-grid">' + slide.rows.slice(0, 16).map(row => '<article class="product-card">' + (row.imageUrl ? '<img src="' + safe(row.imageUrl) + '" alt="' + safe(row.name) + '">' : '<div class="empty">AZKO</div>') + '<strong>' + safe(row.name) + '<br><small class="subtle">Qty ' + number(row.actualQty) + ' / ' + number(row.targetQty) + '</small></strong></article>').join('') + '</div>'
+        }
+        if (slide.type === 'media') {
+          const media = slide.media
+          return '<div class="media">' + (media.mimeType === 'application/pdf'
+            ? '<iframe title="' + safe(media.name) + '" src="' + safe(media.url) + '"></iframe>'
+            : '<img src="' + safe(media.url) + '" alt="' + safe(media.name) + '">') + '</div>'
+        }
+        return empty('Slide belum tersedia.')
+      }
+      function createSlides(data) {
+        const slides = [{ type: 'welcome', title: 'Performance Sales & Insentif', subtitle: 'Selamat datang di AZKO' }]
+        ;[['today', 'PERFORMANCE TODAY'], ['mtd', 'PERFORMANCE MONTH TO DATE'], ['fullMonth', 'PERFORMANCE FULL MONTH']].forEach(([key, title]) => {
+          const rows = data.rankings[key] || []
+          const pageSize = 20
+          for (let start = 0; start < rows.length; start += pageSize) slides.push({ type: 'ranking', title: title, page: Math.floor(start / pageSize) + 1, rows: rows.slice(start, start + pageSize), fullRows: rows })
+          if (!rows.length) slides.push({ type: 'ranking', title: title, page: 1, rows: [], fullRows: [] })
+        })
+        slides.push({ type: 'departments', title: 'PERFORMANCE DEPARTEMEN', subtitle: 'SBD vs MTD', rows: data.departments || [] })
+        slides.push({ type: 'receipts', title: 'INSENTIF RECEIPT', rows: data.receipts || [] })
+        slides.push({ type: 'products', title: 'INSENTIF PRODUK', rows: data.products || [] })
+        ;(data.media || []).forEach(media => slides.push({ type: 'media', title: media.name, subtitle: 'MEDIA TV', media: media }))
+        return slides
+      }
+      function render() {
+        if (!state.slides.length) return
+        const slide = state.slides[state.index]
+        const frame = document.getElementById('frame')
+        if (slide.type === 'welcome') {
+          frame.innerHTML = '<div class="welcome-card"><div><div class="welcome-store">AZKO ROYAL PLAZA SURABAYA</div><div class="welcome-title">Performance Sales ID<br><span>&amp; Insentif</span></div><div class="welcome-rule"></div><div class="welcome-date">' + safe(document.getElementById('date').textContent) + '</div><div class="welcome-updated">Terakhir diperbarui: ' + safe(document.getElementById('updated').textContent.replace(/^Diperbarui /, '')) + '</div></div></div>'
+        } else {
+          frame.innerHTML = '<div class="slide"><div class="title-row"><div><div class="eyebrow">' + safe(slide.page ? 'HALAMAN ' + slide.page : slide.subtitle || 'AZKO PERFORMANCE') + '</div><h1>' + safe(slide.title) + '</h1></div><span class="slide-count">' + (state.index + 1) + ' / ' + state.slides.length + '</span></div><div class="content">' + slideMarkup(slide) + '</div></div>'
+        }
+        document.getElementById('slide-label').textContent = slide.title
+        document.getElementById('dots').innerHTML = state.slides.map((_, index) => '<i class="dot ' + (index === state.index ? 'active' : '') + '"></i>').join('')
+        window.clearTimeout(state.timer)
+        const duration = slide.type === 'products' ? 12000
+          : slide.type === 'receipts' ? 5000
+            : slide.type === 'welcome' || slide.type === 'departments' || slide.type === 'ranking' && slide.title === 'PERFORMANCE FULL MONTH' ? 7000
+              : Number(state.data.slideSeconds) || 10000
+        state.timer = window.setTimeout(advance, duration)
+      }
+      function advance() {
+        const next = (state.index + 1) % state.slides.length
+        if (state.slides[next].type !== 'welcome' && state.slides[state.index].title !== state.slides[next].title) {
+          const frame = document.getElementById('frame')
+          frame.insertAdjacentHTML('beforeend', '<div class="transition"><div class="transition-copy"><strong>AZKO</strong><span>' + safe(state.slides[next].title) + '</span></div></div>')
+          window.setTimeout(() => { state.index = next; render() }, 1500)
+        } else { state.index = next; render() }
+      }
+      function loadData() {
+        google.script.run
+          .withSuccessHandler(data => {
+            state.data = data
+            const keepTitle = state.slides[state.index] && state.slides[state.index].title
+            state.slides = createSlides(data)
+            const sameIndex = state.slides.findIndex(slide => slide.title === keepTitle)
+            state.index = sameIndex >= 0 ? sameIndex : Math.min(state.index, state.slides.length - 1)
+            document.getElementById('date').textContent = data.todayLabel
+              ? new Date(data.todayLabel + 'T12:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+              : ''
+            document.getElementById('updated').textContent = 'Diperbarui ' + new Date(data.generatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
+            render()
+            if (state.refreshTimer === null) {
+              state.refreshTimer = window.setInterval(loadData, (Number(data.refreshSeconds) || 60) * 1000)
+            }
+          })
+          .withFailureHandler(error => {
+            document.getElementById('frame').innerHTML = '<div class="error">' + safe(error && error.message ? error.message : error) + '</div>'
+            document.getElementById('updated').textContent = 'Gagal memuat data'
+          })
+          .getTvDisplayData()
+      }
+      loadData()
+      document.addEventListener('keydown', event => {
+        if (event.key === 'ArrowRight') advance()
+        if (event.key === 'ArrowLeft') { state.index = (state.index - 1 + state.slides.length) % state.slides.length; render() }
+        if (event.key.toLowerCase() === 'f') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()
+      })
+    </script>
+  </body>
+</html>

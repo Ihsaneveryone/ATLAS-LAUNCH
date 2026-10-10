@@ -148,6 +148,24 @@ describe('parseIncentiveSheets', () => {
     })
   })
 
+  it('uses actual quantity rather than target quantity when aggregating article sales', () => {
+    const result = parseIncentiveSheets({
+      'INSENTIF BOOMSALE': [
+        ['Artikel', 'Departemen', 'Nama Produk', 'Harga E', 'Harga F', 'Persentase', 'Nominal', 'Target Qty', 'Remark', 'Kategori', 'Gambar'],
+        ['', 'Electrical', 'A400', 'Blender', '450000', '3', '', '', '', '', '', '', '', '6', '', 'Traffic Puller', ''],
+      ],
+      'COPAS S2': [
+        ['NIK', 'Nama', 'Tanggal', 'Receipt', 'Artikel', 'Deskripsi', 'Kode', 'Target Qty', 'Qty Actual'],
+        ['100001', 'SELLER ONE', '10-10-2026', 'R001', 'A400', 'Blender', 'AP', '99', '2'],
+        ['100002', 'SELLER TWO', '10-10-2026', 'R002', 'A400', 'Blender', 'AP', '99', '3'],
+      ],
+    })
+
+    expect(result.sales.rows).toHaveLength(2)
+    expect(result.sales.rows.map(row => row.qty)).toEqual([2, 3])
+    expect(result.boomsale.rows[0].actualQty).toBe(5)
+  })
+
   it('parses syarat insentif rows with target qty, article list and acv from compare sheet', () => {
     const sheets = {
       'SYARAT INSENTIF': [
