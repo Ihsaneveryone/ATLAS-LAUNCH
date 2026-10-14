@@ -37,6 +37,7 @@ const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: s
 
 const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 const DEPT_TREND_INTERVAL_MS = 3000
+const TV_DATA_SLIDE_DURATION_MS = 60_000
 const TV_DRIVE_TIKTOK_MEDIA_ID = '1no3gMaS3Z_dPO2dAU1t7QdZZwgUgGUz4'
 const DEFAULT_TV_TIKTOK_POST_ID = '7694569713191505172'
 const TV_SOCIAL_AUDIO_STORAGE_KEY = 'atlas-tv-social-audio-enabled'
@@ -642,18 +643,19 @@ function TVSlideshow({
   useEffect(() => {
     if (transitionSlide !== null || slides.length === 0) return
 
-    const activeSlideKey = slides[activeSlide]?.key
-    if (activeSlideKey === 'dept') return
+    const currentSlide = slides[activeSlide]
+    const activeSlideKey = currentSlide?.key
+    if (activeSlideKey === 'welcome') {
+      const timer = window.setTimeout(advanceToNextSlide, 7000)
+      return () => window.clearTimeout(timer)
+    }
 
-    const activeMedia = slides[activeSlide]?.media
+    const activeMedia = currentSlide?.media
     const isVideoSlide = activeMedia?.mimeType.startsWith('video/') ?? false
     if (isVideoSlide) return
 
-    const isProductSlide = activeSlideKey?.startsWith('incentive-products-') ?? false
-    const isReceiptSlide = activeSlideKey?.startsWith('receipt-') ?? false
-    const isMediaSlide = slides[activeSlide]?.key.startsWith('media-') ?? false
-    const isTodayOrMtdSlide = activeSlideKey?.startsWith('today-') || activeSlideKey?.startsWith('mtd-')
-    const duration = isProductSlide ? 12000 : isReceiptSlide ? 5000 : isMediaSlide || isTodayOrMtdSlide ? 10000 : 7000
+    const isMediaSlide = activeSlideKey?.startsWith('media-') ?? false
+    const duration = isMediaSlide ? 10000 : TV_DATA_SLIDE_DURATION_MS
     const timer = window.setTimeout(() => {
       advanceToNextSlide()
     }, duration)
@@ -681,21 +683,14 @@ function TVSlideshow({
 
   useEffect(() => {
     if (slides[activeSlide]?.key !== 'dept') return
-    if (deptZoneGroups.length === 0) {
-      const timer = window.setTimeout(advanceToNextSlide, 7000)
-      return () => window.clearTimeout(timer)
-    }
+    if (deptZoneGroups.length === 0) return
 
     const currentZoneIndex = deptZoneIndex % deptZoneGroups.length
     const currentZone = deptZoneGroups[currentZoneIndex]
     const trendIndexes = currentZone?.trendIndexes ?? []
     if (trendIndexes.length === 0) {
       const timer = window.setTimeout(() => {
-        if (currentZoneIndex === deptZoneGroups.length - 1) {
-          advanceToNextSlide()
-          return
-        }
-        const nextZoneIndex = currentZoneIndex + 1
+        const nextZoneIndex = (currentZoneIndex + 1) % deptZoneGroups.length
         setDeptZoneIndex(nextZoneIndex)
         setDeptTrendIndex(deptZoneGroups[nextZoneIndex]?.trendIndexes[0] ?? 0)
       }, DEPT_TREND_INTERVAL_MS)
@@ -714,19 +709,14 @@ function TVSlideshow({
         return
       }
 
-      if (currentZoneIndex === deptZoneGroups.length - 1) {
-        advanceToNextSlide()
-        return
-      }
-
-      const nextZoneIndex = currentZoneIndex + 1
+      const nextZoneIndex = (currentZoneIndex + 1) % deptZoneGroups.length
       const nextZone = deptZoneGroups[nextZoneIndex]
       setDeptZoneIndex(nextZoneIndex)
       setDeptTrendIndex(nextZone?.trendIndexes[0] ?? 0)
     }, DEPT_TREND_INTERVAL_MS)
 
     return () => window.clearTimeout(timer)
-  }, [activeSlide, slides.length, deptZoneIndex, deptTrendIndex, deptTrend?.labels.length, deptSbd, deptMtd, advanceToNextSlide])
+  }, [activeSlide, slides.length, deptZoneIndex, deptTrendIndex, deptTrend?.labels.length, deptSbd, deptMtd])
 
   const activeTrendIndex = Math.min(deptTrendIndex, Math.max((deptTrend?.labels.length ?? 1) - 1, 0))
   const activeTrendLabel = deptTrend?.labels[activeTrendIndex] ?? 'Dept'

@@ -214,12 +214,11 @@
         document.getElementById('slide-label').textContent = slide.title
         document.getElementById('dots').innerHTML = state.slides.map((_, index) => '<i class="dot ' + (index === state.index ? 'active' : '') + '"></i>').join('')
         window.clearTimeout(state.timer)
-        const duration = slide.type === 'products' ? 12000
+        const duration = slide.type === 'welcome' ? 7000
           : slide.type === 'media' && slide.media && (slide.media.type === 'video' || slide.media.mimeType.indexOf('video/') === 0)
             ? Number(state.data.videoSlideSeconds) || 60000
-          : slide.type === 'receipts' ? 5000
-            : slide.type === 'welcome' || slide.type === 'departments' || slide.type === 'ranking' && slide.title === 'PERFORMANCE FULL MONTH' ? 7000
-              : Number(state.data.slideSeconds) || 10000
+          : slide.type === 'media' ? 10000
+            : Number(state.data.slideSeconds) || 60000
         state.timer = window.setTimeout(advance, duration)
       }
       function advance() {
