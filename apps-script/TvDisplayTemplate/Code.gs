@@ -3,7 +3,7 @@ const TV_CONFIG = {
   mediaFolderId: '',
   timezone: 'Asia/Jakarta',
   refreshSeconds: 60,
-  slideSeconds: 60000,
+  slideSeconds: 45000,
   videoSlideSeconds: 60000,
   sheetNames: {
     sales: 'COPAS S2',
