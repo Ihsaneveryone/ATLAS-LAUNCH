@@ -535,10 +535,11 @@ function TVSlideshow({
   }
   const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
-  const topTen = rankedList.slice(0, 10)
-  const bottomTen = [...rankedList].slice(-10).map((row, index) => ({
+  const leaderboardSize = rankedList.length < 20 ? 5 : 10
+  const topTen = rankedList.slice(0, leaderboardSize)
+  const bottomTen = [...rankedList].slice(-leaderboardSize).map((row, index) => ({
     ...row,
-    actualRank: row.rank ?? rankedList.length - 9 + index,
+    actualRank: row.rank ?? rankedList.length - leaderboardSize + index + 1,
   }))
   const bottomTenRankSet = new Set(bottomTen.map((row) => row.rank ?? row.actualRank ?? 0))
   const topLeader = rankedList[0]
@@ -1314,9 +1315,9 @@ function TVSlideshow({
                 <div style={{ display: 'grid', gap: 6, gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', height: '100%', minHeight: 0 }}>
                   <div style={{ background: 'linear-gradient(180deg, rgba(242,197,17,0.18), rgba(48,34,37,0.88))', border: '2px solid rgba(248,223,131,0.9)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(242,197,17,0.18)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '3px 5px 5px', borderBottom: '2px solid rgba(248,223,131,0.9)', minWidth: 0 }}>
-                      <div style={{ color: '#fff6c7', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>LEADERBOARD</div>
+                      <div style={{ color: '#fff6c7', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>TOP {topTen.length} PERFORMANCE</div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateRows: `repeat(${Math.max(topTen.length, 1)}, minmax(0, 1fr))`, gap: 3, minHeight: 0 }}>
                       {topTen.map((row, index) => (
                         <div key={`leader-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, background: 'rgba(29,21,25,0.62)', minHeight: 0, overflow: 'hidden' }}>
                           <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getRankBadgeStyle(row.rank ?? index + 1) }}>{row.rank ?? index + 1}</div>
@@ -1332,9 +1333,9 @@ function TVSlideshow({
 
                   <div style={{ background: 'linear-gradient(180deg, rgba(225,38,28,0.2), rgba(48,34,37,0.9))', border: '2px solid rgba(255,145,132,0.9)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(225,38,28,0.18)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '3px 5px 5px', borderBottom: '2px solid rgba(255,145,132,0.9)', minWidth: 0 }}>
-                      <div style={{ color: '#ffe1dc', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>BOTTOM 10 PERFORMANCE</div>
+                      <div style={{ color: '#ffe1dc', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>BOTTOM {bottomTen.length} PERFORMANCE</div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateRows: 'repeat(10, minmax(0, 1fr))', gap: 3, minHeight: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateRows: `repeat(${Math.max(bottomTen.length, 1)}, minmax(0, 1fr))`, gap: 3, minHeight: 0 }}>
                       {bottomTen.map(row => (
                         <div key={`bottom-${row.nama}`} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '1px 4px', border: '1px solid rgba(245,220,205,0.3)', borderRadius: 6, background: 'rgba(29,21,25,0.62)', minHeight: 0, overflow: 'hidden' }}>
                           <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 5, display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 'clamp(9px, 0.68vw, 11px)', ...getBottomRankBadgeStyle(row.actualRank) }}>{row.actualRank}</div>
