@@ -38,6 +38,7 @@ const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: s
 const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 const DEPT_TREND_INTERVAL_MS = 3000
 const TV_DATA_SLIDE_DURATION_MS = 45_000
+const TV_SUMMARY_SLIDE_DURATION_MS = 20_000
 const TV_DRIVE_TIKTOK_MEDIA_ID = '1no3gMaS3Z_dPO2dAU1t7QdZZwgUgGUz4'
 const DEFAULT_TV_TIKTOK_POST_ID = '7694569713191505172'
 const TV_SOCIAL_AUDIO_STORAGE_KEY = 'atlas-tv-social-audio-enabled'
@@ -753,7 +754,11 @@ function TVSlideshow({
     if (isVideoSlide) return
 
     const isMediaSlide = activeSlideKey?.startsWith('media-') ?? false
-    const duration = isMediaSlide ? 10000 : TV_DATA_SLIDE_DURATION_MS
+    const duration = isMediaSlide
+      ? 10000
+      : activeSlideKey?.endsWith('-summary')
+        ? TV_SUMMARY_SLIDE_DURATION_MS
+        : TV_DATA_SLIDE_DURATION_MS
     const timer = window.setTimeout(() => {
       advanceToNextSlide()
     }, duration)
@@ -992,7 +997,7 @@ function TVSlideshow({
             ) : active.key.endsWith('-summary') ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'stretch', gap: 'clamp(12px, 2vw, 28px)', width: '100%', maxWidth: 1500, height: '100%', minHeight: 0, margin: '0 auto', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
                 {[
-                  { label: 'BEST PERFORMER', position: 'POSISI #1', employee: topLeader, color: '#f8df83', border: 'rgba(248,223,131,0.82)', background: 'linear-gradient(145deg, rgba(126,91,26,0.72), rgba(38,27,31,0.94))' },
+                  { label: 'BEST PERFORMER', position: 'RANK #1', employee: topLeader, color: '#f8df83', border: 'rgba(248,223,131,0.82)', background: 'linear-gradient(145deg, rgba(126,91,26,0.72), rgba(38,27,31,0.94))' },
                   { label: 'BOTTOM PERFORMER', position: `RANK #${bottomLeader?.rank ?? '—'}`, employee: bottomLeader, color: '#fecaca', border: 'rgba(255,145,132,0.82)', background: 'linear-gradient(145deg, rgba(128,43,39,0.72), rgba(38,27,31,0.94))' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, minHeight: 0, padding: 'clamp(18px, 3vw, 42px)', border: `2px solid ${item.border}`, borderRadius: 20, background: item.background, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 44px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
