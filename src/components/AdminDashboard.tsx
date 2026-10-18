@@ -312,6 +312,29 @@ function TVSlideshow({
     return pages
   }
 
+  const classifyJobTitle = (jobTitle?: string): 'advisor' | 'supervisor' | 'support' | null => {
+    const title = (jobTitle ?? '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim()
+    if (/\b(ADVISOR|ADV)\b/.test(title) || title === 'SALES') return 'advisor'
+    if (/\b(SPV|SUPERVISOR)\b/.test(title)) return 'supervisor'
+    if (/\b(ONLINE|CS|CCR|CUSTOMER SERVICE|CASHIER|KASIR|INTERN)\b/.test(title)) return 'support'
+    return null
+  }
+
+  const rankingByJobGroup = (rows: RankingRow[]) => {
+    const groups = [
+      { key: 'advisor', label: 'ADVISOR' },
+      { key: 'supervisor', label: 'SUPERVISOR' },
+      { key: 'support', label: 'SUPPORT' },
+    ] as const
+    const grouped = groups.map(group => ({
+      ...group,
+      rows: rows.filter(row => classifyJobTitle(row.jobTitle) === group.key),
+    })).filter(group => group.rows.length > 0)
+    const otherRows = rows.filter(row => classifyJobTitle(row.jobTitle) === null)
+    if (otherRows.length) grouped.push({ key: 'other', label: 'OTHER', rows: otherRows })
+    return grouped
+  }
+
   const chunkProducts = (rows: IncentiveBoomsaleRow[], size = 16) => {
     if (!rows.length) return [[]] as IncentiveBoomsaleRow[][]
     const pages: IncentiveBoomsaleRow[][] = []
@@ -337,19 +360,43 @@ function TVSlideshow({
     media?: TvMediaSlide
   }> = [
     ...[
-      { key: 'today' as const, label: 'PERFORMANCE TODAY', subtitle: '', ranking: chunkRanking(todayRanking) },
-      { key: 'mtd' as const, label: 'PERFORMANCE MONTH TO DATE (MTD)', subtitle: '', ranking: chunkRanking(mtdRanking) },
-      { key: 'fullmonth' as const, label: 'PERFORMANCE FULL MONTH ( SATU BULAN)', subtitle: '', ranking: chunkRanking(fullMonthRanking) },
-    ].filter(group => visibleSlides[group.key]).flatMap((group) =>
-      group.ranking.map((page, idx) => ({
-        key: `${group.key}-${idx}`,
-        label: group.label,
-        subtitle: group.ranking.length > 1 ? `${group.subtitle} • Hal ${idx + 1}/${group.ranking.length}` : group.subtitle,
-        pageNumber: `${idx + 1}/${group.ranking.length}`,
-        ranking: page,
-        fullRanking: group.ranking.flat(),
-      }))
-    ),
+      { key: 'today' as const, label: 'PERFORMANCE TODAY', rows: todayRanking },
+      { key: 'mtd' as const, label: 'PERFORMANCE MONTH TO DATE (MTD)', rows: mtdRanking },
+      { key: 'fullmonth' as const, label: 'PERFORMANCE FULL MONTH ( SATU BULAN)', rows: fullMonthRanking },
+    ].filter(group => visibleSlides[group.key]).flatMap(periodGroup => {
+      if (periodGroup.rows.length === 0) {
+        return [{
+          key: `${periodGroup.key}-empty`,
+          label: periodGroup.label,
+          subtitle: 'BELUM ADA DATA',
+          ranking: [] as RankingRow[],
+          fullRanking: [] as RankingRow[],
+        }]
+      }
+
+      return rankingByJobGroup(periodGroup.rows).flatMap(jobGroup => {
+        const rankedRows = jobGroup.rows.map((row, index) => ({ ...row, rank: index + 1 }))
+        const pages = chunkRanking(rankedRows)
+        const label = `${jobGroup.label} · ${periodGroup.label}`
+        return [
+          {
+            key: `${periodGroup.key}-${jobGroup.key}-summary`,
+            label,
+            subtitle: 'TOP & BOTTOM',
+            ranking: [] as RankingRow[],
+            fullRanking: rankedRows,
+          },
+          ...pages.map((page, index) => ({
+            key: `${periodGroup.key}-${jobGroup.key}-ranking-${index}`,
+            label,
+            subtitle: pages.length > 1 ? `RANKING • Hal ${index + 1}/${pages.length}` : 'RANKING',
+            pageNumber: `${index + 1}/${pages.length}`,
+            ranking: page,
+            fullRanking: rankedRows,
+          })),
+        ]
+      })
+    }),
     ...(visibleSlides.dept ? [{ key: 'dept', label: 'PERFORMANCE DEPARTEMEN', subtitle: 'SBD vs MTD', ranking: [] as Array<{ nama: string; achievement: number; value: number; rank?: number }> }] : []),
     ...(visibleSlides.receipt ? receiptPages.map((rows, index) => ({
       key: `receipt-${index}`,
@@ -882,6 +929,46 @@ function TVSlideshow({
                       ? `${sidUpdatedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Jakarta' })} WIB`
                       : 'Belum ada perubahan data SID terdeteksi'}
                   </div>
+                </div>
+              </div>
+            ) : active.key.endsWith('-summary') ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'stretch', gap: 'clamp(12px, 2vw, 28px)', width: '100%', maxWidth: 1500, height: '100%', minHeight: 0, margin: '0 auto', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
+                {[
+                  { label: 'TOP PERFORMER', position: 'POSISI #1', employee: topLeader, color: '#f8df83', border: 'rgba(248,223,131,0.82)', background: 'linear-gradient(145deg, rgba(126,91,26,0.72), rgba(38,27,31,0.94))' },
+                  { label: 'BOTTOM PERFORMER', position: `RANK #${bottomLeader?.rank ?? '—'}`, employee: bottomLeader, color: '#fecaca', border: 'rgba(255,145,132,0.82)', background: 'linear-gradient(145deg, rgba(128,43,39,0.72), rgba(38,27,31,0.94))' },
+                ].map(item => (
+                  <div key={item.label} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, minHeight: 0, padding: 'clamp(18px, 3vw, 42px)', border: `2px solid ${item.border}`, borderRadius: 20, background: item.background, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 44px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 'clamp(12px, 1.8vh, 22px)', borderBottom: `1px solid ${item.border}` }}>
+                      <div style={{ color: item.color, fontSize: 'clamp(16px, 1.6vw, 26px)', fontWeight: 900 }}>{item.label}</div>
+                      <div style={{ flexShrink: 0, padding: '7px 12px', border: `1px solid ${item.border}`, borderRadius: 7, color: item.color, background: 'rgba(20,15,17,0.32)', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900 }}>{item.position}</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(130px, 0.7fr)', alignItems: 'center', gap: 16, flex: 1, minHeight: 0, padding: 'clamp(16px, 3vh, 34px) 0' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: '#f8fafc', fontSize: 'clamp(24px, 3.2vw, 52px)', fontWeight: 900, lineHeight: 1.08, overflowWrap: 'anywhere' }}>{item.employee?.nama ?? '—'}</div>
+                        <div style={{ color: '#cbd5e1', fontSize: 'clamp(13px, 1.2vw, 19px)', fontWeight: 700, marginTop: 10 }}>{item.employee?.jobTitle || 'Jabatan tidak tersedia'}</div>
+                      </div>
+                      <div style={{ minWidth: 0, textAlign: 'right' }}>
+                        <div style={{ color: '#cbd5e1', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800 }}>ACHIEVEMENT</div>
+                        <div style={{ color: item.color, fontSize: 'clamp(32px, 5.2vw, 72px)', fontWeight: 900, lineHeight: 1.05, whiteSpace: 'nowrap' }}>{item.employee?.achievement.toFixed(1) ?? '0.0'}%</div>
+                      </div>
+                    </div>
+                    <div style={{ borderTop: `1px solid ${item.border}`, paddingTop: 'clamp(12px, 1.8vh, 20px)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+                        <div style={{ color: '#cbd5e1', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800 }}>TOTAL SALES</div>
+                        <div style={{ color: '#f8fafc', fontSize: 'clamp(15px, 1.5vw, 24px)', fontWeight: 900, textAlign: 'right' }}>{formatRupiah(item.employee?.value ?? 0)}</div>
+                      </div>
+                      <div style={{ height: 7, overflow: 'hidden', borderRadius: 99, background: 'rgba(255,255,255,0.14)' }}>
+                        <div style={{ width: `${Math.min(Math.max(item.employee?.achievement ?? 0, 0), 100)}%`, height: '100%', borderRadius: 99, background: item.color, boxShadow: `0 0 12px ${item.color}80` }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : active.key.endsWith('-empty') ? (
+              <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minHeight: 0, borderRadius: 16, background: 'rgba(29,21,25,0.78)', color: '#f8fafc', textAlign: 'center' }}>
+                <div>
+                  <div style={{ color: '#f8df83', fontSize: 'clamp(20px, 2.4vw, 36px)', fontWeight: 900, letterSpacing: '0.08em' }}>BELUM ADA DATA</div>
+                  <div style={{ color: '#cbd5e1', fontSize: 'clamp(14px, 1.2vw, 20px)', marginTop: 10 }}>Data performa untuk periode ini belum tersedia.</div>
                 </div>
               </div>
             ) : active.media ? (
