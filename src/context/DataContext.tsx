@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { YTD_PERFORMANCE } from '../data/mockData'
 import { fetchUsers } from '../services/sheetsApi'
 import type { TeamEmployeeSummary } from '../services/rawDataApi'
@@ -68,6 +68,7 @@ export function useAtlasData() {
 }
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const reloadRequestIdRef = useRef(0)
   const [data, setData] = useState<Omit<AtlasData, 'reload' | 'reloadMenuConfig'>>({
     users:      [],
     todayPerf:  emptyPerformance(1),
@@ -115,6 +116,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const reload = useCallback(async (nik: string) => {
+    const requestId = ++reloadRequestIdRef.current
     setData(prev => ({
       ...prev,
       loading: true,
@@ -199,6 +201,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const anyLive = liveUsers.length > 0 || todayPerf.actual > 0 || mtdPerf.actual > 0
     const ts = new Date().toLocaleTimeString('id-ID')
+    if (requestId !== reloadRequestIdRef.current) return
+
     setData(prev => ({
       ...prev,
       users: liveUsers,
@@ -219,6 +223,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Store-level and MGB data load independently after the sales dashboard is ready.
     log('Mengambil data Pencapaian Toko…')
     const tokoResult = await tokoRowsPromise
+    if (requestId !== reloadRequestIdRef.current) return
+
     if (tokoResult.error) {
       const message = tokoResult.error instanceof Error ? tokoResult.error.message : String(tokoResult.error)
       log(`❌ Pencapaian Toko gagal: ${message}`)
