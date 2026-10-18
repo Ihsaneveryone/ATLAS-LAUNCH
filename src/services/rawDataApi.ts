@@ -1305,7 +1305,7 @@ function buildRanking(
       : (tbData?.daily ?? DEFAULT_DAILY_TARGET) * workingDays
     const aAchievement = ta > 0 ? a.sales / ta : 0
     const bAchievement = tb > 0 ? b.sales / tb : 0
-    return bAchievement - aAchievement || b.sales - a.sales
+    return bAchievement - aAchievement || b.sales - a.sales || a.nik.localeCompare(b.nik, 'id')
   })
     .map((e, i) => {
       const tData = findTargetByNik(targets, e.nik)

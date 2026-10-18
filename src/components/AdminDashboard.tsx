@@ -326,13 +326,14 @@ function TVSlideshow({
       { key: 'supervisor', label: 'SUPERVISOR' },
       { key: 'support', label: 'SUPPORT' },
     ] as const
-    const grouped = groups.map(group => ({
-      ...group,
-      rows: rows.filter(row => classifyJobTitle(row.jobTitle) === group.key),
-    })).filter(group => group.rows.length > 0)
     const otherRows = rows.filter(row => classifyJobTitle(row.jobTitle) === null)
-    if (otherRows.length) grouped.push({ key: 'other', label: 'OTHER', rows: otherRows })
-    return grouped
+    return [
+      ...groups.map(group => ({
+        ...group,
+        rows: rows.filter(row => classifyJobTitle(row.jobTitle) === group.key),
+      })).filter(group => group.rows.length > 0),
+      ...(otherRows.length ? [{ key: 'other', label: 'OTHER', rows: otherRows }] : []),
+    ]
   }
 
   const chunkProducts = (rows: IncentiveBoomsaleRow[], size = 16) => {
@@ -446,16 +447,36 @@ function TVSlideshow({
     },
     ...contentSlides,
   ]
+  const slideKeys = slides.map(slide => slide.key)
+  const slideSignature = slideKeys.join('\0')
+  const previousSlideKeysRef = useRef(slideKeys)
 
   const [deptTrendIndex, setDeptTrendIndex] = useState(0)
   const [deptZoneIndex, setDeptZoneIndex] = useState(0)
 
   useEffect(() => {
-    if (activeSlide >= slides.length) {
-      setActiveSlide(0)
-      setTransitionSlide(null)
+    const previousSlideKeys = previousSlideKeysRef.current
+    if (previousSlideKeys.join('\0') === slideSignature) return
+
+    const previousActiveKey = previousSlideKeys[activeSlide]
+    const matchingIndex = previousActiveKey ? slideKeys.indexOf(previousActiveKey) : -1
+    previousSlideKeysRef.current = slideKeys
+    setTransitionSlide(null)
+
+    if (matchingIndex >= 0) {
+      if (matchingIndex !== activeSlide) setActiveSlide(matchingIndex)
+      return
     }
-  }, [activeSlide, slides.length])
+
+    const previousActiveIndex = previousSlideKeys.indexOf(previousActiveKey ?? '')
+    const remainingKeys = [
+      ...previousSlideKeys.slice(previousActiveIndex + 1),
+      ...previousSlideKeys.slice(0, Math.max(previousActiveIndex, 0)).reverse(),
+    ]
+    const nextSurvivingKey = remainingKeys.find(key => slideKeys.includes(key))
+    const nextIndex = nextSurvivingKey ? slideKeys.indexOf(nextSurvivingKey) : 0
+    setActiveSlide(nextIndex)
+  }, [activeSlide, slideKeys, slideSignature])
 
   const active = slides[activeSlide] ?? {
     key: 'empty',
@@ -865,11 +886,12 @@ function TVSlideshow({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <div>
-              <div style={{ color: '#f8fafc', fontSize: 17, fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1.1 }}>{active.label}</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6, minWidth: 0 }}>
+            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <div style={{ color: '#f8fafc', fontSize: 'clamp(14px, 1.2vw, 18px)', fontWeight: 900, lineHeight: 1.15, overflowWrap: 'anywhere' }}>{active.label}</div>
+              {active.subtitle ? <div style={{ color: '#f8df83', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800, marginTop: 3 }}>{active.subtitle}</div> : null}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexShrink: 0 }}>
               {active.pageNumber ? (
                 <div style={{ padding: '4px 10px', borderRadius: 999, background: 'rgba(39,27,31,0.82)', border: '1px solid rgba(242,197,17,0.3)', color: '#fff8e1', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em' }}>
                   {active.pageNumber}
@@ -938,24 +960,24 @@ function TVSlideshow({
                   { label: 'BOTTOM PERFORMER', position: `RANK #${bottomLeader?.rank ?? '—'}`, employee: bottomLeader, color: '#fecaca', border: 'rgba(255,145,132,0.82)', background: 'linear-gradient(145deg, rgba(128,43,39,0.72), rgba(38,27,31,0.94))' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, minHeight: 0, padding: 'clamp(18px, 3vw, 42px)', border: `2px solid ${item.border}`, borderRadius: 20, background: item.background, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 44px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingBottom: 'clamp(12px, 1.8vh, 22px)', borderBottom: `1px solid ${item.border}` }}>
-                      <div style={{ color: item.color, fontSize: 'clamp(16px, 1.6vw, 26px)', fontWeight: 900 }}>{item.label}</div>
-                      <div style={{ flexShrink: 0, padding: '7px 12px', border: `1px solid ${item.border}`, borderRadius: 7, color: item.color, background: 'rgba(20,15,17,0.32)', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900 }}>{item.position}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingBottom: 'clamp(12px, 1.8vh, 22px)', borderBottom: `1px solid ${item.border}` }}>
+                      <div style={{ minWidth: 0, color: item.color, fontSize: 'clamp(14px, 1.4vw, 22px)', fontWeight: 900, overflowWrap: 'anywhere' }}>{item.label}</div>
+                      <div style={{ flexShrink: 0, padding: '7px 12px', border: `1px solid ${item.border}`, borderRadius: 7, color: item.color, background: 'rgba(20,15,17,0.32)', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, whiteSpace: 'nowrap' }}>{item.position}</div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.3fr) minmax(130px, 0.7fr)', alignItems: 'center', gap: 16, flex: 1, minHeight: 0, padding: 'clamp(16px, 3vh, 34px) 0' }}>
-                      <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', alignContent: 'center', justifyItems: 'center', gap: 14, flex: 1, minHeight: 0, padding: 'clamp(14px, 2.5vh, 28px) 0', textAlign: 'center' }}>
+                      <div style={{ width: '100%', minWidth: 0 }}>
                         <div style={{ color: '#f8fafc', fontSize: 'clamp(24px, 3.2vw, 52px)', fontWeight: 900, lineHeight: 1.08, overflowWrap: 'anywhere' }}>{item.employee?.nama ?? '—'}</div>
-                        <div style={{ color: '#cbd5e1', fontSize: 'clamp(13px, 1.2vw, 19px)', fontWeight: 700, marginTop: 10 }}>{item.employee?.jobTitle || 'Jabatan tidak tersedia'}</div>
+                        <div style={{ color: '#cbd5e1', fontSize: 'clamp(13px, 1.2vw, 19px)', fontWeight: 700, marginTop: 10, overflowWrap: 'anywhere' }}>{item.employee?.jobTitle || 'Jabatan tidak tersedia'}</div>
                       </div>
-                      <div style={{ minWidth: 0, textAlign: 'right' }}>
+                      <div style={{ width: '100%', minWidth: 0 }}>
                         <div style={{ color: '#cbd5e1', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800 }}>ACHIEVEMENT</div>
-                        <div style={{ color: item.color, fontSize: 'clamp(32px, 5.2vw, 72px)', fontWeight: 900, lineHeight: 1.05, whiteSpace: 'nowrap' }}>{item.employee?.achievement.toFixed(1) ?? '0.0'}%</div>
+                        <div style={{ maxWidth: '100%', color: item.color, fontSize: 52, fontWeight: 900, lineHeight: 1.05, overflowWrap: 'anywhere' }}>{item.employee?.achievement.toFixed(1) ?? '0.0'}%</div>
                       </div>
                     </div>
                     <div style={{ borderTop: `1px solid ${item.border}`, paddingTop: 'clamp(12px, 1.8vh, 20px)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
                         <div style={{ color: '#cbd5e1', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800 }}>TOTAL SALES</div>
-                        <div style={{ color: '#f8fafc', fontSize: 'clamp(15px, 1.5vw, 24px)', fontWeight: 900, textAlign: 'right' }}>{formatRupiah(item.employee?.value ?? 0)}</div>
+                        <div style={{ minWidth: 0, color: '#f8fafc', fontSize: 'clamp(15px, 1.5vw, 24px)', fontWeight: 900, textAlign: 'right', overflowWrap: 'anywhere' }}>{formatRupiah(item.employee?.value ?? 0)}</div>
                       </div>
                       <div style={{ height: 7, overflow: 'hidden', borderRadius: 99, background: 'rgba(255,255,255,0.14)' }}>
                         <div style={{ width: `${Math.min(Math.max(item.employee?.achievement ?? 0, 0), 100)}%`, height: '100%', borderRadius: 99, background: item.color, boxShadow: `0 0 12px ${item.color}80` }} />
