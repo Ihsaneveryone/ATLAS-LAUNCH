@@ -229,6 +229,7 @@ function TVSlideshow({
 }) {
   const [activeSlide, setActiveSlide] = useState(0)
   const [transitionSlide, setTransitionSlide] = useState<number | null>(null)
+  const transitionTimerRef = useRef<number | null>(null)
   const [eligibleProducts, setEligibleProducts] = useState<IncentiveBoomsaleRow[]>([])
   const [newProductArticles, setNewProductArticles] = useState<Set<string>>(() => new Set())
   const [productsLoading, setProductsLoading] = useState(true)
@@ -466,6 +467,10 @@ function TVSlideshow({
     const previousActiveKey = previousSlideKeys[activeSlide]
     const matchingIndex = previousActiveKey ? slideKeys.indexOf(previousActiveKey) : -1
     previousSlideKeysRef.current = slideKeys
+    if (transitionTimerRef.current !== null) {
+      window.clearTimeout(transitionTimerRef.current)
+      transitionTimerRef.current = null
+    }
     setTransitionSlide(null)
 
     if (matchingIndex >= 0) {
@@ -491,6 +496,10 @@ function TVSlideshow({
     const nextIndex = nextSurvivingKey ? slideKeys.indexOf(nextSurvivingKey) : 0
     setActiveSlide(nextIndex)
   }, [activeSlide, slideKeys, slideSignature])
+
+  useEffect(() => () => {
+    if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current)
+  }, [])
 
   const active = slides[activeSlide] ?? {
     key: 'empty',
@@ -631,12 +640,18 @@ function TVSlideshow({
   const advanceToNextSlide = useCallback(() => {
     onSlideEndRef.current()
     if (nextSlideIsWelcome || nextSlideHasSameLabel) {
+      if (transitionTimerRef.current !== null) {
+        window.clearTimeout(transitionTimerRef.current)
+        transitionTimerRef.current = null
+      }
       setActiveSlide(nextSlideIndex)
       return
     }
 
     setTransitionSlide(nextSlideIndex)
-    window.setTimeout(() => {
+    if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current)
+    transitionTimerRef.current = window.setTimeout(() => {
+      transitionTimerRef.current = null
       setActiveSlide(nextSlideIndex)
       setTransitionSlide(null)
     }, 1600)
@@ -1822,16 +1837,26 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const bottom     = ranking[ranking.length - 1]
   const todayTvRanking = todayPerf.ranking.length > 0
     ? todayPerf.ranking
-    : teamTodayEmployees
-        .filter(row => row.sales > 0)
-        .map(row => ({
-          rank: row.rank,
+    : []
+  const todayTvRows = teamTodayEmployees
+    .filter(row => row.sales > 0)
+    .sort((left, right) => right.achievement - left.achievement || right.sales - left.sales || left.nik.localeCompare(right.nik, 'id'))
+  const todayTvRankingForDisplay = todayTvRows.length > 0
+    ? todayTvRows.map((row, index) => {
+        const rankingDetails = todayPerf.ranking.find(entry => entry.nik === row.nik)
+        return {
+          ...rankingDetails,
+          rank: index + 1,
+          nik: row.nik,
           nama: row.nama,
           jobTitle: row.jobTitle,
           value: row.sales,
           target: row.targetSales,
           achievement: row.achievement,
-        }))
+          protectionQty: rankingDetails?.protectionQty ?? 0,
+        }
+      })
+    : todayTvRanking
 
   const fullMonthEmployeeRows = teamMtdEmployees
     .map(row => {
@@ -2056,7 +2081,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
         {page === 'tv' && (
           <TVSlideshow
-            todayRanking={todayTvRanking.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            todayRanking={todayTvRankingForDisplay.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
             mtdRanking={(mtdPerf.ranking ?? []).map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
             fullMonthRanking={fullMonthRanking.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
             loading={loading}
