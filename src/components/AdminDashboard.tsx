@@ -198,6 +198,8 @@ function TVSlideshow({
   todayRanking,
   mtdRanking,
   fullMonthRanking,
+  loading,
+  dataError,
   receiptRows,
   receiptLoading,
   onSlideEnd,
@@ -212,6 +214,8 @@ function TVSlideshow({
   todayRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   mtdRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
   fullMonthRanking: Array<{ nama: string; jobTitle?: string; protectionQty?: number; achievement: number; value: number; rank?: number }>
+  loading: boolean
+  dataError: string | null
   receiptRows: IncentiveReceiptRow[]
   receiptLoading: boolean
   onSlideEnd: () => void
@@ -366,10 +370,11 @@ function TVSlideshow({
       { key: 'fullmonth' as const, label: 'PERFORMANCE FULL MONTH ( SATU BULAN)', rows: fullMonthRanking },
     ].filter(group => visibleSlides[group.key]).flatMap(periodGroup => {
       if (periodGroup.rows.length === 0) {
+        const status = loading ? 'MEMUAT DATA' : dataError ? 'GAGAL MEMUAT DATA' : 'BELUM ADA DATA'
         return [{
-          key: `${periodGroup.key}-empty`,
+          key: `${periodGroup.key}-${loading ? 'loading' : 'empty'}`,
           label: periodGroup.label,
-          subtitle: 'BELUM ADA DATA',
+          subtitle: status,
           ranking: [] as RankingRow[],
           fullRanking: [] as RankingRow[],
         }]
@@ -468,6 +473,15 @@ function TVSlideshow({
       return
     }
 
+    const placeholderPeriod = previousActiveKey?.match(/^(today|mtd|fullmonth)-(?:empty|loading)$/)?.[1]
+    const firstPeriodSlide = placeholderPeriod
+      ? slideKeys.findIndex(key => key.startsWith(`${placeholderPeriod}-`))
+      : -1
+    if (firstPeriodSlide >= 0) {
+      setActiveSlide(firstPeriodSlide)
+      return
+    }
+
     const previousActiveIndex = previousSlideKeys.indexOf(previousActiveKey ?? '')
     const remainingKeys = [
       ...previousSlideKeys.slice(previousActiveIndex + 1),
@@ -535,7 +549,7 @@ function TVSlideshow({
   }
   const receiptGridColumns = 'minmax(0, 1.55fr) minmax(0, 0.9fr) minmax(0, 0.95fr) minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 1.15fr) minmax(0, 0.9fr)'
   const rankedList = [...(active.fullRanking ?? active.ranking)].sort((left, right) => (left.rank ?? 0) - (right.rank ?? 0))
-  const leaderboardSize = rankedList.length < 20 ? 5 : 10
+  const leaderboardSize = rankedList.length <= 10 ? 3 : rankedList.length < 20 ? 5 : 10
   const topTen = rankedList.slice(0, leaderboardSize)
   const bottomTen = [...rankedList].slice(-leaderboardSize).map((row, index) => ({
     ...row,
@@ -870,6 +884,12 @@ function TVSlideshow({
             transform: translateY(0);
           }
         }
+        @media (max-width: 900px) {
+          .tv-slide-dots { display: none !important; }
+          .tv-page-heading { flex: 1 1 0; min-width: 0; }
+          .tv-ranking-layout { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr) !important; }
+          .tv-ranking-side { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; grid-template-rows: minmax(0, 1fr) !important; }
+        }
       `}</style>
 
       <div style={{ position: 'relative', width: '100vw', minHeight: '100vh', height: '100dvh', background: 'radial-gradient(circle at top left, #b95046 0%, #a7463f 36%, #8d3e47 100%)', borderRadius: 0, overflow: 'hidden', border: 'none', boxShadow: 'none' }}>
@@ -887,9 +907,9 @@ function TVSlideshow({
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6, minWidth: 0 }}>
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <div style={{ color: '#f8fafc', fontSize: 'clamp(14px, 1.2vw, 18px)', fontWeight: 900, lineHeight: 1.15, overflowWrap: 'anywhere' }}>{active.label}</div>
+          <div className="tv-page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6, minWidth: 0 }}>
+            <div className="tv-page-heading" style={{ flex: '1 1 auto', minWidth: 0 }}>
+              <div style={{ color: '#f8fafc', fontSize: 'clamp(14px, 1.2vw, 18px)', fontWeight: 900, lineHeight: 1.15, overflowWrap: 'normal', wordBreak: 'normal' }}>{active.label}</div>
               {active.subtitle ? <div style={{ color: '#f8df83', fontSize: 'clamp(10px, 0.8vw, 13px)', fontWeight: 800, marginTop: 3 }}>{active.subtitle}</div> : null}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexShrink: 0 }}>
@@ -898,7 +918,7 @@ function TVSlideshow({
                   {active.pageNumber}
                 </div>
               ) : null}
-              <div style={{ display: 'flex', gap: 6 }}>
+              <div className="tv-slide-dots" style={{ display: 'flex', gap: 6 }}>
                 {slides.map((slide, index) => (
                   <span key={slide.key} style={{ width: index === activeSlide ? 28 : 10, height: 8, borderRadius: 999, background: index === activeSlide ? '#e1261c' : 'rgba(214,195,190,0.34)', boxShadow: index === activeSlide ? '0 0 12px rgba(225,38,28,0.72)' : 'none', transition: 'all 0.25s ease' }} />
                 ))}
@@ -957,7 +977,7 @@ function TVSlideshow({
             ) : active.key.endsWith('-summary') ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'stretch', gap: 'clamp(12px, 2vw, 28px)', width: '100%', maxWidth: 1500, height: '100%', minHeight: 0, margin: '0 auto', padding: 'clamp(8px, 1.5vw, 24px)', boxSizing: 'border-box' }}>
                 {[
-                  { label: 'TOP PERFORMER', position: 'POSISI #1', employee: topLeader, color: '#f8df83', border: 'rgba(248,223,131,0.82)', background: 'linear-gradient(145deg, rgba(126,91,26,0.72), rgba(38,27,31,0.94))' },
+                  { label: 'BEST PERFORMER', position: 'POSISI #1', employee: topLeader, color: '#f8df83', border: 'rgba(248,223,131,0.82)', background: 'linear-gradient(145deg, rgba(126,91,26,0.72), rgba(38,27,31,0.94))' },
                   { label: 'BOTTOM PERFORMER', position: `RANK #${bottomLeader?.rank ?? '—'}`, employee: bottomLeader, color: '#fecaca', border: 'rgba(255,145,132,0.82)', background: 'linear-gradient(145deg, rgba(128,43,39,0.72), rgba(38,27,31,0.94))' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minWidth: 0, minHeight: 0, padding: 'clamp(18px, 3vw, 42px)', border: `2px solid ${item.border}`, borderRadius: 20, background: item.background, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 16px 44px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
@@ -990,8 +1010,15 @@ function TVSlideshow({
             ) : active.key.endsWith('-empty') ? (
               <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minHeight: 0, borderRadius: 16, background: 'rgba(29,21,25,0.78)', color: '#f8fafc', textAlign: 'center' }}>
                 <div>
-                  <div style={{ color: '#f8df83', fontSize: 'clamp(20px, 2.4vw, 36px)', fontWeight: 900, letterSpacing: '0.08em' }}>BELUM ADA DATA</div>
-                  <div style={{ color: '#cbd5e1', fontSize: 'clamp(14px, 1.2vw, 20px)', marginTop: 10 }}>Data performa untuk periode ini belum tersedia.</div>
+                  <div style={{ color: '#f8df83', fontSize: 'clamp(20px, 2.4vw, 36px)', fontWeight: 900, letterSpacing: '0.08em' }}>{active.subtitle}</div>
+                  <div style={{ color: '#cbd5e1', fontSize: 'clamp(14px, 1.2vw, 20px)', marginTop: 10 }}>{dataError || 'Data performa untuk periode ini belum tersedia.'}</div>
+                </div>
+              </div>
+            ) : active.key.endsWith('-loading') ? (
+              <div style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', minHeight: 0, borderRadius: 16, background: 'rgba(29,21,25,0.78)', color: '#f8fafc', textAlign: 'center' }}>
+                <div>
+                  <div style={{ color: '#f8df83', fontSize: 'clamp(20px, 2.4vw, 36px)', fontWeight: 900 }}>MEMUAT DATA</div>
+                  <div style={{ color: '#cbd5e1', fontSize: 'clamp(14px, 1.2vw, 20px)', marginTop: 10 }}>Sedang mengambil data performa.</div>
                 </div>
               </div>
             ) : active.media ? (
@@ -1267,16 +1294,16 @@ function TVSlideshow({
                 )}
               </div>
             ) : active.key !== 'dept' ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)', gap: 8, height: '100%', minWidth: 0 }}>
-                <div style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(245,220,205,0.48)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+              <div className="tv-ranking-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.65fr) minmax(0, 0.85fr)', gap: 8, height: '100%', minWidth: 0, minHeight: 0 }}>
+                <div className="tv-ranking-main" style={{ background: 'rgba(38, 27, 31, 0.84)', border: '1px solid rgba(245,220,205,0.48)', borderRadius: 16, padding: 8, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 6 }}>
                     <div style={{ background: 'linear-gradient(135deg, rgba(242,197,17,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(242,197,17,0.72)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 0 0 1px rgba(242,197,17,0.12)' }}>
-                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Top Performance</div>
+                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#f8df83', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Best Performer</div>
                       <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{topLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fff1a8', lineHeight: 1, letterSpacing: '-0.04em' }}>{topLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
                     <div style={{ background: 'linear-gradient(135deg, rgba(225,38,28,0.2), rgba(38,27,31,0.92))', border: '1px solid rgba(255,145,132,0.66)', borderRadius: 14, padding: '5px 8px 7px', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box', boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 0 0 1px rgba(225,38,28,0.12)' }}>
-                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performance</div>
+                      <div style={{ fontSize: 'clamp(10px, 0.78vw, 13px)', color: '#fecaca', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 2, fontWeight: 800 }}>Bottom Performer</div>
                       <div style={{ fontSize: 'clamp(12px, 0.95vw, 16px)', fontWeight: 900, color: '#f8fafc', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{bottomLeader?.nama ?? '—'}</div>
                       <div style={{ marginTop: 3, fontSize: 'clamp(17px, 1.5vw, 24px)', fontWeight: 900, color: '#fee2e2', lineHeight: 1, letterSpacing: '-0.04em' }}>{bottomLeader?.achievement.toFixed(1) ?? '0.0'}%</div>
                     </div>
@@ -1284,14 +1311,14 @@ function TVSlideshow({
 
                   <div style={{ display: 'grid', gridTemplateRows: 'minmax(0, 1fr)', gap: 0, height: '100%', minHeight: 0, minWidth: 0 }}>
                     <div style={{ display: 'grid', gridTemplateRows: `clamp(22px, 2.8vh, 30px) repeat(${active.ranking.length}, minmax(0, 1fr))`, gap: 3, height: '100%', minHeight: 0, minWidth: 0 }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, color: '#e4d8d5', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.88)', border: '1px solid rgba(245,220,205,0.42)', borderRadius: 5, boxSizing: 'border-box', minWidth: 0 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: rankingColumns, alignItems: 'center', gap: 2, color: '#e4d8d5', fontSize: 'clamp(9px, 0.75vw, 13px)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.02em', padding: '0 4px', lineHeight: 1, background: 'rgba(45,31,35,0.88)', border: '1px solid rgba(245,220,205,0.42)', borderRadius: 5, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden' }}>
                         <div style={{ width: 16, height: 16, display: 'grid', placeItems: 'center', borderRadius: 3, background: 'rgba(214,195,190,0.2)', color: '#f0e6df', fontWeight: 900, fontSize: 'clamp(9px, 0.65vw, 11px)' }}>#</div>
-                        <div style={{ minWidth: 0 }}>Nama</div>
-                        <div style={{ minWidth: 0 }}>Job</div>
-                        <div style={{ textAlign: 'right', minWidth: 0 }}>Proteksi</div>
-                        <div style={{ textAlign: 'right', minWidth: 0 }}>Target</div>
-                        <div style={{ textAlign: 'right', minWidth: 0 }}>Sales</div>
-                        <div style={{ textAlign: 'right', minWidth: 0 }}>Ach</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Nama</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Job</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textAlign: 'right', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Proteksi</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textAlign: 'right', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Target</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textAlign: 'right', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sales</div>
+                        <div style={{ minWidth: 0, overflow: 'hidden', textAlign: 'right', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Ach</div>
                       </div>
                       {active.ranking.map((row, index) => {
                         const displayRank = row.rank ?? index + 1
@@ -1312,10 +1339,10 @@ function TVSlideshow({
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gap: 6, gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', height: '100%', minHeight: 0 }}>
+                <div className="tv-ranking-side" style={{ display: 'grid', gap: 6, gridTemplateRows: 'minmax(0, 1fr) minmax(0, 1fr)', height: '100%', minWidth: 0, minHeight: 0 }}>
                   <div style={{ background: 'linear-gradient(180deg, rgba(242,197,17,0.18), rgba(48,34,37,0.88))', border: '2px solid rgba(248,223,131,0.9)', borderRadius: 14, padding: 6, display: 'grid', gridTemplateRows: 'auto minmax(0, 1fr)', gap: 4, minHeight: 0, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1), 0 0 0 1px rgba(242,197,17,0.18)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, padding: '3px 5px 5px', borderBottom: '2px solid rgba(248,223,131,0.9)', minWidth: 0 }}>
-                      <div style={{ color: '#fff6c7', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>TOP {topTen.length} PERFORMANCE</div>
+                      <div style={{ color: '#fff6c7', fontSize: 'clamp(11px, 0.9vw, 15px)', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.07em', lineHeight: 1 }}>LEADERBOARD · TOP {topTen.length}</div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateRows: `repeat(${Math.max(topTen.length, 1)}, minmax(0, 1fr))`, gap: 3, minHeight: 0 }}>
                       {topTen.map((row, index) => (
@@ -1580,7 +1607,7 @@ function AdminReceiptTable({ rows, loading, isMobile }: { rows: IncentiveReceipt
 interface Props { user: User; onLogout: () => void }
 
 export default function AdminDashboard({ user, onLogout }: Props) {
-  const { todayPerf, mtdPerf, loading, dailyDate, reload, users, reloadMenuConfig, menuConfig, teamTodayTrend, teamMtdTrend, teamTodayEmployees, teamMtdEmployees } = useAtlasData()
+  const { todayPerf, mtdPerf, loading, error, dailyDate, reload, users, reloadMenuConfig, menuConfig, teamTodayTrend, teamMtdTrend, teamTodayEmployees, teamMtdEmployees } = useAtlasData()
   const { settings, updateTargetFormula, updateLayout } = useAdminSettings()
   const [page, setPage]             = useState<NavPage>('today')
   const [ytdAll, setYtdAll]         = useState<YTDEmployee[]>([])
@@ -1793,6 +1820,18 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const avgAch     = ranking.length ? ranking.reduce((s, r) => s + r.achievement, 0) / ranking.length : 0
   const top        = ranking[0]
   const bottom     = ranking[ranking.length - 1]
+  const todayTvRanking = todayPerf.ranking.length > 0
+    ? todayPerf.ranking
+    : teamTodayEmployees
+        .filter(row => row.sales > 0)
+        .map(row => ({
+          rank: row.rank,
+          nama: row.nama,
+          jobTitle: row.jobTitle,
+          value: row.sales,
+          target: row.targetSales,
+          achievement: row.achievement,
+        }))
 
   const fullMonthEmployeeRows = teamMtdEmployees
     .map(row => {
@@ -2017,9 +2056,11 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
         {page === 'tv' && (
           <TVSlideshow
-            todayRanking={(todayPerf.ranking ?? []).map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            todayRanking={todayTvRanking.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
             mtdRanking={(mtdPerf.ranking ?? []).map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
             fullMonthRanking={fullMonthRanking.map(r => ({ ...r, achievement: Number.isFinite(r.achievement) ? r.achievement : 0 }))}
+            loading={loading}
+            dataError={error}
             receiptRows={receiptRows}
             receiptLoading={receiptLoading}
             onSlideEnd={checkForSIDUpdates}
