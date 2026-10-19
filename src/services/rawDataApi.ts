@@ -1062,9 +1062,11 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
 
   for (const t of txns) {
     if (!t.nik) continue
-    if (!byNik.has(t.nik)) {
-      byNik.set(t.nik, {
-        nik: t.nik, nama: t.nama, sales: 0, qty: 0,
+    const canonical = canonicalNik(t.nik)
+    const key = canonical.toLowerCase()
+    if (!byNik.has(key)) {
+      byNik.set(key, {
+        nik: canonical, nama: t.nama, sales: 0, qty: 0,
         receipts: new Set(),
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
         salesChannelContributions: { online: 0, offline: 0 },
@@ -1072,7 +1074,8 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
         categoryQty:   new Map(),
       })
     }
-    const e = byNik.get(t.nik)!
+    const e = byNik.get(key)!
+    if ((!e.nama.trim() || e.nama.trim().toUpperCase() === 'NONAME') && t.nama.trim()) e.nama = t.nama
     e.sales += t.totalValue
     e.qty   += t.qty
     if (t.receiptNo) e.receipts.add(t.receiptNo)

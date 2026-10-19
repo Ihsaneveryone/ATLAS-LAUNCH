@@ -284,7 +284,7 @@ describe('buildRawPerformance', () => {
       .rejects.toThrow('Data sales COPAS S2 tidak dapat dibaca')
   })
 
-  it('matches NIK 116566 Today sales to the COPAS S2 total value column', async () => {
+  it('merges Today sales for the same employee across alternate NIK formats', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-07T12:00:00+07:00'))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -292,9 +292,9 @@ describe('buildRawPerformance', () => {
       const sheet = url.searchParams.get('sheet')
 
       if (sheet === 'COPAS S2') {
-        const transaction = (receipt: string, article: string, value: number) => {
+        const transaction = (nik: string, receipt: string, article: string, value: number) => {
           const row = Array(15).fill('')
-          row[0] = '116566'
+          row[0] = nik
           row[1] = 'Kuncara Adi Wijaya'
           row[3] = receipt
           row[4] = article
@@ -314,8 +314,8 @@ describe('buildRawPerformance', () => {
         unassignedRow[13] = '07-Okt-2026'
         return csvResponse([
           'NIK,NAMA,DATE,NO RECEIPT,ARTICLE CODE,ARTICLE NAME,DEPARTMENT,QUANTITY,PRICE,DISCOUNT,INCLUDE PPN,EXCLUDE PPN,JOBTITLE,TANGGAL,ZONA',
-          transaction('A321.78.261007.45', '10562164', 2297027),
-          transaction('A321.1.261007.14', '10687760', 5315),
+          transaction('116566', 'A321.78.261007.45', '10562164', 2297027),
+          transaction('I16566', 'A321.1.261007.14', '10687760', 5315),
           unassignedRow.join(','),
         ].join('\n'))
       }
@@ -331,6 +331,7 @@ describe('buildRawPerformance', () => {
     const result = await buildRawPerformance('116566', undefined, new Set(['116566']))
 
     expect(result.todayPerf.actual).toBe(2302342)
+    expect(result.todayPerf.ranking).toHaveLength(1)
     expect(result.todayPerf.ranking[0]?.value).toBe(2302342)
     expect(result.teamTodayEmployees[0]?.sales).toBe(2302342)
   })

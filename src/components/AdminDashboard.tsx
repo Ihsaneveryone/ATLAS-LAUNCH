@@ -38,6 +38,7 @@ const TV_DISPLAY_OPTIONS: Array<{ key: TVSlideKey; label: string; description: s
 const NEWLY_QUALIFIED_PRODUCT_ARTICLES = ['10669672']
 const DEPT_TREND_INTERVAL_MS = 3000
 const TV_DATA_SLIDE_DURATION_MS = 45_000
+const TV_SID_SIGNATURE_INTERVAL_MS = 60_000
 const TV_SUMMARY_SLIDE_DURATION_MS = 20_000
 const TV_DRIVE_TIKTOK_MEDIA_ID = '1no3gMaS3Z_dPO2dAU1t7QdZZwgUgGUz4'
 const DEFAULT_TV_TIKTOK_POST_ID = '7694569713191505172'
@@ -203,7 +204,6 @@ function TVSlideshow({
   dataError,
   receiptRows,
   receiptLoading,
-  onSlideEnd,
   sidUpdatedAt,
   visibleSlides,
   deptSbd,
@@ -219,7 +219,6 @@ function TVSlideshow({
   dataError: string | null
   receiptRows: IncentiveReceiptRow[]
   receiptLoading: boolean
-  onSlideEnd: () => void
   sidUpdatedAt: Date | null
   visibleSlides: Record<TVSlideKey, boolean>
   deptSbd: DeptPeriodData | null
@@ -253,11 +252,6 @@ function TVSlideshow({
   const tiktokPlayerRef = useRef<HTMLIFrameElement>(null)
   const youtubePlayerRef = useRef<HTMLIFrameElement>(null)
   const youtubePlayerInstanceRef = useRef<YouTubePlayerInstance | null>(null)
-  const onSlideEndRef = useRef(onSlideEnd)
-
-  useEffect(() => {
-    onSlideEndRef.current = onSlideEnd
-  }, [onSlideEnd])
 
   useEffect(() => {
     let cancelled = false
@@ -639,7 +633,6 @@ function TVSlideshow({
   const nextSlideIsWelcome = slides[nextSlideIndex]?.key === 'welcome'
   const nextSlideHasSameLabel = active.label === slides[nextSlideIndex]?.label
   const advanceToNextSlide = useCallback(() => {
-    onSlideEndRef.current()
     if (nextSlideIsWelcome || nextSlideHasSameLabel) {
       if (transitionTimerRef.current !== null) {
         window.clearTimeout(transitionTimerRef.current)
@@ -1655,6 +1648,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [sidUpdateState, setSIDUpdateState] = useState(readSIDUpdateState)
   const sidSignatureRef = useRef<string | null>(sidUpdateState.signature)
+  const sidUpdatedAtRef = useRef<string | null>(sidUpdateState.updatedAt)
   const sidCheckInProgressRef = useRef(false)
   const isMobile = useMobile()
 
@@ -1712,9 +1706,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       const nextSignature = await fetchSIDDataSignature()
       const previousSignature = sidSignatureRef.current
       const signatureChanged = previousSignature !== nextSignature
-      const nextState = updateSIDSignature(previousSignature, nextSignature, sidUpdateState.updatedAt)
+      const nextState = updateSIDSignature(previousSignature, nextSignature, sidUpdatedAtRef.current)
       sidSignatureRef.current = nextSignature
-      if (signatureChanged || sidUpdateState.signature !== nextSignature) {
+      sidUpdatedAtRef.current = nextState.updatedAt
+      if (previousSignature !== nextSignature) {
         saveSIDUpdateState(nextState)
         setSIDUpdateState(nextState)
         if (signatureChanged && previousSignature) await reload(user.nik)
@@ -1724,12 +1719,12 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     } finally {
       sidCheckInProgressRef.current = false
     }
-  }, [reload, sidUpdateState.updatedAt, user.nik])
+  }, [reload, user.nik])
 
   useEffect(() => {
     if (page !== 'tv') return
     void checkForSIDUpdates()
-    const interval = window.setInterval(() => { void checkForSIDUpdates() }, 30_000)
+    const interval = window.setInterval(() => { void checkForSIDUpdates() }, TV_SID_SIGNATURE_INTERVAL_MS)
     return () => window.clearInterval(interval)
   }, [page, checkForSIDUpdates])
 
@@ -2093,7 +2088,6 @@ export default function AdminDashboard({ user, onLogout }: Props) {
             dataError={error}
             receiptRows={receiptRows}
             receiptLoading={receiptLoading}
-            onSlideEnd={checkForSIDUpdates}
             sidUpdatedAt={sidUpdateState.updatedAt ? new Date(sidUpdateState.updatedAt) : null}
             visibleSlides={tvDisplaySettings}
             deptSbd={deptSbd}
