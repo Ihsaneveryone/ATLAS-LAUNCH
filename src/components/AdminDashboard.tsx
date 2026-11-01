@@ -20,7 +20,6 @@ import { niksMatch } from "../services/nik"
 
 import { isSupervisorJobTitle } from "../services/jobTitle"
 
-import { departmentSupervisors } from "../services/supervisorPerformance"
 
 import {
   fetchPencapaianDept,
@@ -1335,9 +1334,7 @@ function TVSlideshow({
             ) ??
             null
 
-          const supervisors = departmentSupervisors(users, label)
-
-          return { label, sbd, mtd, supervisors }
+          return { label, sbd, mtd }
         })
         .sort(
           (left, right) =>
@@ -4535,26 +4532,6 @@ function TVSlideshow({
                                         >
                                           {dept.label}
                                         </div>
-                                        {dept.supervisors.length > 0 && (
-                                          <div
-                                            style={{
-                                              color: "#cbd5e1",
-                                              fontSize: 9,
-                                              fontWeight: 600,
-                                              whiteSpace: "nowrap",
-                                              overflow: "hidden",
-                                              textOverflow: "ellipsis",
-                                              marginTop: 2,
-                                            }}
-                                          >
-                                            SPV:{" "}
-                                            {dept.supervisors
-                                              .map(
-                                                (supervisor) => supervisor.nama,
-                                              )
-                                              .join(", ")}
-                                          </div>
-                                        )}
                                       </div>
 
                                       <div
