@@ -183,7 +183,7 @@ async function fetchSheetRange(range: string): Promise<string[][]> {
   return parseCSV(text)
 }
 
-function buildPeriodData(date: string | undefined, labels: string[], values: string[], targetsByIndex?: number[]): DeptPeriodData {
+function buildPeriodData(date: string | undefined, labels: string[], values: string[], targetsByIndex?: (number | undefined)[]): DeptPeriodData {
   const departments: DeptMetric[] = labels.map((label, index) => {
     const node = DEPT_NODES[index]
     const value = n(values[index] ?? '')
@@ -313,6 +313,26 @@ function buildFlatSBDTargets(row: string[] | null | undefined): number[] | undef
   return buildTargetValues(row)
 }
 
+function normalizeDepartmentName(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\(zona\)/g, '')
+    .replace(/[^a-z0-9]/g, '')
+}
+
+function buildFullMonthTargets(rows: string[][], labels: string[]): (number | undefined)[] {
+  const targetsByDepartment = new Map<string, number>()
+
+  for (const row of rows) {
+    const departmentName = normalizeDepartmentName(g(row, 0))
+    if (!departmentName) continue
+    targetsByDepartment.set(departmentName, n(g(row, 5)))
+  }
+
+  return labels.map(label => targetsByDepartment.get(normalizeDepartmentName(label)))
+}
+
 function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
   const labels = LEAF_DEPT_INDEXES.map(index => {
     const sourceLabel = g(sbdDataRows[index] ?? [], 1)
@@ -344,9 +364,10 @@ function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbd
 }
 
 export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
-  const [salesRange, targetRange] = await Promise.all([
+  const [salesRange, targetRange, fullMonthDepartmentTargets] = await Promise.all([
     fetchSheetRange('M76:AS98'),
     fetchSheetRange('U3:AR33'),
+    fetchSheetRange('M4:R28'),
   ])
   if (salesRange.length < 23) return { sbd: null, mtd: null, fullMonth: null, trend: { labels: [], points: [] } }
 
@@ -360,8 +381,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
 
   const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
-  const fullMonthTargetRow = findRowByDay(mtdDateRows, 31)
-  
+
   // SBD uses the fixed target from day 1; later target rows are cumulative MTD targets.
   const sbdFlatTargetRow = findRowByDay(mtdDateRows, 1)?.row ?? mtdDateRows[0] ?? null
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
@@ -401,14 +421,14 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
       )
     : null
 
-  const fullMonth = fullMonthTargetRow
-      ? buildPeriodData(
-          fullMonthTargetRow.date,
-          sbdLabels,
-          cumulativeValues,
-          buildTargetValues(fullMonthTargetRow.row),
-        )
-      : null
+  const fullMonth = mtdSalesDateInfo
+    ? buildPeriodData(
+        todayFormatted,
+        sbdLabels,
+        cumulativeValues,
+        buildFullMonthTargets(fullMonthDepartmentTargets, sbdLabels),
+      )
+    : null
 
   return { sbd, mtd, fullMonth, trend }
 }

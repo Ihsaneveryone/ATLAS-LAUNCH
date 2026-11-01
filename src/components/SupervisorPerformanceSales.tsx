@@ -332,7 +332,7 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
             <>
               <div style={{ width: 1, height: 18, background: S.border }} />
               <span style={{ color: S.text, fontWeight: 700, fontSize: 13 }}>
-                Your Performance Team
+                Your Team's Performance
               </span>
               <span style={{ color: S.muted, fontSize: 12 }}>{user.nama}</span>
             </>

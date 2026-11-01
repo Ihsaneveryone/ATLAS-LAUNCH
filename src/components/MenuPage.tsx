@@ -1166,7 +1166,7 @@ export default function MenuPage({ user, onNavigate, onLogout }: Props) {
                     }}
                   >
                     {hasTeamDashboard && m.key === "performance"
-                      ? "Your Performance Team"
+                      ? "Your Team's Performance"
                       : m.title}
                   </div>
                   <div

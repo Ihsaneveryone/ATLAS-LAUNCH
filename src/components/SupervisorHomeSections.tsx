@@ -61,6 +61,16 @@ export function SupervisorDepartmentCards({
           department.target && department.target > 0
             ? (department.value / department.target) * 100
             : null
+        const targetDifference =
+          department.target === undefined
+            ? null
+            : department.value - department.target
+        const differenceColor =
+          targetDifference === null || targetDifference === 0
+            ? S.sub
+            : targetDifference > 0
+              ? "#15803d"
+              : "#dc2626"
         const color =
           achievement === null ? "#94a3b8" : achievementColor(achievement)
 
@@ -228,6 +238,54 @@ export function SupervisorDepartmentCards({
                   </div>
                 </div>
               ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                marginTop: 12,
+                padding: "9px 10px",
+                borderRadius: 10,
+                background:
+                  targetDifference === null
+                    ? "#f8fafc"
+                    : targetDifference > 0
+                      ? "#f0fdf4"
+                      : targetDifference < 0
+                        ? "#fef2f2"
+                        : "#f8fafc",
+                border: `1px solid ${
+                  targetDifference === null || targetDifference === 0
+                    ? S.border
+                    : `${differenceColor}30`
+                }`,
+              }}
+            >
+              <span
+                style={{
+                  color: S.sub,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                Selisih Sales - Target
+              </span>
+              <span
+                style={{
+                  color: differenceColor,
+                  fontSize: isMobile ? 12 : 13,
+                  fontWeight: 900,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {targetDifference === null
+                  ? "Target belum tersedia"
+                  : `${targetDifference > 0 ? "+" : targetDifference < 0 ? "-" : ""}${formatRupiahFull(Math.abs(targetDifference))}`}
+              </span>
             </div>
           </article>
         )

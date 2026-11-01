@@ -44,6 +44,12 @@ describe('fetchPencapaianDept', () => {
       }
       return row.join(',')
     }).join('\n')
+    const fullMonthDepartmentTargets = Array.from({ length: 25 }, (_, index) => {
+      const row = Array(6).fill('')
+      row[0] = `Department ${index}`
+      row[5] = String(9000 + index)
+      return row.join(',')
+    }).join('\n')
 
     const requestedRanges: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -51,12 +57,13 @@ describe('fetchPencapaianDept', () => {
       requestedRanges.push(range)
       if (range === 'M76:AS98') return csvResponse(salesRange)
       if (range === 'U3:AR33') return csvResponse(targetRows)
+      if (range === 'M4:R28') return csvResponse(fullMonthDepartmentTargets)
       return csvResponse('')
     }))
 
     const result = await fetchPencapaianDept()
 
-    expect(requestedRanges).toEqual(expect.arrayContaining(['M76:AS98', 'U3:AR33']))
+    expect(requestedRanges).toEqual(expect.arrayContaining(['M76:AS98', 'U3:AR33', 'M4:R28']))
     expect(result.sbd?.total).toBe(7)
     expect(result.sbd?.departments.find(department => department.label === 'Department 1')?.value).toBe(7)
     expect(result.sbd?.departments.find(department => department.label === 'Department 1')?.achievement).toBe(7)
@@ -71,7 +78,7 @@ describe('fetchPencapaianDept', () => {
     expect(result.mtd?.departments.at(-1)?.target).toBe(700)
     expect(result.mtd?.departments.at(-1)?.achievement).toBe(0)
     expect(result.mtd?.zones.find(zone => zone.zone === 'Hobbies & Lifestyle')?.target).toBe(4900)
-    expect(result.fullMonth?.departments.find(department => department.label === 'Department 1')?.target).toBe(3100)
+    expect(result.fullMonth?.departments.find(department => department.label === 'Department 1')?.target).toBe(9001)
     expect(result.fullMonth?.departments.find(department => department.label === 'Department 1')?.value).toBe(28)
     expect(result.trend.points.at(-1)).toMatchObject({ date: '07-10-2026', day: 7 })
   })
