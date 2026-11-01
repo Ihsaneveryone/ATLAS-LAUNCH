@@ -218,41 +218,136 @@ export default function ManagerTeamOverview({ user }: { user: User }) {
               </div>
             )}
             {otherMembers.length > 0 && (
-              <div style={{ display: "grid", gap: 6 }}>
-                {otherMembers.map(({ member, performance }) => (
-                  <div
-                    key={member.nik}
+              <div
+                style={{
+                  marginTop: otherDepartments.length > 0 ? 12 : 0,
+                  border: `1px solid ${border}`,
+                  borderRadius: 12,
+                  background: "#fff",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "12px 14px",
+                    borderBottom: `1px solid ${border}`,
+                  }}
+                >
+                  <div style={{ color: text, fontSize: 12, fontWeight: 800 }}>
+                    Karyawan di Luar Departemen · SBD
+                  </div>
+                  <div style={{ color: muted, fontSize: 10, marginTop: 3 }}>
+                    Tanggung jawab langsung Manajer · tanpa Supervisor
+                  </div>
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "8px 9px",
-                      borderRadius: 10,
-                      background: "#fff",
-                      border: `1px solid ${border}`,
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      minWidth: isMobile ? 540 : 0,
                     }}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: text, fontSize: 11, fontWeight: 700 }}>
-                        {member.nama}
-                      </div>
-                      <div style={{ color: muted, fontSize: 9, marginTop: 2 }}>
-                        {member.nik} · {member.jobTitle}
-                        {member.departmentUser ? ` · ${member.departmentUser}` : ""}
-                      </div>
-                    </div>
-                    <span
-                      style={{
-                        color: text,
-                        fontSize: 10,
-                        fontWeight: 700,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {formatRupiahFull(performance?.sales ?? 0)}
-                    </span>
-                  </div>
-                ))}
+                    <thead>
+                      <tr style={{ background: "#f8faff", textAlign: "left" }}>
+                        {[
+                          "Nama",
+                          "Sales SBD",
+                          "Target SBD",
+                          "Pencapaian",
+                          "Proteksi",
+                        ].map((label) => (
+                          <th
+                            key={label}
+                            style={{
+                              padding: "9px 12px",
+                              color: muted,
+                              fontSize: 9,
+                              fontWeight: 800,
+                              textTransform: "uppercase",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {otherMembers.map(({ member, performance }) => {
+                        const achievement = performance?.achievement ?? 0
+                        const color = achievementColor(achievement)
+
+                        return (
+                          <tr
+                            key={member.nik}
+                            style={{ borderTop: `1px solid ${border}` }}
+                          >
+                            <td style={{ padding: "10px 12px" }}>
+                              <div
+                                style={{
+                                  color: text,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {member.nama}
+                              </div>
+                              <div style={{ color: muted, fontSize: 9, marginTop: 2 }}>
+                                {member.nik} · {member.jobTitle}
+                                {member.departmentUser
+                                  ? ` · ${member.departmentUser}`
+                                  : ""}
+                              </div>
+                            </td>
+                            <td
+                              style={{
+                                padding: "10px 12px",
+                                color: text,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {formatRupiahFull(performance?.sales ?? 0)}
+                            </td>
+                            <td
+                              style={{
+                                padding: "10px 12px",
+                                color: sub,
+                                fontSize: 11,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {formatRupiahFull(performance?.targetSales ?? 0)}
+                            </td>
+                            <td
+                              style={{
+                                padding: "10px 12px",
+                                color,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {achievement.toFixed(1)}%
+                            </td>
+                            <td
+                              style={{
+                                padding: "10px 12px",
+                                color: text,
+                                fontSize: 11,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {(performance?.proteksi ?? 0).toLocaleString("id-ID")}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>

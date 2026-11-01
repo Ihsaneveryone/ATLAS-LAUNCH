@@ -409,6 +409,10 @@ export function SupervisorDeptBar({ user }: { user: User }) {
               ? `Belum ada departemen yang terhubung ke NIK Manajer ${user.nik} di kolom K–M sheet User.`
               : "Belum ada departemen yang terhubung ke NIK Supervisor ini di kolom K–L sheet User."}
           </div>
+        ) : !sbd ? (
+          <div style={{ color: S.sub, fontSize: 13 }}>
+            Data SBD hari ini belum tersedia.
+          </div>
         ) : departmentMetrics.length === 0 &&
           zoneMetrics.length === 0 ? (
           <div style={{ color: S.sub, fontSize: 13 }}>

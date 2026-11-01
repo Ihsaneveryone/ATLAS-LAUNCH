@@ -25,6 +25,7 @@ import { normalizeJobTitle } from "../services/jobTitle"
 import {
   departmentZoneMetrics,
   supervisorDepartments,
+  managerOtherTeam,
   managerDepartments,
   managerSupervisors,
   supervisorTeam,
@@ -104,15 +105,22 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
     () => (isManager ? managerSupervisors(users, user) : []),
     [isManager, users, user],
   )
+  const directReports = useMemo(
+    () => (isManager ? managerOtherTeam(users, user) : []),
+    [isManager, users, user],
+  )
 
   const managedTeam = useMemo(
     () =>
       isManager
-        ? managedSupervisors.flatMap((supervisor) =>
-            supervisorTeam(users, supervisor),
-          )
+        ? [
+            ...managedSupervisors.flatMap((supervisor) =>
+              supervisorTeam(users, supervisor),
+            ),
+            ...directReports,
+          ]
         : team,
-    [isManager, managedSupervisors, team, users],
+    [directReports, isManager, managedSupervisors, team, users],
   )
 
   const departmentNames = useMemo(() => {
@@ -260,15 +268,31 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
     PERIODS.find((item) => item.key === period)?.label ?? period
 
   const performanceGroups = isManager
-    ? managedSupervisors.map((supervisor) => ({
-        supervisor,
-        rows: rows.filter(
-          ({ member }) =>
-            member.supervisorNik &&
-            niksMatch(member.supervisorNik, supervisor.nik),
-        ),
-      }))
-    : [{ supervisor: null, rows }]
+    ? [
+        ...managedSupervisors.map((supervisor) => ({
+          supervisor,
+          groupLabel: null,
+          rows: rows.filter(
+            ({ member }) =>
+              member.supervisorNik &&
+              niksMatch(member.supervisorNik, supervisor.nik),
+          ),
+        })),
+        ...(directReports.length > 0
+          ? [
+              {
+                supervisor: null,
+                groupLabel: "Tanggung Jawab Langsung Manajer · Tanpa SPV",
+                rows: rows.filter(({ member }) =>
+                  directReports.some((directReport) =>
+                    niksMatch(directReport.nik, member.nik),
+                  ),
+                ),
+              },
+            ]
+          : []),
+      ]
+    : [{ supervisor: null, groupLabel: null, rows }]
 
   const px = isMobile ? "16px" : "32px"
 
@@ -542,12 +566,12 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
           >
             <div style={{ color: S.text, fontSize: 14, fontWeight: 800 }}>
               {isManager
-                ? `Pencapaian Team per SPV · ${periodLabel}`
+                ? `Pencapaian Team · ${periodLabel}`
                 : `Pencapaian SID Team · ${periodLabel}`}
             </div>
             <div style={{ color: S.muted, fontSize: 11, marginTop: 3 }}>
               {isManager
-                ? "Menampilkan pencapaian anggota di bawah setiap SPV. Sales SPV tidak ditampilkan."
+                ? "Menampilkan anggota di bawah SPV dan karyawan tanggung jawab langsung Manajer."
                 : "Anggota berdasarkan NIK Supervisor pada kolom I sheet User"}
             </div>
           </div>
@@ -576,9 +600,10 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                 gap: 12,
               }}
             >
-              {performanceGroups.map(({ supervisor, rows: groupRows }) => (
+              {performanceGroups.map(
+                ({ supervisor, groupLabel, rows: groupRows }) => (
                 <section
-                  key={supervisor?.nik ?? "supervisor-team"}
+                  key={supervisor?.nik ?? groupLabel ?? "supervisor-team"}
                   style={{ display: "flex", flexDirection: "column", gap: 10 }}
                 >
                   {supervisor && (
@@ -594,6 +619,21 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                       }}
                     >
                       SPV · {supervisor.nama} · {supervisor.nik}
+                    </div>
+                  )}
+                  {groupLabel && (
+                    <div
+                      style={{
+                        margin: "4px 0 0",
+                        padding: "10px 12px",
+                        borderRadius: 11,
+                        color: S.text,
+                        background: "#e8edf8",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {groupLabel}
                     </div>
                   )}
                   <div
@@ -663,7 +703,8 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                     )}
                   </div>
                 </section>
-              ))}
+                ),
+              )}
               {ytdRows.length === 0 && (
                 <div style={{ padding: 4, color: S.sub, fontSize: 13 }}>
                   Data YTD anggota tim belum tersedia di sheet YEAR TO DATE.
@@ -679,9 +720,10 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                 gap: 16,
               }}
             >
-              {performanceGroups.map(({ supervisor, rows: groupRows }) => (
+              {performanceGroups.map(
+                ({ supervisor, groupLabel, rows: groupRows }) => (
                 <section
-                  key={supervisor?.nik ?? "supervisor-team"}
+                  key={supervisor?.nik ?? groupLabel ?? "supervisor-team"}
                   style={{ display: "flex", flexDirection: "column", gap: 10 }}
                 >
                   {supervisor && (
@@ -696,6 +738,20 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                       }}
                     >
                       SPV · {supervisor.nama} · {supervisor.nik}
+                    </div>
+                  )}
+                  {groupLabel && (
+                    <div
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 11,
+                        color: S.text,
+                        background: "#e8edf8",
+                        fontSize: 12,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {groupLabel}
                     </div>
                   )}
                   <div
@@ -946,7 +1002,8 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
                     )}
                   </div>
                 </section>
-              ))}
+                ),
+              )}
             </div>
           )}
         </section>

@@ -261,6 +261,17 @@ function findLatestSalesDateColumn(headerRow: string[], dataRows: string[][]): {
   return latest
 }
 
+function findTodaySalesDateColumn(
+  headerRow: string[],
+  today: string,
+): { index: number; date: string; day: number } | null {
+  for (let col = 2; col <= 32; col++) {
+    const date = g(headerRow, col)
+    if (date === today) return { index: col, date, day: parseDay(date) }
+  }
+  return null
+}
+
 function findRowByDay(rows: string[][], day: number): { row: string[]; date: string; day: number } | null {
   for (const row of rows) {
     const date = g(row, 19)
@@ -436,8 +447,18 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   // Prefix columns to preserve the existing zero-based column indexes used below.
   const sbdHeaderRow = ['', '', ...(salesRange[0] ?? []).slice(1)]
   const sbdDataRows = salesRange.slice(1, 23).map(row => ['', row[0] ?? '', ...row.slice(1)])
-  const sbdDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
-  const mtdSalesDateInfo = sbdDateInfo
+  const dateParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).formatToParts(new Date())
+  const todayDay = dateParts.find(part => part.type === 'day')?.value ?? ''
+  const todayMonth = dateParts.find(part => part.type === 'month')?.value ?? ''
+  const todayYear = dateParts.find(part => part.type === 'year')?.value ?? ''
+  const todayFormatted = `${todayDay}-${todayMonth}-${todayYear}`
+  const sbdDateInfo = findTodaySalesDateColumn(sbdHeaderRow, todayFormatted)
+  const mtdSalesDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
 
   const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
@@ -447,18 +468,14 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbdTargetValues = buildFlatSBDTargets(sbdFlatTargetRow)
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
   const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, sbdTargetValues)
-
-  // Format today's date as DD-MM-YYYY
-  const today = new Date()
-  const todayFormatted = `${String(today.getDate()).padStart(2, '0')}-${String(today.getMonth() + 1).padStart(2, '0')}-${today.getFullYear()}`
   
-  const sbd = sbdDateInfo
-    ? buildPeriodData(
-        todayFormatted,
-        sbdDataRows.map(row => g(row, sbdDateInfo.index)),
-        sbdTargetValues,
-      )
-    : null
+  const sbd = buildPeriodData(
+    todayFormatted,
+    sbdDateInfo
+      ? sbdDataRows.map(row => g(row, sbdDateInfo.index))
+      : DEPT_NODES.map(() => '0'),
+    sbdTargetValues,
+  )
 
   const referenceDailyInfo = mtdSalesDateInfo
   const cumulativeValues = referenceDailyInfo
