@@ -13,8 +13,10 @@ import { achievementColor } from "../services/achievementColor"
 import { niksMatch } from "../services/nik"
 
 import {
-  managerDepartments,
+  managerOtherDepartments,
+  managerOtherTeam,
   managerSupervisors,
+  managerTrackedDepartments,
   supervisorDepartments,
   supervisorTeam,
 } from "../services/supervisorPerformance"
@@ -32,8 +34,27 @@ export default function ManagerTeamOverview({ user }: { user: User }) {
 
   const isMobile = useMobile()
   const departments = useMemo(
-    () => managerDepartments(users, user),
+    () => managerTrackedDepartments(users, user),
     [users, user],
+  )
+  const otherDepartments = useMemo(
+    () => managerOtherDepartments(users, user),
+    [users, user],
+  )
+  const otherMembers = useMemo(
+    () =>
+      managerOtherTeam(users, user)
+        .map((member) => ({
+          member,
+          performance: teamTodayEmployees.find((employee) =>
+            niksMatch(employee.nik, member.nik),
+          ),
+        }))
+        .sort(
+          (left, right) =>
+            (right.performance?.sales ?? 0) - (left.performance?.sales ?? 0),
+        ),
+    [teamTodayEmployees, user, users],
   )
 
   const groups = useMemo(
@@ -119,12 +140,12 @@ export default function ManagerTeamOverview({ user }: { user: User }) {
                 marginBottom: 8,
               }}
             >
-              Departemen yang dipegang Manajer
+              Departemen Utama yang dipegang Manajer
             </div>
             {departments.length === 0 ? (
               <div style={{ color: muted, fontSize: 11 }}>
-                Belum ada departemen yang terhubung ke NIK Manajer {user.nik} di
-                kolom M.
+                Belum ada departemen utama yang terhubung ke NIK Manajer{" "}
+                {user.nik} di kolom M.
               </div>
             ) : (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -142,6 +163,95 @@ export default function ManagerTeamOverview({ user }: { user: User }) {
                   >
                     {department}
                   </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loading && (otherDepartments.length > 0 || otherMembers.length > 0) && (
+          <div
+            style={{
+              margin: isMobile ? 12 : 16,
+              marginTop: 0,
+              padding: 14,
+              border: `1px solid ${border}`,
+              borderRadius: 14,
+              background: "#f8faff",
+            }}
+          >
+            <div
+              style={{
+                color: sub,
+                fontSize: 10,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                marginBottom: 8,
+              }}
+            >
+              Lainnya · Tanggung jawab langsung Manajer
+            </div>
+            {otherDepartments.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginBottom: otherMembers.length > 0 ? 12 : 0,
+                }}
+              >
+                {otherDepartments.map((department) => (
+                  <span
+                    key={department}
+                    style={{
+                      padding: "5px 8px",
+                      borderRadius: 8,
+                      color: "#334155",
+                      background: "#eef2ff",
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {department}
+                  </span>
+                ))}
+              </div>
+            )}
+            {otherMembers.length > 0 && (
+              <div style={{ display: "grid", gap: 6 }}>
+                {otherMembers.map(({ member, performance }) => (
+                  <div
+                    key={member.nik}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 9px",
+                      borderRadius: 10,
+                      background: "#fff",
+                      border: `1px solid ${border}`,
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: text, fontSize: 11, fontWeight: 700 }}>
+                        {member.nama}
+                      </div>
+                      <div style={{ color: muted, fontSize: 9, marginTop: 2 }}>
+                        {member.nik} · {member.jobTitle}
+                        {member.departmentUser ? ` · ${member.departmentUser}` : ""}
+                      </div>
+                    </div>
+                    <span
+                      style={{
+                        color: text,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {formatRupiahFull(performance?.sales ?? 0)}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}

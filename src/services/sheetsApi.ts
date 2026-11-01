@@ -5,13 +5,14 @@ let usersRequestInFlight: Promise<User[]> | null = null
 let usersCache: User[] | null = null
 const IS_DEV = typeof import.meta !== 'undefined' && Boolean(import.meta.env?.DEV)
 
-function sheetUrl(name: string, bust = false) {
+function sheetUrl(name: string, bust = false, range?: string) {
   const base = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}`
-  return bust ? `${base}&_t=${Date.now()}` : base
+  const withRange = range ? `${base}&range=${encodeURIComponent(range)}` : base
+  return bust ? `${withRange}&_t=${Date.now()}` : withRange
 }
 
-async function fetchCSV(sheetName: string, bustCache = false): Promise<string[][]> {
-  const url = sheetUrl(sheetName, bustCache)
+async function fetchCSV(sheetName: string, bustCache = false, range?: string): Promise<string[][]> {
+  const url = sheetUrl(sheetName, bustCache, range)
   if (IS_DEV) console.warn(`[ATLAS] Fetching: "${sheetName}"`, url)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 15_000)
@@ -90,6 +91,20 @@ export async function fetchUsers(): Promise<User[]> {
   if (!usersRequestInFlight) {
     usersRequestInFlight = (async () => {
       const rows = await fetchCSV('USERS', true)
+      const missingManagerNikRows = rows
+        .slice(1)
+        .map((row, index) => ({ row, sheetRow: index + 3 }))
+        .filter(({ row }) => col(row, ci('K')) && col(row, ci('L')) && !col(row, ci('M')))
+      const managerNiks = await Promise.all(
+        missingManagerNikRows.map(async ({ sheetRow }) => {
+          const [managerNikRow] = await fetchCSV('USERS', true, `M${sheetRow}:M${sheetRow}`)
+          return managerNikRow?.[0]?.trim() ?? ''
+        }),
+      )
+      for (let index = 0; index < missingManagerNikRows.length; index++) {
+        missingManagerNikRows[index].row[ci('M')] = managerNiks[index]
+      }
+
       const users = rows.slice(1).filter(r => col(r, 0) || col(r, 1)).map(r => ({
         nik:      col(r, ci('A')),
         nama:     col(r, ci('B')),

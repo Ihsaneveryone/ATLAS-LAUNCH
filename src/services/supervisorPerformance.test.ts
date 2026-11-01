@@ -6,7 +6,10 @@ import {
   departmentZoneMetrics,
   departmentSupervisors,
   managerDepartments,
+  managerOtherDepartments,
+  managerOtherTeam,
   managerSupervisors,
+  managerTrackedDepartments,
   supervisorDepartments,
   supervisorTeam,
   supervisorDepartmentMetrics,
@@ -145,6 +148,57 @@ describe("supervisor performance selectors", () => {
     expect(managerDepartments(users, manager)).toEqual([
       "Cleaning",
       "Home Comfort",
+    ])
+  })
+
+  it("shows direct cashier and customer-service reports under manager other responsibilities", () => {
+    const manager: User = {
+      nik: "187856",
+      nama: "Manager",
+      role: "user",
+      jobTitle: "Manajer",
+      password: "",
+    }
+    const users: User[] = [
+      {
+        ...supervisor,
+        supervisorDepartment: "Automotive",
+        managerDepartmentNik: "187856",
+      },
+      {
+        ...supervisor,
+        nik: "200001",
+        jobTitle: "CUSTOMER SERVICE",
+        nama: "Customer Service",
+        supervisorNik: "187856",
+        departmentUser: "Customer Service",
+      },
+      {
+        ...supervisor,
+        nik: "200002",
+        jobTitle: "CASHIER",
+        nama: "Cashier",
+        supervisorNik: "187856",
+        departmentUser: "Cashier",
+      },
+      {
+        ...supervisor,
+        nik: "200003",
+        jobTitle: "SPV",
+        nama: "Supervisor",
+        supervisorNik: "187856",
+        departmentUser: "Home Living",
+      },
+    ]
+
+    expect(managerTrackedDepartments(users, manager)).toEqual(["Automotive"])
+    expect(managerOtherDepartments(users, manager)).toEqual([
+      "Customer Service",
+      "Cashier",
+    ])
+    expect(managerOtherTeam(users, manager).map((member) => member.nik)).toEqual([
+      "200001",
+      "200002",
     ])
   })
 

@@ -40,11 +40,17 @@ export function SupervisorDepartmentCards({
   periodLabel,
   workingDays,
   isMobile,
+  salesLabel,
+  targetLabel,
+  showDailyAverage = true,
 }: {
   departments: DeptMetric[]
   periodLabel: string
   workingDays: number
   isMobile: boolean
+  salesLabel?: string
+  targetLabel?: string
+  showDailyAverage?: boolean
 }) {
   return (
     <div
@@ -182,25 +188,29 @@ export function SupervisorDepartmentCards({
             >
               {[
                 {
-                  label: `Sales ${periodLabel}`,
+                  label: salesLabel ?? `Sales ${periodLabel}`,
                   value: formatRupiahFull(department.value),
                   color: S.text,
                 },
                 {
-                  label: `Target ${periodLabel}`,
+                  label: targetLabel ?? `Target ${periodLabel}`,
                   value:
                     department.target === undefined
                       ? "Belum tersedia"
                       : formatRupiahFull(department.target),
                   color: S.sub,
                 },
-                {
-                  label: "ACV / hari",
-                  value: formatRupiahFull(
-                    department.value / Math.max(workingDays, 1),
-                  ),
-                  color: "#7c3aed",
-                },
+                ...(showDailyAverage
+                  ? [
+                      {
+                        label: "ACV / hari",
+                        value: formatRupiahFull(
+                          department.value / Math.max(workingDays, 1),
+                        ),
+                        color: "#7c3aed",
+                      },
+                    ]
+                  : []),
                 {
                   label: "Status target",
                   value:
@@ -399,7 +409,8 @@ export function SupervisorDeptBar({ user }: { user: User }) {
               ? `Belum ada departemen yang terhubung ke NIK Manajer ${user.nik} di kolom K–M sheet User.`
               : "Belum ada departemen yang terhubung ke NIK Supervisor ini di kolom K–L sheet User."}
           </div>
-        ) : departmentMetrics.length === 0 && zoneMetrics.length === 0 ? (
+        ) : departmentMetrics.length === 0 &&
+          zoneMetrics.length === 0 ? (
           <div style={{ color: S.sub, fontSize: 13 }}>
             Data departemen {departmentNames.join(", ")} belum ditemukan di
             sheet Pencapaian Dept.

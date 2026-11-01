@@ -63,7 +63,7 @@ const DEPARTMENT_CATEGORIES: Array<{
   },
 
   {
-    department: "Safe, Office, Security System",
+    department: "Safes, Office, & Security Systems",
 
     categories: ["Safes, Office, & Security Systems"],
   },
@@ -76,7 +76,7 @@ const DEPARTMENT_CATEGORIES: Array<{
   { department: "Tools & Hardware", categories: ["Hardware", "Tools"] },
 
   {
-    department: "Racking, Locker & Cabinet",
+    department: "Locker, Cabinet, & Racking",
 
     categories: ["Locker, Cabinet, & Racking"],
   },
@@ -90,12 +90,12 @@ const DEPARTMENT_CATEGORIES: Array<{
   { department: "Automotive", categories: ["Automotive"] },
 
   {
-    department: "LG & AquaPet",
+    department: "LG Aquapet OL",
     categories: ["Lawn Garden", "Outdoor Living", "Aqua Pet"],
   },
 
   {
-    department: "Sporting & health",
+    department: "Sports & Health",
     categories: ["Sports", "Health Supports"],
   },
 

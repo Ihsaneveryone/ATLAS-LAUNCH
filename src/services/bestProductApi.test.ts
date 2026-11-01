@@ -132,6 +132,26 @@ describe("buildBestProductReport", () => {
     expect(report.transactionCount).toBe(4)
   })
 
+  it("uses only the approved department names in its report", () => {
+    const report = buildBestProductReport(
+      [
+        ["", "", "", "", "SAFE-1", "", "", "1", "", "", "", "100", "", "07/10/2026", "Safes, Office, & Security Systems"],
+        ["", "", "", "", "RACK-1", "", "", "1", "", "", "", "100", "", "07/10/2026", "Locker, Cabinet, & Racking"],
+        ["", "", "", "", "AQUA-1", "", "", "1", "", "", "", "100", "", "07/10/2026", "Aqua Pet"],
+        ["", "", "", "", "SPORT-1", "", "", "1", "", "", "", "100", "", "07/10/2026", "Sports"],
+      ],
+      "sbd",
+      today,
+    )
+
+    expect(report.departments.map((department) => department.name)).toEqual([
+      "Safes, Office, & Security Systems",
+      "Locker, Cabinet, & Racking",
+      "LG Aquapet OL",
+      "Sports & Health",
+    ])
+  })
+
   it("limits MTD data to the current Jakarta month through today", () => {
     const report = buildBestProductReport(
       [

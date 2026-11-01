@@ -183,15 +183,14 @@ async function fetchSheetRange(range: string): Promise<string[][]> {
   return parseCSV(text)
 }
 
-function buildPeriodData(date: string | undefined, labels: string[], values: string[], targetsByIndex?: (number | undefined)[]): DeptPeriodData {
-  const departments: DeptMetric[] = labels.map((label, index) => {
-    const node = DEPT_NODES[index]
+function buildPeriodData(date: string | undefined, values: string[], targetsByIndex?: (number | undefined)[]): DeptPeriodData {
+  const departments: DeptMetric[] = DEPT_NODES.map((node, index) => {
     const value = n(values[index] ?? '')
     const target = targetsByIndex?.[index]
     return {
-      label: label || node?.label || `Item ${index + 1}`,
-      kind: node?.kind ?? (/zona/i.test(label) ? 'zone' : 'dept'),
-      zone: node?.zone ?? '',
+      label: node.label,
+      kind: node.kind,
+      zone: node.zone,
       value,
       target,
       achievement: target && target > 0 ? parseFloat(((value / target) * 100).toFixed(1)) : undefined,
@@ -321,23 +320,85 @@ function normalizeDepartmentName(value: string): string {
     .replace(/[^a-z0-9]/g, '')
 }
 
-function buildFullMonthTargets(rows: string[][], labels: string[]): (number | undefined)[] {
-  const targetsByDepartment = new Map<string, number>()
+export function isPencapaianDepartment(value: string): boolean {
+  const normalized = normalizeDepartmentName(value)
+  return DEPT_NODES.some(
+    node => node.kind === 'dept' && normalizeDepartmentName(node.label) === normalized,
+  )
+}
 
-  for (const row of rows) {
-    const departmentName = normalizeDepartmentName(g(row, 0))
-    if (!departmentName) continue
-    targetsByDepartment.set(departmentName, n(g(row, 5)))
+function departmentNameDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex++) {
+    let diagonal = previous[0]
+    previous[0] = leftIndex
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex++) {
+      const above = previous[rightIndex]
+      previous[rightIndex] = Math.min(
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + 1,
+        diagonal + (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1),
+      )
+      diagonal = above
+    }
   }
 
-  return labels.map(label => targetsByDepartment.get(normalizeDepartmentName(label)))
+  return previous[right.length]
+}
+
+function findDepartmentIndex(value: string): number {
+  const normalized = normalizeDepartmentName(value)
+  if (!normalized) return -1
+
+  const canonicalNames = DEPT_NODES.map(node => normalizeDepartmentName(node.label))
+  const exactIndex = canonicalNames.indexOf(normalized)
+  if (exactIndex >= 0) return exactIndex
+
+  let bestIndex = -1
+  let bestDistance = 3
+  let isAmbiguous = false
+
+  for (let index = 0; index < canonicalNames.length; index++) {
+    const distance = departmentNameDistance(normalized, canonicalNames[index])
+    if (distance < bestDistance) {
+      bestIndex = index
+      bestDistance = distance
+      isAmbiguous = false
+    } else if (distance === bestDistance) {
+      isAmbiguous = true
+    }
+  }
+
+  return bestDistance <= 2 && !isAmbiguous ? bestIndex : -1
+}
+
+function buildFullMonthTargets(rows: string[][]): (number | undefined)[] {
+  const targetsByDepartment = new Map<number, number>()
+  let zoneTotalIndex = 0
+
+  for (const row of rows) {
+    const departmentName = g(row, 0)
+    if (normalizeDepartmentName(departmentName) === 'total') {
+      const zoneGroup = DEPT_GROUPS[zoneTotalIndex]
+      if (zoneGroup) {
+        targetsByDepartment.set(zoneGroup.start, n(g(row, 5)))
+        zoneTotalIndex++
+      }
+      continue
+    }
+
+    const departmentIndex = findDepartmentIndex(departmentName)
+    if (departmentIndex < 0) continue
+    targetsByDepartment.set(departmentIndex, n(g(row, 5)))
+  }
+
+  return DEPT_NODES.map((_, index) => targetsByDepartment.get(index))
 }
 
 function buildDeptTrendData(sbdHeaderRow: string[], sbdDataRows: string[][], sbdTargetsByIndex?: number[]): DeptTrendData {
-  const labels = LEAF_DEPT_INDEXES.map(index => {
-    const sourceLabel = g(sbdDataRows[index] ?? [], 1)
-    return sourceLabel || DEPT_NODES[index]?.label || `Dept ${index + 1}`
-  })
+  const labels = LEAF_DEPT_INDEXES.map(index => DEPT_NODES[index].label)
 
   const points: DeptTrendPoint[] = []
   for (let col = 2; col <= 32; col++) {
@@ -375,7 +436,6 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   // Prefix columns to preserve the existing zero-based column indexes used below.
   const sbdHeaderRow = ['', '', ...(salesRange[0] ?? []).slice(1)]
   const sbdDataRows = salesRange.slice(1, 23).map(row => ['', row[0] ?? '', ...row.slice(1)])
-  const sbdLabels = sbdDataRows.map(row => g(row, 1))
   const sbdDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
   const mtdSalesDateInfo = sbdDateInfo
 
@@ -395,7 +455,6 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const sbd = sbdDateInfo
     ? buildPeriodData(
         todayFormatted,
-        sbdLabels,
         sbdDataRows.map(row => g(row, sbdDateInfo.index)),
         sbdTargetValues,
       )
@@ -415,7 +474,6 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const mtd = latestTargetRow
     ? buildPeriodData(
         latestTargetRow.date,
-        sbdLabels,
         cumulativeValues,
         mtdTargetValues,
       )
@@ -424,9 +482,8 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const fullMonth = mtdSalesDateInfo
     ? buildPeriodData(
         todayFormatted,
-        sbdLabels,
         cumulativeValues,
-        buildFullMonthTargets(fullMonthDepartmentTargets, sbdLabels),
+        buildFullMonthTargets(fullMonthDepartmentTargets),
       )
     : null
 

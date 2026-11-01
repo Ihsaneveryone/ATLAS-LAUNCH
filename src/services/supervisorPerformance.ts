@@ -1,6 +1,10 @@
 import type { User } from "../data/mockData"
 
-import type { DeptMetric, DeptPeriodData } from "./deptApi"
+import {
+  isPencapaianDepartment,
+  type DeptMetric,
+  type DeptPeriodData,
+} from "./deptApi"
 
 import { niksMatch } from "./nik"
 import { normalizeJobTitle } from "./jobTitle"
@@ -80,6 +84,39 @@ export function managerDepartments(users: User[], manager: User): string[] {
 
     if (key && !departments.has(key))
       departments.set(key, user.supervisorDepartment.trim())
+  }
+
+  return [...departments.values()]
+}
+
+export function managerOtherTeam(users: User[], manager: User): User[] {
+  return users.filter(
+    (user) =>
+      user.supervisorNik &&
+      niksMatch(user.supervisorNik, manager.nik) &&
+      !niksMatch(user.nik, manager.nik) &&
+      normalizeJobTitle(user.jobTitle) !== "SUPERVISOR" &&
+      normalizeJobTitle(user.jobTitle) !== "MANAGER",
+  )
+}
+
+export function managerTrackedDepartments(users: User[], manager: User): string[] {
+  return managerDepartments(users, manager).filter(isPencapaianDepartment)
+}
+
+export function managerOtherDepartments(users: User[], manager: User): string[] {
+  const departments = new Map<string, string>()
+  const otherDepartmentNames = [
+    ...managerDepartments(users, manager),
+    ...managerOtherTeam(users, manager).map((user) => user.departmentUser ?? ""),
+  ]
+
+  for (const department of otherDepartmentNames) {
+    const name = department.trim()
+    const key = normalizeDepartment(name)
+    if (name && key && !isPencapaianDepartment(name) && !departments.has(key)) {
+      departments.set(key, name)
+    }
   }
 
   return [...departments.values()]
