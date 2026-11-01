@@ -22,6 +22,10 @@ function formatDate(date: string): string {
 function Photo({ src, alt }: { src: string; alt: string }) {
   const [failed, setFailed] = useState(false)
 
+  useEffect(() => {
+    setFailed(false)
+  }, [src])
+
   if (failed) {
     return <span style={{ color: '#b45309', fontSize: 9, lineHeight: 1.35, textAlign: 'center', padding: 4 }}>Foto tidak dapat dimuat</span>
   }
@@ -31,6 +35,7 @@ function Photo({ src, alt }: { src: string; alt: string }) {
       src={src}
       alt={alt}
       loading="lazy"
+      referrerPolicy="no-referrer"
       onError={() => setFailed(true)}
       style={{ width: '100%', height: '100%', objectFit: 'cover' }}
     />

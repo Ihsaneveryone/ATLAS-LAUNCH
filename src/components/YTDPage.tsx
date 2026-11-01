@@ -3,6 +3,7 @@ import type { User } from '../data/mockData'
 import { fetchYTDData, type YTDEmployee, type YTDMonth } from '../services/rawDataApi'
 import { formatRupiah } from '../data/mockData'
 import { useMobile } from '../hooks/useMobile'
+import { achievementColor } from '../services/achievementColor'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, ReferenceLine,
@@ -56,15 +57,8 @@ function parseQ(raw: string): 1|2|3|4 {
   return (n >= 1 && n <= 4 ? n : 4) as 1|2|3|4
 }
 
-function pctColor(v: number) {
-  if (v >= 100) return '#16a34a'
-  if (v >= 85)  return '#ca8a04'
-  if (v >= 70)  return '#ea580c'
-  return '#dc2626'
-}
-
 function PctBar({ label, value }: { label: string; value: number }) {
-  const color = pctColor(value)
+  const color = achievementColor(value)
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -302,7 +296,7 @@ function QuadrantMatrix({ qn }: { qn: 1|2|3|4 }) {
   )
 }
 
-function YTDContent({ ytd, isMobile }: { ytd: YTDEmployee; isMobile: boolean }) {
+export function YTDContent({ ytd, isMobile }: { ytd: YTDEmployee; isMobile: boolean }) {
   const zone = zoneInfo(ytd.ytdColorZone)
   const qn   = parseQ(ytd.ytdQuadrant)
   const quad = QUAD_MAP[qn]
@@ -333,10 +327,10 @@ function YTDContent({ ytd, isMobile }: { ytd: YTDEmployee; isMobile: boolean }) 
 
         <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 16, padding: '18px 20px' }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: S.muted, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Score YTD</div>
-          <div style={{ fontSize: 40, fontWeight: 900, color: pctColor((ytd.ytdScore / 5) * 100), lineHeight: 1, marginBottom: 4 }}>{ytd.ytdScore}</div>
+          <div style={{ fontSize: 40, fontWeight: 900, color: achievementColor((ytd.ytdScore / 5) * 100), lineHeight: 1, marginBottom: 4 }}>{ytd.ytdScore}</div>
           <div style={{ fontSize: 11, color: S.muted, marginBottom: 6 }}>dari 5</div>
           <div style={{ height: 6, background: '#e8edf8', borderRadius: 3, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${(ytd.ytdScore / 5) * 100}%`, background: pctColor((ytd.ytdScore / 5) * 100), borderRadius: 3 }} />
+            <div style={{ height: '100%', width: `${(ytd.ytdScore / 5) * 100}%`, background: achievementColor((ytd.ytdScore / 5) * 100), borderRadius: 3 }} />
           </div>
         </div>
 
@@ -345,7 +339,7 @@ function YTDContent({ ytd, isMobile }: { ytd: YTDEmployee; isMobile: boolean }) 
           {[['Sales', ytd.avgSales], ['TRX', ytd.avgTrx], ['BS', ytd.avgBS]].map(([l, v]) => (
             <div key={String(l)} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 11, color: S.sub, fontWeight: 600 }}>{l}</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: pctColor(Number(v)) }}>{Number(v).toFixed(1)}%</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: achievementColor(Number(v)) }}>{Number(v).toFixed(1)}%</span>
             </div>
           ))}
         </div>
@@ -403,28 +397,34 @@ function YTDContent({ ytd, isMobile }: { ytd: YTDEmployee; isMobile: boolean }) 
       <div style={{ background: S.card, border: `1.5px solid ${S.border}`, borderRadius: 16, padding: 20 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: S.text, marginBottom: 16 }}>Trend Performa Bulanan</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {(ytd.months || []).filter(m => m.hasData).map((m, i) => (
+          {(ytd.months || []).map((m, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <div style={{ width: isMobile ? 30 : 38, fontSize: 11, fontWeight: 700, color: S.sub, flexShrink: 0 }}>{m.month}</div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {!m.hasData ? (
+                  <div style={{ fontSize: 10, color: S.muted, fontStyle: 'italic' }}>Belum ada data</div>
+                ) : (
+                <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                   <div style={{ flex: 1, height: 14, background: '#e8edf8', borderRadius: 7, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${Math.min(m.sales, 130) / 1.3}%`, background: pctColor(m.sales), borderRadius: 7, transition: 'width 1s ease', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4 }}>
+                    <div style={{ height: '100%', width: `${Math.min(m.sales, 130) / 1.3}%`, background: achievementColor(m.sales), borderRadius: 7, transition: 'width 1s ease', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4 }}>
                       {m.sales >= 40 && <span style={{ fontSize: 8, fontWeight: 800, color: '#fff' }}>{m.sales.toFixed(0)}%</span>}
                     </div>
                   </div>
-                  {m.sales < 40 && <span style={{ fontSize: 11, fontWeight: 800, color: pctColor(m.sales), flexShrink: 0 }}>{m.sales.toFixed(1)}%</span>}
+                  {m.sales < 40 && <span style={{ fontSize: 11, fontWeight: 800, color: achievementColor(m.sales), flexShrink: 0 }}>{m.sales.toFixed(1)}%</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 9, color: pctColor(m.trx) }}>TRX {m.trx.toFixed(1)}%</span>
-                  <span style={{ fontSize: 9, color: pctColor(m.bs) }}>BS {m.bs.toFixed(1)}%</span>
+                  <span style={{ fontSize: 9, color: achievementColor(m.trx) }}>TRX {m.trx.toFixed(1)}%</span>
+                  <span style={{ fontSize: 9, color: achievementColor(m.bs) }}>BS {m.bs.toFixed(1)}%</span>
                   <span style={{ fontSize: 9, color: S.muted }}>UPT {m.upt.toFixed(1)}×</span>
                   <span style={{ fontSize: 9, color: S.muted }}>AUR {formatRupiah(m.aur)}</span>
                   <span style={{ fontSize: 9, color: S.muted }}>NM {m.newMember}</span>
                   <span style={{ fontSize: 9, color: S.muted }}>Proteksi {m.proteksi}</span>
                 </div>
+                </>
+                )}
               </div>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: QUAD_MAP[parseQ(m.quadrant)].color, flexShrink: 0 }} />
+              {m.hasData && <div style={{ width: 8, height: 8, borderRadius: '50%', background: QUAD_MAP[parseQ(m.quadrant)].color, flexShrink: 0 }} />}
             </div>
           ))}
         </div>

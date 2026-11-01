@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildRawPerformance, fetchCopasS2TableData, salesContributionKeyForZone } from './rawDataApi'
+import { buildRawPerformance, fetchCopasS2TableData, fetchTargets, salesContributionKeyForZone } from './rawDataApi'
 
 function csvResponse(text: string) {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/csv' } })
@@ -8,6 +8,36 @@ function csvResponse(text: string) {
 describe('buildRawPerformance', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+  })
+
+  describe('fetchTargets', () => {
+    it('reads daily sales targets from column O instead of the old column C', async () => {
+      const headers = Array(15).fill('')
+      headers[0] = 'NIK'
+      headers[1] = 'NAMA'
+      headers[2] = 'TARGET SALES DAILY'
+      headers[3] = 'TARGET SALES BULAN'
+      headers[14] = 'TARGET SALES DAILY'
+
+      const row = Array(15).fill('')
+      row[0] = '123702'
+      row[1] = 'Sales User'
+      row[2] = '111000'
+      row[3] = '3000000'
+      row[14] = '222000'
+
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const sheet = new URL(String(input)).searchParams.get('sheet')
+        if (sheet === 'TARGET') return csvResponse([headers.join(','), row.join(',')].join('\n'))
+        if (sheet === 'ATLAS DATABASE') return csvResponse('NIK,NAMA')
+        return csvResponse('')
+      }))
+
+      const targets = await fetchTargets()
+
+      expect(targets.get('123702')?.daily).toBe(222000)
+      expect(targets.get('123702')?.monthly).toBe(3000000)
+    })
   })
 
   afterEach(() => {
@@ -179,8 +209,8 @@ describe('buildRawPerformance', () => {
         ].join('\n'))
       }
       if (sheet === 'TARGET') return csvResponse([
-        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
-        '123702,Sales User,100000,3000000',
+        'NIK,NAMA,OLD TARGET DAILY,TARGET SALES BULAN,,,,,,,,,,,TARGET SALES DAILY',
+        '123702,Sales User,100000,3000000,,,,,,,,,,,100000',
       ].join('\n'))
       if (sheet === 'KUNCIAN SKU') return csvResponse(['SKU', 'SKU1'].join('\n'))
       if (sheet === 'USERS') return csvResponse(['NIK,NAMA,ROLE,JOBTITLE,PASSWORD', '123702,Sales User,user,Sales,123456'].join('\n'))
@@ -214,6 +244,18 @@ describe('buildRawPerformance', () => {
       expect(result.teamTodayEmployees[0]?.topSalesGroup).toBe('HOBBIES & LIFESTYLE')
       expect(result.teamTodayEmployees[0]?.topSalesGroupPct).toBe(40)
       expect(result.teamTodayEmployees[0]?.salesChannelContributions).toEqual({
+        online: 450000,
+        offline: 300000,
+      })
+      expect(result.teamTodayEmployees[0]?.salesByDepartment).toEqual({
+        'Cleaning Supplies': 100000,
+        Appliances: 50000,
+        'Paint & Sundries': 250000,
+        Bicycles: 300000,
+        Lainnya: 50000,
+      })
+      expect(result.teamFullMonthEmployees[0]?.sales).toBe(750000)
+      expect(result.teamFullMonthEmployees[0]?.salesChannelContributions).toEqual({
         online: 450000,
         offline: 300000,
       })
@@ -354,8 +396,8 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'TARGET') {
         return csvResponse([
-          'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN,TARGET TRANSAKSI DAILY,TARGET TRANSAKSI SATU BULAN,TARGET BASKET SIZE DAILY,TARGET BASKET SIZE SATU BULAN,JOB TITLE',
-          'I01902,Sales User,1000000,26000000,4,104,250000,250000,Sales',
+          'NIK,NAMA,OLD TARGET DAILY,TARGET SALES BULAN,TARGET TRANSAKSI DAILY,TARGET TRANSAKSI SATU BULAN,TARGET BASKET SIZE DAILY,TARGET BASKET SIZE SATU BULAN,JOB TITLE,,,,,,TARGET SALES DAILY',
+          'I01902,Sales User,1000000,26000000,4,104,250000,250000,Sales,,,,,,1000000',
         ].join('\n'))
       }
 
@@ -419,9 +461,9 @@ describe('buildRawPerformance', () => {
 
       if (sheet === 'TARGET') {
         return csvResponse([
-          'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN,TARGET TRANSAKSI DAILY,TARGET TRANSAKSI SATU BULAN,TARGET BASKET SIZE DAILY,TARGET BASKET SIZE SATU BULAN,JOB TITLE',
-          '123702,WAHYU RIANTO,3826538,99489988,10,260,382654,382654,ADV',
-          '123702,WAHYU RIANTO,3826538,99489988,15,390,255103,255103,ADV',
+          'NIK,NAMA,OLD TARGET DAILY,TARGET SALES BULAN,TARGET TRANSAKSI DAILY,TARGET TRANSAKSI SATU BULAN,TARGET BASKET SIZE DAILY,TARGET BASKET SIZE SATU BULAN,JOB TITLE,,,,,,TARGET SALES DAILY',
+          '123702,WAHYU RIANTO,3826538,99489988,10,260,382654,382654,ADV,,,,,,3826538',
+          '123702,WAHYU RIANTO,3826538,99489988,15,390,255103,255103,ADV,,,,,,3826538',
         ].join('\n'))
       }
 

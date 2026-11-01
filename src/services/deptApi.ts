@@ -147,6 +147,7 @@ export interface DeptPeriodData {
 export interface DeptPerformanceData {
   sbd: DeptPeriodData | null
   mtd: DeptPeriodData | null
+  fullMonth: DeptPeriodData | null
   trend: DeptTrendData
 }
 
@@ -347,7 +348,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
     fetchSheetRange('M76:AS98'),
     fetchSheetRange('U3:AR33'),
   ])
-  if (salesRange.length < 23) return { sbd: null, mtd: null, trend: { labels: [], points: [] } }
+  if (salesRange.length < 23) return { sbd: null, mtd: null, fullMonth: null, trend: { labels: [], points: [] } }
 
   // Row 76 contains dates in N:AR; rows 77:98 contain names in M and sales in N:AS.
   // Prefix columns to preserve the existing zero-based column indexes used below.
@@ -359,6 +360,7 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
 
   const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
   const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
+  const fullMonthTargetRow = findRowByDay(mtdDateRows, 31)
   
   // SBD uses the fixed target from day 1; later target rows are cumulative MTD targets.
   const sbdFlatTargetRow = findRowByDay(mtdDateRows, 1)?.row ?? mtdDateRows[0] ?? null
@@ -399,5 +401,14 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
       )
     : null
 
-  return { sbd, mtd, trend }
+  const fullMonth = fullMonthTargetRow
+      ? buildPeriodData(
+          fullMonthTargetRow.date,
+          sbdLabels,
+          cumulativeValues,
+          buildTargetValues(fullMonthTargetRow.row),
+        )
+      : null
+
+  return { sbd, mtd, fullMonth, trend }
 }

@@ -56,4 +56,20 @@ describe('selectYesterdayMgbReviews', () => {
       note: 'Sesuai standar',
     })
   })
+
+  it('normalizes common Google Drive photo URLs before rendering', () => {
+    const csv = [
+      '"TANGGAL","NIK","NAMA","DEPT","MGB 1","MGB 2","MGB 3","","","NIK CHECKER","NAMA CHECKER","FOTO CHECKER 1","FOTO CHECKER 2","FOTO CHECKER 3","NILAI","KATEGORI","NOTED"',
+      '"05/10/2026","100829","Harini","Cleaning","=IMAGE(\"https://drive.google.com/file/d/drive-file-123/view?usp=sharing\")","","","","","191924","Checker","=IMAGE(\"https://lh3.googleusercontent.com/d/checker-file-456=s320\")","","","85","B","Rapi"',
+      '"05/10/2026","100830","Ayu","Cleaning","=IMAGE(\"https://drive.google.com/uc?id=drive-file-789&export=view\"; 1)","","","","","191924","Checker","=IMAGE(\"https://lh3.googleusercontent.com/d/abc-123=s320\"; 1)","","","86","A","Lengkap"',
+    ].join('\n')
+
+    const reviews = selectYesterdayMgbReviews(csv, user, '2026-10-05')
+
+    expect(reviews).toHaveLength(2)
+    expect(reviews[0].mgbPhotos).toEqual(['https://drive.google.com/uc?export=view&id=drive-file-123'])
+    expect(reviews[0].checkerPhotos).toEqual(['https://lh3.googleusercontent.com/d/checker-file-456=s320'])
+    expect(reviews[1].mgbPhotos).toEqual(['https://drive.google.com/uc?export=view&id=drive-file-789'])
+    expect(reviews[1].checkerPhotos).toEqual(['https://lh3.googleusercontent.com/d/abc-123=s320'])
+  })
 })

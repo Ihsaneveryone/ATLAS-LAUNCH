@@ -911,7 +911,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
     const map = new Map<string, TargetData>()
     const nikIdx = findTargetHeaderIndex([/^NIK$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NIK', 0))
     const namaIdx = findTargetHeaderIndex([/^NAMA$/i, /^NAME$/i], getConfiguredColumnIndex('TARGET', 'TARGET_NAMA', 1))
-    const dailyIdx = findTargetHeaderIndex([/TARGET SALES DAILY/i, /TARGET HARIAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 2))
+    const dailyIdx = getConfiguredColumnIndex('TARGET', 'TARGET_DAILY', 14)
     const monthlyIdx = findTargetHeaderIndex([/TARGET SALES BULAN/i, /TARGET SATU BULAN/i, /TARGET MONTH/i], getConfiguredColumnIndex('TARGET', 'TARGET_MONTHLY', 3))
     const mtdKaryawanIdx = findTargetHeaderIndex([/TARGET MTD KARYAWAN/i, /TARGET MTD/i, /MTD KARYAWAN/i], getConfiguredColumnIndex('TARGET', 'TARGET_MTD_KARYAWAN', 9))
     const hasMtdKaryawanColumn = Boolean(headers[mtdKaryawanIdx])
@@ -1034,6 +1034,7 @@ interface EmpPerf {
   newMember:     number
   salesContributions: SalesContributions
   salesChannelContributions: Record<'online' | 'offline', number>
+  salesByDepartment: Record<string, number>
   categorySales: Record<string, number>  // category name → total value (Rp)
   categoryQty:   Record<string, number>  // category name → sum of qty
 }
@@ -1056,6 +1057,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     receipts: Set<string>
     salesContributions: SalesContributions
     salesChannelContributions: Record<'online' | 'offline', number>
+    salesByDepartment: Map<string, number>
     categorySales: Map<string, number>
     categoryQty:   Map<string, number>
   }>()
@@ -1070,6 +1072,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
         receipts: new Set(),
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
         salesChannelContributions: { online: 0, offline: 0 },
+        salesByDepartment: new Map(),
         categorySales: new Map(),
         categoryQty:   new Map(),
       })
@@ -1083,6 +1086,13 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     e.salesContributions[contributionKey] += t.totalValue
     const channel = /\.78(?:$|[^0-9])/i.test(t.receiptNo) ? 'online' : 'offline'
     e.salesChannelContributions[channel] += t.totalValue
+    const department = t.subCategory.trim()
+    if (department) {
+      e.salesByDepartment.set(
+        department,
+        (e.salesByDepartment.get(department) ?? 0) + t.totalValue,
+      )
+    }
 
     const cats = articleToCategories.get(normalizeArticleCode(t.artikel))
     if (cats) {
@@ -1097,8 +1107,10 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     const tr = e.receipts.size
     const categorySales: Record<string, number> = {}
     const categoryQty:   Record<string, number> = {}
+    const salesByDepartment: Record<string, number> = {}
     for (const [name, val] of e.categorySales) categorySales[name] = val
     for (const [name, val] of e.categoryQty)   categoryQty[name]   = val
+    for (const [name, val] of e.salesByDepartment) salesByDepartment[name] = val
     return {
       nik: e.nik, nama: e.nama,
       sales:       e.sales,
@@ -1107,6 +1119,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
       newMember:   0,  // filled after merging MEMBER sheet
       salesContributions: e.salesContributions,
       salesChannelContributions: e.salesChannelContributions,
+      salesByDepartment,
       categorySales,
       categoryQty,
       basketSize:  tr > 0 ? Math.round(e.sales / tr) : 0,
@@ -1283,6 +1296,8 @@ function buildRanking(
         transaksi: 0,
         newMember: 0,
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
+        salesChannelContributions: { online: 0, offline: 0 },
+        salesByDepartment: {},
         categorySales: {},
         categoryQty: {},
         basketSize: 0,
@@ -1348,9 +1363,11 @@ export interface TeamEmployeeSummary {
   basketSize: number
   targetBasketSize: number
   newMember: number
+  proteksi: number
   userZone?: string
   salesContributions: SalesContributions
   salesChannelContributions: Record<'online' | 'offline', number>
+  salesByDepartment: Record<string, number>
   topSalesGroup: string
   topSalesGroupPct: number
 }
@@ -1383,6 +1400,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       newMember: 0,
       salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
       salesChannelContributions: { online: 0, offline: 0 },
+      salesByDepartment: {},
       categorySales: {},
       categoryQty: {},
       basketSize: 0,
@@ -1425,8 +1443,12 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       basketSize: e.basketSize,
       targetBasketSize,
       newMember: e.newMember,
+      proteksi: Object.entries(e.categoryQty)
+        .filter(([category]) => category.toLowerCase().includes('proteksi'))
+        .reduce((total, [, qty]) => total + qty, 0),
       salesContributions: e.salesContributions,
       salesChannelContributions: e.salesChannelContributions,
+      salesByDepartment: e.salesByDepartment,
       topSalesGroup: e.sales > 0 ? largestContribution.label : '',
       topSalesGroupPct: e.sales > 0 ? parseFloat(((e.salesContributions[largestContribution.key] / e.sales) * 100).toFixed(1)) : 0,
     }
@@ -1449,6 +1471,7 @@ export interface RawPerfResult {
   teamMtdTrend:   DailyTrend[]
   teamTodayEmployees: TeamEmployeeSummary[]
   teamMtdEmployees: TeamEmployeeSummary[]
+  teamFullMonthEmployees: TeamEmployeeSummary[]
 }
 
 function normNik(nik: string): string {
@@ -1545,6 +1568,9 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   // MTD = H-1: data s.d. kemarin agar angka MTD sudah final (bukan setengah hari)
   const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1)
   const mtdTxns   = parsedTxns.filter(t => t.date && sameMonth(t.date, today) && t.date <= yesterday)
+  const fullMonthTxns = parsedTxns.filter(
+    t => t.date && sameMonth(t.date, today) && t.date <= today,
+  )
   const mtdDateTo = sameMonth(yesterday, today) ? yesterday : today
   log(`Transaksi MTD (s.d. ${mtdDateTo.getDate()}): ${mtdTxns.length} baris`)
   const todaySalesContributions = calculateSalesContributions(todayTxns, canonicalCurrent)
@@ -1554,6 +1580,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
 
   const dailyPerfs = aggregate(dailyTxns, skuMap)
   const mtdPerfs   = aggregate(mtdTxns,   skuMap)
+  const fullMonthPerfs = aggregate(fullMonthTxns, skuMap)
 
   const normalizedValidNiks = new Set([...validNiks].map(n => canonicalNik(n).toLowerCase()))
 
@@ -1620,7 +1647,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   }
 
   // Find current user's perf
-  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
+  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }, salesChannelContributions: { online: 0, offline: 0 }, salesByDepartment: {}, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
   const myDaily = dailyPerfs.find(e => niksMatch(e.nik, canonicalCurrent)) ?? dailyPerfs.find(e => normNik(e.nik) === normCurrent) ?? emptyPerf()
   const myMTD   = mtdPerfs.find(e => niksMatch(e.nik, canonicalCurrent))   ?? mtdPerfs.find(e => normNik(e.nik) === normCurrent)   ?? emptyPerf()
 
@@ -1700,6 +1727,13 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     teamMtdTrend,
     teamTodayEmployees: buildTeamEmployeeSummary(dailyPerfs, targets, 1, validNiks),
     teamMtdEmployees: buildTeamEmployeeSummary(mtdPerfs, targets, wdays, validNiks, true),
+    teamFullMonthEmployees: buildTeamEmployeeSummary(
+      fullMonthPerfs,
+      targets,
+      wdays,
+      validNiks,
+      true,
+    ),
 
     todayPerf: {
       achievement: dailyAch,

@@ -71,6 +71,8 @@ describe('fetchPencapaianDept', () => {
     expect(result.mtd?.departments.at(-1)?.target).toBe(700)
     expect(result.mtd?.departments.at(-1)?.achievement).toBe(0)
     expect(result.mtd?.zones.find(zone => zone.zone === 'Hobbies & Lifestyle')?.target).toBe(4900)
+    expect(result.fullMonth?.departments.find(department => department.label === 'Department 1')?.target).toBe(3100)
+    expect(result.fullMonth?.departments.find(department => department.label === 'Department 1')?.value).toBe(28)
     expect(result.trend.points.at(-1)).toMatchObject({ date: '07-10-2026', day: 7 })
   })
 })

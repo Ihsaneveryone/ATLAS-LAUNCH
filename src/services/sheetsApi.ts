@@ -81,7 +81,9 @@ function ci(letter: string): number {
 
 
 // ─── USERS sheet ────────────────────────────────────────────────────────────
-// A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD, F=DEPARTEMEN USER, G=ZONA (data from row 2)
+// A=NIK, B=NAMA, C=ROLE, D=JOBTITLE, E=PASSWORD, F=DEPARTEMEN USER, G=ZONA,
+// I=NIK SUPERVISOR, K=DEPT, L=NIK SUPERVISOR DEPT, M=NIK MANAGER DEPT
+// K is the department name used by both the SPV and Manager ownership columns.
 
 export async function fetchUsers(): Promise<User[]> {
   if (usersCache) return usersCache
@@ -96,6 +98,10 @@ export async function fetchUsers(): Promise<User[]> {
         password: col(r, ci('E')),
         departmentUser: col(r, ci('F')),
         userZone: col(r, ci('G')),
+        supervisorNik: col(r, ci('I')),
+        supervisorDepartment: col(r, ci('K')),
+        departmentSupervisorNik: col(r, ci('L')),
+        managerDepartmentNik: col(r, ci('M')),
       })).filter(u => u.nama)
 
       if (IS_DEV) console.warn('[USERS] Total:', users.length)

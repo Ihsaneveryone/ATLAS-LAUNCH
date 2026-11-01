@@ -1,34 +1,41 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
-import { DataProvider } from './context/DataContext'
-import { AdminSettingsProvider } from './context/AdminSettingsContext'
-import { useAtlasData } from './context/useAtlasData'
-import LoginPage from './components/LoginPage'
-import MenuPage from './components/MenuPage'
-import type { User } from './data/mockData'
-import { loadYesterdayMgbReviews } from './services/mgbReviewApi'
+import { Suspense, lazy, useEffect, useState } from "react"
+import { DataProvider } from "./context/DataContext"
+import { AdminSettingsProvider } from "./context/AdminSettingsContext"
+import { useAtlasData } from "./context/useAtlasData"
+import LoginPage from "./components/LoginPage"
+import MenuPage from "./components/MenuPage"
+import type { User } from "./data/mockData"
+import { normalizeJobTitle } from "./services/jobTitle"
+import { loadYesterdayMgbReviews } from "./services/mgbReviewApi"
 
-const PerformanceSales = lazy(() => import('./components/PerformanceSales'))
-const ForecastingInsentif = lazy(() => import('./components/ForecastingInsentif'))
-const PencapaianToko = lazy(() => import('./components/PencapaianToko'))
-const SearchReceipt = lazy(() => import('./components/SearchReceipt'))
-const SpreadsheetGuide = lazy(() => import('./components/SpreadsheetGuide'))
-const AdminDashboard = lazy(() => import('./components/AdminDashboard'))
+const PerformanceSales = lazy(() => import("./components/PerformanceSales"))
+const SupervisorPerformanceSales = lazy(
+  () => import("./components/SupervisorPerformanceSales"),
+)
+const BestProdukDept = lazy(() => import("./components/BestProdukDept"))
+const ForecastingInsentif = lazy(
+  () => import("./components/ForecastingInsentif"),
+)
+const PencapaianToko = lazy(() => import("./components/PencapaianToko"))
+const SearchReceipt = lazy(() => import("./components/SearchReceipt"))
+const SpreadsheetGuide = lazy(() => import("./components/SpreadsheetGuide"))
+const AdminDashboard = lazy(() => import("./components/AdminDashboard"))
 
-type Page = 'login' | 'menu' | 'performance' | 'forecasting' | 'toko' | 'search-receipt' | 'spreadsheet' | 'admin'
+type Page = "login" | "menu" | "performance" | "best-produk-dept" | "forecasting" | "toko" | "search-receipt" | "spreadsheet" | "admin"
 
 function getJakartaMonthKey(): string {
-  const parts = new Intl.DateTimeFormat('en', {
-    timeZone: 'Asia/Jakarta',
-    year: 'numeric',
-    month: '2-digit',
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
   }).formatToParts(new Date())
-  const year = parts.find(part => part.type === 'year')?.value ?? ''
-  const month = parts.find(part => part.type === 'month')?.value ?? ''
+  const year = parts.find((part) => part.type === "year")?.value ?? ""
+  const month = parts.find((part) => part.type === "month")?.value ?? ""
   return `${year}-${month}`
 }
 
 function AppInner() {
-  const [page, setPage] = useState<Page>('login')
+  const [page, setPage] = useState<Page>("login")
   const [user, setUser] = useState<User | null>(null)
   const { reload } = useAtlasData()
 
@@ -43,49 +50,89 @@ function AppInner() {
       void reload(user.nik)
     }
     const interval = window.setInterval(reloadForNewMonth, 60_000)
-    document.addEventListener('visibilitychange', reloadForNewMonth)
+    document.addEventListener("visibilitychange", reloadForNewMonth)
     return () => {
       window.clearInterval(interval)
-      document.removeEventListener('visibilitychange', reloadForNewMonth)
+      document.removeEventListener("visibilitychange", reloadForNewMonth)
     }
   }, [reload, user])
 
   const handleLogin = (u: User) => {
-    if (u.role === 'admin') {
+    if (u.role === "admin") {
       setUser(u)
-      setPage('admin')
+      setPage("admin")
       reload(u.nik)
       return
     }
 
     setUser(u)
-    setPage('menu')
+    setPage("menu")
     void reload(u.nik)
     void loadYesterdayMgbReviews(u)
   }
 
   const handleLogout = () => {
     setUser(null)
-    setPage('login')
+    setPage("login")
   }
 
-  if (page === 'login' || !user) return <LoginPage onLogin={handleLogin} />
-  if (page === 'menu') return <MenuPage user={user} onNavigate={p => setPage(p as Page)} onLogout={handleLogout} />
+  if (page === "login" || !user) return <LoginPage onLogin={handleLogin} />
+  if (page === "menu")
+    return (
+      <MenuPage
+        user={user}
+        onNavigate={(p) => setPage(p as Page)}
+        onLogout={handleLogout}
+      />
+    )
 
   return (
     <Suspense
       fallback={
-        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f0f4ff', color: '#64748b', fontWeight: 700 }}>
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "grid",
+            placeItems: "center",
+            background: "#f0f4ff",
+            color: "#64748b",
+            fontWeight: 700,
+          }}
+        >
           Memuat halaman...
         </div>
       }
     >
-      {page === 'performance' ? <PerformanceSales user={user} onBack={() => setPage('menu')} /> : null}
-      {page === 'forecasting' ? <ForecastingInsentif user={user} onBack={() => setPage('menu')} /> : null}
-      {page === 'toko' ? <PencapaianToko user={user} onBack={() => setPage('menu')} /> : null}
-      {page === 'search-receipt' ? <SearchReceipt user={user} onBack={() => setPage('menu')} /> : null}
-      {page === 'spreadsheet' ? <SpreadsheetGuide user={user} onBack={() => setPage('menu')} /> : null}
-      {page === 'admin' ? <AdminDashboard user={user} onLogout={handleLogout} /> : null}
+      {page === "performance" ? (
+        ["SUPERVISOR", "MANAGER"].includes(normalizeJobTitle(user.jobTitle)) ? (
+          <SupervisorPerformanceSales
+            user={user}
+            onBack={() => setPage("menu")}
+          />
+        ) : (
+          <PerformanceSales user={user} onBack={() => setPage("menu")} />
+        )
+      ) : null}
+      {page === "best-produk-dept" &&
+      ["SUPERVISOR", "MANAGER"].includes(normalizeJobTitle(user.jobTitle)) ? (
+        <BestProdukDept user={user} onBack={() => setPage("menu")} />
+      ) : null}
+      {page === "forecasting" &&
+      !["SUPERVISOR", "MANAGER"].includes(normalizeJobTitle(user.jobTitle)) ? (
+        <ForecastingInsentif user={user} onBack={() => setPage("menu")} />
+      ) : null}
+      {page === "toko" ? (
+        <PencapaianToko user={user} onBack={() => setPage("menu")} />
+      ) : null}
+      {page === "search-receipt" ? (
+        <SearchReceipt user={user} onBack={() => setPage("menu")} />
+      ) : null}
+      {page === "spreadsheet" ? (
+        <SpreadsheetGuide user={user} onBack={() => setPage("menu")} />
+      ) : null}
+      {page === "admin" ? (
+        <AdminDashboard user={user} onLogout={handleLogout} />
+      ) : null}
     </Suspense>
   )
 }

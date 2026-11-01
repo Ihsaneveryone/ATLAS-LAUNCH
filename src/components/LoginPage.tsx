@@ -5,6 +5,8 @@ import type { User } from '../data/mockData'
 import { useAtlasData } from '../context/useAtlasData'
 import { fetchUsers } from '../services/sheetsApi'
 import { trackLogin } from '../services/loginTracker'
+import { normalizeJobTitle } from '../services/jobTitle'
+import { findAuthenticatedUser } from '../services/loginAuth'
 
 interface Props { onLogin: (user: User) => void }
 
@@ -33,6 +35,7 @@ export default function LoginPage({ onLogin }: Props) {
   const [loading, setLoading]   = useState(false)
   const [showPw, setShowPw]     = useState(false)
   const [focused, setFocused]   = useState<string | null>(null)
+  const [managerAccount, setManagerAccount] = useState<User | null>(null)
 
   const passwordManagerIgnoreProps = {
     'data-lpignore': 'true',
@@ -48,11 +51,11 @@ export default function LoginPage({ onLogin }: Props) {
   const normNik = (s: string) => s.trim().toLowerCase()
   const normPw = (s: string) => s.trim().toLowerCase()
 
-  const findAuthenticatedUser = (users: User[], inputNik: string, inputPassword: string) => {
-    const match = users.find(u => normNik(u.nik) === inputNik)
-    return match && normPw(match.password) === inputPassword ? match : undefined
+  const finishManagerLogin = (role: User['role']) => {
+    if (!managerAccount) return
+    trackLogin(managerAccount.nik, managerAccount.nama).catch(() => {})
+    onLogin({ ...managerAccount, role })
   }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -76,12 +79,71 @@ export default function LoginPage({ onLogin }: Props) {
     }
 
     if (user) {
+      if (normalizeJobTitle(user.jobTitle) === 'MANAGER') {
+        setManagerAccount(user)
+        setLoading(false)
+        return
+      }
       trackLogin(user.nik, user.nama).catch(() => {})
       onLogin(user)
     } else {
       setError('NIK atau password salah. Silakan coba lagi.')
       setLoading(false)
     }
+  }
+
+  if (managerAccount) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20, background: 'linear-gradient(145deg, #e8f0ff 0%, #f5f0ff 40%, #fff0f0 100%)',
+      }}>
+        <div style={{
+          width: '100%', maxWidth: 440, background: '#fff', borderRadius: 24,
+          padding: '32px', boxShadow: '0 20px 60px rgba(99,102,241,0.12)',
+          border: '1px solid rgba(255,255,255,0.9)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <img src={azkoLogo} alt="Azko" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }}/>
+            <div>
+              <div style={{ color: '#1e293b', fontWeight: 800, fontSize: 16 }}>Pilih Mode Akses</div>
+              <div style={{ color: '#94a3b8', fontSize: 12 }}>{managerAccount.nama} · Manager</div>
+            </div>
+          </div>
+          <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 18px' }}>
+            Pilih dashboard yang ingin dibuka.
+          </p>
+          <div style={{ display: 'grid', gap: 10 }}>
+            <button type="button" onClick={() => finishManagerLogin('user')} style={{
+              padding: '15px 16px', borderRadius: 13, border: '1px solid #dbeafe',
+              background: '#eff6ff', color: '#1d4ed8', textAlign: 'left',
+              fontSize: 14, fontWeight: 800, cursor: 'pointer',
+            }}>
+              Login sebagai User
+              <span style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 500, color: '#64748b' }}>
+                Pantau performa SPV dan anggota di bawahnya
+              </span>
+            </button>
+            <button type="button" onClick={() => finishManagerLogin('admin')} style={{
+              padding: '15px 16px', borderRadius: 13, border: '1px solid #fed7aa',
+              background: '#fff7ed', color: '#c2410c', textAlign: 'left',
+              fontSize: 14, fontWeight: 800, cursor: 'pointer',
+            }}>
+              Login sebagai Admin
+              <span style={{ display: 'block', marginTop: 4, fontSize: 11, fontWeight: 500, color: '#64748b' }}>
+                Buka dashboard administrasi
+              </span>
+            </button>
+            <button type="button" onClick={() => setManagerAccount(null)} style={{
+              marginTop: 4, padding: 10, border: 'none', background: 'transparent',
+              color: '#64748b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>
+              ← Kembali ke login
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   const ring = (name: string) => focused === name

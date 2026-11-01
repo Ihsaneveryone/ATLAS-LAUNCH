@@ -130,17 +130,44 @@ export function getYesterdayJakartaDate(now = new Date()): string {
 }
 
 function photoUrl(value: string): string {
-  const formula = value.match(/^=IMAGE\(\s*"([^"]+)"/i)
-  const source = (formula?.[1] ?? value).trim()
-  if (!source) return ''
+  const trimmed = value.trim()
+  if (!trimmed) return ''
 
-  const driveFile = source.match(/drive\.google\.com\/file\/d\/([^/?#]+)/i)
-  const driveId = source.match(/[?&]id=([^&#]+)/i)
-  const id = driveFile?.[1] ?? driveId?.[1]
-  if (id && /drive\.google\.com/i.test(source)) {
-    return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(id)}`
+  const formulaSource = trimmed.match(/^=\s*IMAGE\s*\(\s*(.*)\s*\)\s*$/is)?.[1] ?? trimmed
+  const quotedMatch = formulaSource.match(/['"]([^'"]+)['"]/)
+  const candidate = (quotedMatch ? quotedMatch[1] : formulaSource)
+    .replace(/^\s*['"]|['"]\s*$/g, '')
+    .split(/[;,]/, 1)[0]
+    .trim()
+
+  if (!candidate) return ''
+
+  const normalized = candidate.startsWith('//') ? `https:${candidate}` : candidate
+  if (normalized.startsWith('data:')) return normalized
+
+  try {
+    const parsed = new URL(normalized)
+    if (parsed.protocol !== 'https:') return normalized
+
+    const host = parsed.hostname.toLowerCase()
+    if (host.includes('googleusercontent.com')) {
+      return parsed.toString()
+    }
+
+    if (host.includes('drive.google.com')) {
+      const driveId = parsed.searchParams.get('id')
+        ?? parsed.pathname.match(/\/d\/([^/?#]+)/i)?.[1]
+        ?? parsed.pathname.match(/\/file\/d\/([^/?#]+)/i)?.[1]
+      if (driveId) return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`
+      return parsed.toString()
+    }
+
+    return parsed.toString()
+  } catch {
+    const driveId = normalized.match(/(?:\/d\/|[?&]id=|\/thumbnail\?id=)([A-Za-z0-9_-]{10,})/i)?.[1]
+    if (driveId) return `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`
+    return normalized
   }
-  return source.startsWith('//') ? `https:${source}` : source
 }
 
 function parseRows(rows: string[][]): MgbSheetRow[] {
@@ -194,49 +221,92 @@ export function selectYesterdayMgbReviews(
     }))
 }
 
-async function requestYesterdayMgbReviews(user: User): Promise<MgbReview[]> {
-  const endpoint = import.meta.env.VITE_MGB_REVIEW_ENDPOINT?.trim()
-  if (!endpoint) {
-    throw new Error('Foto langsung dari cell memerlukan endpoint Apps Script. Atur VITE_MGB_REVIEW_ENDPOINT setelah Web App selesai di-deploy.')
+const MGB_SHEET_CANDIDATES = [
+  'MGB',
+  'MGB REVIEW',
+  'MGB REVIEW DEPARTEMEN',
+  'MGB DEPARTEMEN',
+  'MGB Departemen',
+  'Sheet1',
+]
+
+async function fetchMgbSheetCsv(): Promise<string> {
+  const configuredSheet = import.meta.env.VITE_MGB_REVIEW_SHEET?.trim()
+  const candidates = configuredSheet ? [configuredSheet, ...MGB_SHEET_CANDIDATES] : MGB_SHEET_CANDIDATES
+
+  const seen = new Set<string>()
+  for (const sheetName of candidates) {
+    const normalized = sheetName.trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+
+    const url = new URL(`https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq`)
+    url.searchParams.set('tqx', 'out:csv')
+    url.searchParams.set('sheet', normalized)
+    url.searchParams.set('_t', String(Date.now()))
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 15_000)
+    try {
+      const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+      const text = await response.text()
+      if (response.ok && !text.trimStart().startsWith('<!')) return text
+    } catch {
+      // Try the next candidate sheet name.
+    } finally {
+      window.clearTimeout(timeout)
+    }
   }
 
-  return new Promise((resolve, reject) => {
-    const callbackName = `__atlasMgbCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`
-    const callbacks = window as Window & Record<string, (result: { data?: MgbReview[]; error?: string }) => void>
-    const script = document.createElement('script')
-    const url = new URL(endpoint)
-    url.searchParams.set('nik', user.nik)
-    url.searchParams.set('callback', callbackName)
+  return ''
+}
 
-    const cleanup = () => {
-      window.clearTimeout(timeout)
-      delete callbacks[callbackName]
-      script.remove()
-    }
-    const timeout = window.setTimeout(() => {
-      cleanup()
-      reject(new Error('Waktu tunggu Apps Script habis. Pastikan Web App sudah di-deploy dan URL endpoint benar.'))
-    }, 30_000)
+async function requestYesterdayMgbReviews(user: User): Promise<MgbReview[]> {
+  const endpoint = import.meta.env.VITE_MGB_REVIEW_ENDPOINT?.trim()
+  if (endpoint) {
+    return new Promise((resolve, reject) => {
+      const callbackName = `__atlasMgbCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      const callbacks = window as Window & Record<string, (result: { data?: MgbReview[]; error?: string }) => void>
+      const script = document.createElement('script')
+      const url = new URL(endpoint)
+      url.searchParams.set('nik', user.nik)
+      url.searchParams.set('callback', callbackName)
 
-    callbacks[callbackName] = result => {
-      cleanup()
-      if (result.error) {
-        reject(new Error(result.error))
-        return
+      const cleanup = () => {
+        window.clearTimeout(timeout)
+        delete callbacks[callbackName]
+        script.remove()
       }
-      if (!Array.isArray(result.data)) {
-        reject(new Error('Apps Script mengirim respons yang tidak sesuai.'))
-        return
+      const timeout = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('Waktu tunggu Apps Script habis. Pastikan Web App sudah di-deploy dan URL endpoint benar.'))
+      }, 30_000)
+
+      callbacks[callbackName] = result => {
+        cleanup()
+        if (result.error) {
+          reject(new Error(result.error))
+          return
+        }
+        if (!Array.isArray(result.data)) {
+          reject(new Error('Apps Script mengirim respons yang tidak sesuai.'))
+          return
+        }
+        resolve(result.data)
       }
-      resolve(result.data)
-    }
-    script.onerror = () => {
-      cleanup()
-      reject(new Error('Tidak dapat menghubungi Apps Script. Periksa URL endpoint dan akses Web App.'))
-    }
-    script.src = url.toString()
-    document.head.appendChild(script)
-  })
+      script.onerror = () => {
+        cleanup()
+        reject(new Error('Tidak dapat menghubungi Apps Script. Periksa URL endpoint dan akses Web App.'))
+      }
+      script.src = url.toString()
+      document.head.appendChild(script)
+    })
+  }
+
+  const csv = await fetchMgbSheetCsv()
+  if (!csv) return []
+
+  return selectYesterdayMgbReviews(csv, user)
 }
 
 function userCacheKey(user: User): string {

@@ -1,6 +1,28 @@
-import { describe, expect, it } from 'vitest'
-import { buildTodayPerf, buildMTDPerf, type DailySalesRow, type MTDRow } from './sheetsApi'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildTodayPerf, buildMTDPerf, fetchUsers, type DailySalesRow, type MTDRow } from './sheetsApi'
 import { niksMatch, getNikVariants } from './nik'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('fetchUsers supervisor columns', () => {
+  it('maps member and department supervisor links from columns I, K, and L', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response([
+      'NIK,NAMA,ROLE,JOBTITLE,PASSWORD,DEPT,ZONA,H,NIK SUPERVISOR,J,DEPT SUPERVISOR,NIK SUPERVISOR DEPT',
+      '201001,Advisor,user,Advisor,pw,Cleaning,Zone,,I01902,,Cleaning,101902',
+    ].join('\n'), { status: 200 })))
+
+    const [user] = await fetchUsers()
+
+    expect(user).toMatchObject({
+      nik: '201001',
+      supervisorNik: 'I01902',
+      supervisorDepartment: 'Cleaning',
+      departmentSupervisorNik: '101902',
+    })
+  })
+})
 
 describe('NIK matching', () => {
   it('getNikVariants should handle I01902 format correctly', () => {

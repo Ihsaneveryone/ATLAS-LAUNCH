@@ -65,7 +65,7 @@ export const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
 
   { id: 'TARGET_NIK', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'nik', columnLetter: 'A', columnIndex: 0, description: 'Employee NIK', dataType: 'text', optional: false, active: true, section: 'Target Setup' },
   { id: 'TARGET_NAMA', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'nama', columnLetter: 'B', columnIndex: 1, description: 'Employee Name', dataType: 'text', optional: false, active: true, section: 'Target Setup' },
-  { id: 'TARGET_DAILY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetDaily', columnLetter: 'C', columnIndex: 2, description: 'Daily Sales Target (Rp)', dataType: 'currency', optional: false, active: true, section: 'Target Setup' },
+  { id: 'TARGET_DAILY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetDaily', columnLetter: 'O', columnIndex: 14, description: 'Daily Sales Target (Rp)', dataType: 'currency', optional: false, active: true, section: 'Target Setup' },
   { id: 'TARGET_MONTHLY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetMonthly', columnLetter: 'D', columnIndex: 3, description: 'Monthly Sales Target (Rp)', dataType: 'currency', optional: true, active: true, section: 'Target Setup' },
   { id: 'TARGET_TRX_DAILY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetTrxDaily', columnLetter: 'E', columnIndex: 4, description: 'Daily Transaction Target (count)', dataType: 'number', optional: true, active: true, section: 'Target Setup' },
   { id: 'TARGET_TRX_MONTHLY', sheet: 'TARGET', feature: 'Performance SID', fieldName: 'targetTrxMonthly', columnLetter: 'F', columnIndex: 5, description: 'Monthly Transaction Target (count)', dataType: 'number', optional: true, active: true, section: 'Target Setup' },
@@ -278,6 +278,9 @@ function normalizeColumnMappings(mappings: ColumnMapping[] = DEFAULT_COLUMN_MAPP
     const storedMapping = storedById.get(defaultMapping.id)
     const normalizedMapping = storedMapping ? { ...defaultMapping, ...storedMapping } : defaultMapping
     if (defaultMapping.id === 'COPAS_S2_TANGGAL' && normalizedMapping.columnLetter === 'C' && normalizedMapping.columnIndex === 2) {
+      return { ...normalizedMapping, columnLetter: defaultMapping.columnLetter, columnIndex: defaultMapping.columnIndex }
+    }
+    if (defaultMapping.id === 'TARGET_DAILY' && normalizedMapping.columnLetter === 'C' && normalizedMapping.columnIndex === 2) {
       return { ...normalizedMapping, columnLetter: defaultMapping.columnLetter, columnIndex: defaultMapping.columnIndex }
     }
     return normalizedMapping
