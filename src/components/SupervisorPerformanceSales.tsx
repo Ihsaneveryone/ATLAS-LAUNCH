@@ -51,7 +51,7 @@ const S = {
   sub: "#64748b",
 }
 
-const PERIODS: { key: Period label: string }[] = [
+const PERIODS: { key: Period; label: string }[] = [
   { key: "sbd", label: "SBD" },
 
   { key: "mtd", label: "MTD" },

@@ -11,7 +11,7 @@ describe('fetchPencapaianDept', () => {
     vi.useRealTimers()
   })
 
-  it('keeps SBD department targets and zero sales when today has no data', async () => {
+  it('uses today SID sales by department when the department sheet is stale', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2026, 9, 7, 12))
 
@@ -41,7 +41,15 @@ describe('fetchPencapaianDept', () => {
     }).join('\n')
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const range = new URL(String(input)).searchParams.get('range') ?? ''
+      const url = new URL(String(input))
+      if (url.searchParams.get('gid') === '1092675108') {
+        return csvResponse([
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,I,J,K,TOTAL VALUE,,TANGGAL,SUBKATEGORI',
+          '123702,Sales User,,R1,SKU1,Desc,Code,1,,,,250,,07/10/2026,Appliances',
+        ].join('\n'))
+      }
+
+      const range = url.searchParams.get('range') ?? ''
       if (range === 'M76:AS98') return csvResponse(salesRange)
       if (range === 'U3:AR33') return csvResponse(targetRows)
       return csvResponse('')
@@ -52,7 +60,11 @@ describe('fetchPencapaianDept', () => {
     const sbdAutomotive = result.sbd?.departments.find(
       department => department.label === 'Automotive',
     )
+    const sbdAppliances = result.sbd?.departments.find(
+      department => department.label === 'Appliances',
+    )
     expect(sbdAutomotive?.value).toBe(0)
+    expect(sbdAppliances?.value).toBe(250)
     expect(sbdAutomotive?.target).toBe(100)
     expect(result.sbd?.zones.find(zone => zone.zone === 'Hobbies & Lifestyle')?.target).toBe(700)
     expect(
@@ -166,11 +178,13 @@ describe('fetchPencapaianDept', () => {
     expect(result.sbd?.zones.find(zone => zone.zone === 'Home Living')?.target).toBe(500)
     expect(result.sbd?.departments.at(-1)?.target).toBe(100)
     expect(result.sbd?.departments.at(-1)?.achievement).toBe(0)
-    expect(result.mtd?.total).toBe(28)
-    expect(result.mtd?.departments.find(department => department.label === 'Automotive')?.achievement).toBe(4)
-    expect(result.mtd?.departments.at(-1)?.target).toBe(700)
+    expect(result.mtd?.date).toBe('10/06/2026')
+    expect(result.mtd?.total).toBe(21)
+    expect(result.mtd?.departments.find(department => department.label === 'Automotive')?.value).toBe(21)
+    expect(result.mtd?.departments.find(department => department.label === 'Automotive')?.achievement).toBe(3.5)
+    expect(result.mtd?.departments.at(-1)?.target).toBe(600)
     expect(result.mtd?.departments.at(-1)?.achievement).toBe(0)
-    expect(result.mtd?.zones.find(zone => zone.zone === 'Hobbies & Lifestyle')?.target).toBe(4900)
+    expect(result.mtd?.zones.find(zone => zone.zone === 'Hobbies & Lifestyle')?.target).toBe(4200)
     expect(result.fullMonth?.departments.find(department => department.label === 'Automotive')?.target).toBe(9001)
     expect(result.fullMonth?.departments.find(department => department.label === 'LG Aquapet OL')?.target).toBe(9002)
     expect(result.fullMonth?.departments.find(department => department.label === 'Automotive')?.value).toBe(28)
@@ -178,5 +192,34 @@ describe('fetchPencapaianDept', () => {
     expect(result.fullMonth?.zones.find(zone => zone.zone === 'Home Improvement')?.value).toBe(0)
     expect(result.trend.labels).toContain('Automotive')
     expect(result.trend.points.at(-1)).toMatchObject({ date: '07-10-2026', day: 7 })
+  })
+
+  it('matches today sales when the SBD date header uses a US-formatted date', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 9, 7, 12))
+
+    const dateHeader = Array(33).fill('')
+    dateHeader[7] = '10/7/2026'
+    const departmentRows = Array.from({ length: 22 }, (_, index) => {
+      const row = Array(33).fill('')
+      row[0] = `Department ${index}`
+      if (index === 1) row[7] = '250'
+      return row
+    })
+    const salesRange = [dateHeader, ...departmentRows]
+      .map(row => row.join(','))
+      .join('\n')
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const range = new URL(String(input)).searchParams.get('range') ?? ''
+      if (range === 'M76:AS98') return csvResponse(salesRange)
+      return csvResponse('')
+    }))
+
+    const result = await fetchPencapaianDept()
+
+    expect(
+      result.sbd?.departments.find(department => department.label === 'Automotive')?.value,
+    ).toBe(250)
   })
 })

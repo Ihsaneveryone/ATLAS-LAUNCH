@@ -1,3 +1,8 @@
+import {
+  buildBestProductReport,
+  fetchBestProductRows,
+} from './bestProductApi'
+
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 
 function parseCSV(text: string): string[][] {
@@ -228,12 +233,12 @@ function buildPeriodData(date: string | undefined, values: string[], targetsByIn
   }
 }
 
-function findLatestDateColumn(headerRow: string[]): { index: number; date: string; day: number } | null {
+function findLatestDateColumn(headerRow: string[], throughDay = 31): { index: number; date: string; day: number } | null {
   let latest: { index: number; date: string; day: number } | null = null
   for (let col = 2; col <= 32; col++) {
     const date = g(headerRow, col)
     const day = parseDay(date)
-    if (!day) continue
+    if (!day || day > throughDay) continue
     if (!latest || day > latest.day || (day === latest.day && col > latest.index)) {
       latest = { index: col, date, day }
     }
@@ -263,11 +268,52 @@ function findLatestSalesDateColumn(headerRow: string[], dataRows: string[][]): {
 
 function findTodaySalesDateColumn(
   headerRow: string[],
-  today: string,
+  today: { day: number; month: number; year: number },
 ): { index: number; date: string; day: number } | null {
   for (let col = 2; col <= 32; col++) {
     const date = g(headerRow, col)
-    if (date === today) return { index: col, date, day: parseDay(date) }
+    if (date === '') continue
+
+    const isoDate = date.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (
+      isoDate &&
+      Number(isoDate[1]) === today.year &&
+      Number(isoDate[2]) === today.month &&
+      Number(isoDate[3]) === today.day
+    ) {
+      return { index: col, date, day: today.day }
+    }
+
+    const numericDate = date.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/)
+    if (numericDate) {
+      const first = Number(numericDate[1])
+      const second = Number(numericDate[2])
+      if (
+        Number(numericDate[3]) === today.year &&
+        ((first === today.day && second === today.month) ||
+          (first === today.month && second === today.day))
+      ) {
+        return { index: col, date, day: today.day }
+      }
+    }
+
+    const namedDate = date.match(/^(\d{1,2})-([A-Za-z]{3})(?:-(\d{4}))?$/)
+    if (namedDate) {
+      const month = new Map([
+        ['jan', 1], ['feb', 2], ['mar', 3], ['apr', 4], ['may', 5],
+        ['jun', 6], ['jul', 7], ['aug', 8], ['sep', 9], ['oct', 10],
+        ['nov', 11], ['dec', 12], ['mei', 5], ['agu', 8], ['okt', 10],
+        ['des', 12],
+      ]).get(namedDate[2].toLowerCase())
+      const year = namedDate[3] ? Number(namedDate[3]) : today.year
+      if (
+        Number(namedDate[1]) === today.day &&
+        month === today.month &&
+        year === today.year
+      ) {
+        return { index: col, date, day: today.day }
+      }
+    }
   }
   return null
 }
@@ -282,12 +328,12 @@ function findRowByDay(rows: string[][], day: number): { row: string[]; date: str
   return null
 }
 
-function findLatestTargetRow(rows: string[][]): { row: string[]; date: string; day: number } | null {
+function findLatestTargetRow(rows: string[][], throughDay = 31): { row: string[]; date: string; day: number } | null {
   let latest: { row: string[]; date: string; day: number } | null = null
   for (const row of rows) {
     const date = g(row, 19)
     const day = parseDay(date)
-    if (!day) continue
+    if (!day || day > throughDay) continue
     if (!latest || day > latest.day) {
       latest = { row, date, day }
     }
@@ -456,12 +502,23 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const todayDay = dateParts.find(part => part.type === 'day')?.value ?? ''
   const todayMonth = dateParts.find(part => part.type === 'month')?.value ?? ''
   const todayYear = dateParts.find(part => part.type === 'year')?.value ?? ''
+  const todayDate = {
+    day: Number(todayDay),
+    month: Number(todayMonth),
+    year: Number(todayYear),
+  }
   const todayFormatted = `${todayDay}-${todayMonth}-${todayYear}`
-  const sbdDateInfo = findTodaySalesDateColumn(sbdHeaderRow, todayFormatted)
-  const mtdSalesDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows) ?? findLatestDateColumn(sbdHeaderRow)
+  const sbdDateInfo = findTodaySalesDateColumn(sbdHeaderRow, todayDate)
+  const latestSalesDateInfo = findLatestSalesDateColumn(sbdHeaderRow, sbdDataRows)
+  const yesterdayDay = Number(todayDay) - 1
+  const mtdSalesDateInfo = yesterdayDay > 0
+    ? findLatestDateColumn(sbdHeaderRow, yesterdayDay)
+    : null
 
   const mtdDateRows = targetRange.map(row => [...Array(18).fill(''), ...row])
-  const latestTargetRow = mtdSalesDateInfo ? findRowByDay(mtdDateRows, mtdSalesDateInfo.day) ?? findLatestTargetRow(mtdDateRows) : findLatestTargetRow(mtdDateRows)
+  const latestTargetRow = yesterdayDay > 0
+    ? findRowByDay(mtdDateRows, yesterdayDay) ?? findLatestTargetRow(mtdDateRows, yesterdayDay)
+    : null
 
   // SBD uses the fixed target from day 1; later target rows are cumulative MTD targets.
   const sbdFlatTargetRow = findRowByDay(mtdDateRows, 1)?.row ?? mtdDateRows[0] ?? null
@@ -469,19 +526,32 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const mtdTargetValues = buildTargetValues(latestTargetRow?.row)
   const trend = buildDeptTrendData(sbdHeaderRow, sbdDataRows, sbdTargetValues)
   
-  const sbd = buildPeriodData(
-    todayFormatted,
-    sbdDateInfo
-      ? sbdDataRows.map(row => g(row, sbdDateInfo.index))
-      : DEPT_NODES.map(() => '0'),
-    sbdTargetValues,
-  )
+  let sbdValues = sbdDateInfo
+    ? sbdDataRows.map(row => g(row, sbdDateInfo.index))
+    : DEPT_NODES.map(() => '0')
 
-  const referenceDailyInfo = mtdSalesDateInfo
-  const cumulativeValues = referenceDailyInfo
+  if (sbdValues.every(value => n(value) === 0)) {
+    const sidRows = await fetchBestProductRows(true)
+    const sidReport = buildBestProductReport(sidRows, 'sbd')
+    if (sidReport.transactionCount > 0) {
+      const salesByDepartment = new Map(
+        sidReport.departments.map(department => [
+          normalizeDepartmentName(department.name),
+          department.totalValue,
+        ]),
+      )
+      sbdValues = DEPT_NODES.map(node =>
+        String(salesByDepartment.get(normalizeDepartmentName(node.label)) ?? 0),
+      )
+    }
+  }
+
+  const sbd = buildPeriodData(todayFormatted, sbdValues, sbdTargetValues)
+
+  const mtdCumulativeValues = mtdSalesDateInfo
     ? DEPT_NODES.map((_, deptIndex) => {
         let total = 0
-        for (let col = 2; col <= referenceDailyInfo.index; col++) {
+        for (let col = 2; col <= mtdSalesDateInfo.index; col++) {
           total += n(g(sbdDataRows[deptIndex] ?? [], col))
         }
         return String(total)
@@ -491,15 +561,21 @@ export async function fetchPencapaianDept(): Promise<DeptPerformanceData> {
   const mtd = latestTargetRow
     ? buildPeriodData(
         latestTargetRow.date,
-        cumulativeValues,
+        mtdCumulativeValues,
         mtdTargetValues,
       )
     : null
 
-  const fullMonth = mtdSalesDateInfo
+  const fullMonth = latestSalesDateInfo
     ? buildPeriodData(
         todayFormatted,
-        cumulativeValues,
+        DEPT_NODES.map((_, deptIndex) => {
+          let total = 0
+          for (let col = 2; col <= latestSalesDateInfo.index; col++) {
+            total += n(g(sbdDataRows[deptIndex] ?? [], col))
+          }
+          return String(total)
+        }),
         buildFullMonthTargets(fullMonthDepartmentTargets),
       )
     : null

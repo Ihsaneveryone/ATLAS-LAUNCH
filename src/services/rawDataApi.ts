@@ -159,6 +159,12 @@ function resolveTransactionDate(value: string, today: Date, preferUS: boolean): 
   const usDate = parseDateUS(value)
   if (!localDate || !usDate || localDate.getTime() === usDate.getTime()) return preferUS ? usDate ?? localDate : localDate ?? usDate
 
+  const localIsCurrentMonth = sameMonth(localDate, today)
+  const usIsCurrentMonth = sameMonth(usDate, today)
+  if (localIsCurrentMonth !== usIsCurrentMonth) {
+    return localIsCurrentMonth ? localDate : usDate
+  }
+
   // Google Sheets can export ambiguous dates as M/D/YYYY. Prefer the
   // interpretation that is not in the future when the other is this month.
   if (localDate > today && usDate <= today && sameMonth(usDate, today)) return usDate
@@ -170,7 +176,7 @@ function resolveTransactionDate(value: string, today: Date, preferUS: boolean): 
 
 interface RawTxn {
   nik: string; nama: string; tanggal: string; date: Date | null
-  receiptNo: string; artikel: string; subCategory: string; qty: number; totalValue: number
+  receiptNo: string; artikel: string; deskripsi: string; subCategory: string; qty: number; totalValue: number
 }
 
 export const SALES_CONTRIBUTION_GROUPS = [
@@ -284,32 +290,24 @@ async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
       }
     }
     
-    // Fallback: jika target names tidak semua ditemukan, coba USERS sheet
-    let found = 0
-    for (const [, nama] of nikNameMap) {
-      if (nama.includes('GWEN') || nama.includes('ADITYA') || nama.includes('ROZIAN')) found++
-    }
-    
-    if (found < 3) {
-      debugWarn('[NIK Mapping] Incomplete target names in primary source, checking USERS sheet...')
-      try {
-        const usersRaw = await fetchCSV('USERS').catch(() => null)
-        if (usersRaw) {
-          for (const row of usersRaw.slice(1)) {
-            const nik = c(row, 0).trim()
-            const nama = c(row, 1).trim()
-            if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
-              // Only add if not already in map (ATLAS takes precedence)
-              if (!nikNameMap.has(nik)) {
-                nikNameMap.set(nik, nama)
-              }
-            }
+    // Merge USERS as well: ATLAS DATABASE can contain a few known names while
+    // still missing other employees whose transaction rows omit their NIK.
+    const usersRaw = await fetchCSV('USERS').catch((error) => {
+      debugWarn('[NIK Mapping] USERS sheet fallback failed:', error)
+      return null
+    })
+    if (usersRaw) {
+      for (const row of usersRaw.slice(1)) {
+        const nik = c(row, 0).trim()
+        const nama = c(row, 1).trim()
+        if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+          // Only add if not already in map (ATLAS takes precedence)
+          if (!nikNameMap.has(nik)) {
+            nikNameMap.set(nik, nama)
           }
-          debugWarn('[NIK Mapping] Added from USERS sheet, total now:', nikNameMap.size)
         }
-      } catch (e2) {
-        debugWarn('[NIK Mapping] USERS sheet fallback failed:', e2)
       }
+      debugWarn('[NIK Mapping] Merged USERS sheet, total now:', nikNameMap.size)
     }
     
     debugWarn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
@@ -725,6 +723,30 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   const totalValueIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TOTAL_VALUE', 11)
   const subCategoryIdx = 14
 
+  const nikByNormalizedName = new Map<string, string>()
+  const ambiguousNames = new Set<string>()
+  const rememberName = (nik: string, nama: string) => {
+    const key = normalizeNameForMatch(nama)
+    if (!key || ambiguousNames.has(key)) return
+    const existing = nikByNormalizedName.get(key)
+    if (existing && existing !== nik) {
+      nikByNormalizedName.delete(key)
+      ambiguousNames.add(key)
+      return
+    }
+    nikByNormalizedName.set(key, nik)
+  }
+  for (const [nik, nama] of nikNameMap) {
+    rememberName(canonicalNik(nik), nama)
+  }
+  for (const row of raw.slice(dataStart)) {
+    const nik = c(row, nikIdx)
+    const nama = c(row, namaIdx).replace(/^[A-Z]{2,3}-/i, '').trim()
+    if (/^(I\d{5}|\d{4,})$/i.test(nik) && nama) {
+      rememberName(canonicalNik(nik), nama)
+    }
+  }
+
   for (const row of raw.slice(dataStart)) {
     const nikVal  = c(row, nikIdx)
     const namaVal = c(row, namaIdx)
@@ -739,8 +761,16 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
 
     // Update NIK & NAMA kalau ada nilai baru
     // Accept: \d{4,} (pure digits) or I\d{5} (I-prefix format like I01902)
-    if (/^(I\d{5}|\d{4,})$/i.test(nikVal)) lastNik = canonicalNik(nikVal)
-    if (namaVal && namaVal !== lastNama && !/^\d/.test(namaVal)) lastNama = namaVal.replace(/^[A-Z]{2,3}-/i, '').trim()
+    const hasExplicitNik = /^(I\d{5}|\d{4,})$/i.test(nikVal)
+    if (hasExplicitNik) lastNik = canonicalNik(nikVal)
+    if (namaVal && namaVal !== lastNama && !/^\d/.test(namaVal)) {
+      lastNama = namaVal.replace(/^[A-Z]{2,3}-/i, '').trim()
+      if (!hasExplicitNik) {
+        const mappedNik = nikByNormalizedName.get(normalizeNameForMatch(lastNama))
+        lastNik = mappedNik ?? ''
+      }
+    }
+    if (hasExplicitNik && namaVal && lastNama) rememberName(lastNik, lastNama)
 
     // Fallback: Kalau NIK kosong tapi NAMA ada, cari NIK dari nikNameMap
     if (!lastNik && lastNama && nikNameMap.size > 0) {
@@ -780,6 +810,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       date:       null,
       receiptNo:  c(row, receiptIdx),
       artikel:    c(row, artikelIdx),
+      deskripsi:  c(row, 5),
       subCategory: c(row, subCategoryIdx),
       qty:        numVal(c(row, qtyIdx)),
       totalValue: tv,
@@ -1030,6 +1061,7 @@ export async function fetchMemberData(): Promise<MemberEntry[]> {
 interface EmpPerf {
   nik: string; nama: string
   sales: number; qty: number; transaksi: number
+  protectionQty: number
   basketSize: number; upt: number; aur: number
   newMember:     number
   salesContributions: SalesContributions
@@ -1053,7 +1085,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
   }
 
   const byNik = new Map<string, {
-    nik: string; nama: string; sales: number; qty: number
+    nik: string; nama: string; sales: number; qty: number; protectionQty: number
     receipts: Set<string>
     salesContributions: SalesContributions
     salesChannelContributions: Record<'online' | 'offline', number>
@@ -1068,7 +1100,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     const key = canonical.toLowerCase()
     if (!byNik.has(key)) {
       byNik.set(key, {
-        nik: canonical, nama: t.nama, sales: 0, qty: 0,
+        nik: canonical, nama: t.nama, sales: 0, qty: 0, protectionQty: 0,
         receipts: new Set(),
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
         salesChannelContributions: { online: 0, offline: 0 },
@@ -1081,6 +1113,12 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
     if ((!e.nama.trim() || e.nama.trim().toUpperCase() === 'NONAME') && t.nama.trim()) e.nama = t.nama
     e.sales += t.totalValue
     e.qty   += t.qty
+    if (
+      skuMap.proteksi.has(normalizeArticleCode(t.artikel)) ||
+      t.deskripsi.toLowerCase().includes('proteksi')
+    ) {
+      e.protectionQty += t.qty
+    }
     if (t.receiptNo) e.receipts.add(t.receiptNo)
     const contributionKey = subcategoryToContributionGroup.get(t.subCategory.trim().toLowerCase()) ?? 'other'
     e.salesContributions[contributionKey] += t.totalValue
@@ -1115,6 +1153,7 @@ function aggregate(txns: RawTxn[], skuMap: SkuMap): EmpPerf[] {
       nik: e.nik, nama: e.nama,
       sales:       e.sales,
       qty:         e.qty,
+      protectionQty: e.protectionQty,
       transaksi:   tr,
       newMember:   0,  // filled after merging MEMBER sheet
       salesContributions: e.salesContributions,
@@ -1179,6 +1218,7 @@ function makeKPIs(
     'transaksi': e.transaksi, 'qty item': e.qty, 'qty': e.qty,
     'aur': e.aur, 'upt': e.upt,
     'basket size': e.basketSize, 'new member': e.newMember,
+    'proteksi': e.protectionQty,
   }
 
   // ── KPI Utama ──
@@ -1234,10 +1274,18 @@ function makeKPIs(
       else                                    { catTarget = Math.round(dailyTarget * 0.10 * days); unit = 'Rp' }
     }
 
+    const isProteksi = lower.includes('proteksi')
     const isQty = unit === 'qty' || unit === 'iu'
     kpis.push({
       label:  cat.name,
-      value:  Math.max(0, isQty ? (e.categoryQty[cat.name] ?? 0) : (e.categorySales[cat.name] ?? 0)),
+      value:  Math.max(
+        0,
+        isProteksi
+          ? e.protectionQty
+          : isQty
+            ? (e.categoryQty[cat.name] ?? 0)
+          : (e.categorySales[cat.name] ?? 0),
+      ),
       target: catTarget,
       unit,
     })
@@ -1293,6 +1341,7 @@ function buildRanking(
         nama: targetData?.nama ?? ensured,
         sales: 0,
         qty: 0,
+        protectionQty: 0,
         transaksi: 0,
         newMember: 0,
         salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
@@ -1337,9 +1386,7 @@ function buildRanking(
       return {
         rank: i + 1, nik: e.nik, nama: cleanNama(rawNama), jobTitle: tData?.jobTitle ?? '',
         value: e.sales, target: tgt, fullMonthTarget: tData?.monthly,
-        protectionQty: Object.entries(e.categoryQty)
-          .filter(([category]) => category.toLowerCase().includes('proteksi'))
-          .reduce((total, [, qty]) => total + qty, 0),
+        protectionQty: e.protectionQty,
         achievement: tgt > 0 ? parseFloat(((e.sales / tgt) * 100).toFixed(1)) : 0,
       }
     })
@@ -1396,6 +1443,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       nama: targetData?.nama ?? key,
       sales: 0,
       qty: 0,
+      protectionQty: 0,
       transaksi: 0,
       newMember: 0,
       salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 },
@@ -1443,9 +1491,7 @@ function buildTeamEmployeeSummary(perfs: EmpPerf[], targets: Map<string, TargetD
       basketSize: e.basketSize,
       targetBasketSize,
       newMember: e.newMember,
-      proteksi: Object.entries(e.categoryQty)
-        .filter(([category]) => category.toLowerCase().includes('proteksi'))
-        .reduce((total, [, qty]) => total + qty, 0),
+      proteksi: e.protectionQty,
       salesContributions: e.salesContributions,
       salesChannelContributions: e.salesChannelContributions,
       salesByDepartment: e.salesByDepartment,
@@ -1647,7 +1693,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
   }
 
   // Find current user's perf
-  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, transaksi: 0, newMember: 0, salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }, salesChannelContributions: { online: 0, offline: 0 }, salesByDepartment: {}, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
+  const emptyPerf = () => ({ nik: canonicalCurrent, nama: '', sales: 0, qty: 0, protectionQty: 0, transaksi: 0, newMember: 0, salesContributions: { homeLiving: 0, homeImprovement: 0, hobbiesLifestyle: 0, other: 0 }, salesChannelContributions: { online: 0, offline: 0 }, salesByDepartment: {}, categorySales: {}, categoryQty: {}, basketSize: 0, upt: 0, aur: 0 })
   const myDaily = dailyPerfs.find(e => niksMatch(e.nik, canonicalCurrent)) ?? dailyPerfs.find(e => normNik(e.nik) === normCurrent) ?? emptyPerf()
   const myMTD   = mtdPerfs.find(e => niksMatch(e.nik, canonicalCurrent))   ?? mtdPerfs.find(e => normNik(e.nik) === normCurrent)   ?? emptyPerf()
 
