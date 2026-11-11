@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchCopasS2TableData } from '../services/rawDataApi'
-import { canonicalNik } from '../services/nik'
+import { canonicalNik, isValidNikFormat } from '../services/nik'
 import { useMobile } from '../hooks/useMobile'
 import type { User } from '../data/mockData'
 
@@ -46,7 +46,7 @@ function buildRecords(rows: string[][]): ReceiptRecord[] {
     const nama = (row[1] ?? '').trim()
     const explicitNik = (row[0] ?? '').trim()
     if (nama.toUpperCase() === 'NONAME') lastNik = ''
-    else if (/^(I\d{5}|\d{4,})$/i.test(explicitNik)) lastNik = explicitNik
+    else if (isValidNikFormat(explicitNik)) lastNik = explicitNik
 
     return {
       id,

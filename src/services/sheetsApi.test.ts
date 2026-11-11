@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildTodayPerf, buildMTDPerf, fetchUsers, type DailySalesRow, type MTDRow } from './sheetsApi'
-import { niksMatch, getNikVariants } from './nik'
+import { niksMatch, getNikVariants, canonicalNik, isValidNikFormat } from './nik'
 import { managerDepartments } from './supervisorPerformance'
 
 afterEach(() => {
@@ -96,6 +96,15 @@ describe('NIK matching', () => {
     expect(niksMatch('191924', 'I91924')).toBe(true)
   })
 
+  it('normalizes legacy and 6-digit I-prefixed NIKs without changing existing formats', () => {
+    expect(canonicalNik('I01902')).toBe('101902')
+    expect(canonicalNik('I91924')).toBe('191924')
+    expect(canonicalNik('I152535')).toBe('152535')
+    expect(niksMatch('I152535', '152535')).toBe(true)
+    expect(isValidNikFormat('I152535')).toBe(true)
+    expect(isValidNikFormat('I1234567')).toBe(false)
+  })
+
   it('uses the matching row when the current NIK uses an alternate format', () => {
     const rows: DailySalesRow[] = [
       {
@@ -134,6 +143,41 @@ describe('NIK matching', () => {
 
     expect(perf.actual).toBe(300_000)
     expect(perf.target).toBe(600_000)
+  })
+
+  it('does not show another employee sales when the requested NIK is absent', () => {
+    const dailyRows: DailySalesRow[] = [{
+      nik: '999999',
+      nama: 'Other',
+      jobTitle: 'Sales',
+      totalSales: 100_000,
+      targetSales: 200_000,
+      transaksi: 1,
+      qtyItem: 1,
+      aur: 100_000,
+      upt: 1,
+      basketSize: 100_000,
+      proteksi: 0,
+      instantUpgrade: 0,
+      newMember: 0,
+    }]
+    const mtdRows: MTDRow[] = [{
+      nik: '999999',
+      nama: 'Other',
+      jobTitle: 'Sales',
+      sales: 100_000,
+      target: 200_000,
+      transaksi: 1,
+      basketSize: 100_000,
+      proteksi: 0,
+      newMember: 0,
+      instantUpgrade: 0,
+      total5Strategy: 0,
+      offCuti: 0,
+    }]
+
+    expect(buildTodayPerf(dailyRows, '152535').actual).toBe(0)
+    expect(buildMTDPerf(mtdRows, '152535').actual).toBe(0)
   })
 
   it('uses the matching MTD row when the current NIK uses an alternate format', () => {

@@ -241,7 +241,7 @@ function normNik(s: string): string {
 export function buildTodayPerf(rows: DailySalesRow[], currentNik: string): PerformanceData {
   const safeRows = Array.isArray(rows) ? rows : []
   const nc = normNik(currentNik)
-  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
+  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc)
   const tgt = my?.targetSales ?? 1
 
   const src     = my ?? { totalSales: 0, targetSales: 1, transaksi: 0, qtyItem: 0, aur: 0, upt: 0, basketSize: 0, proteksi: 0, instantUpgrade: 0, newMember: 0 }
@@ -274,7 +274,7 @@ export function buildTodayPerf(rows: DailySalesRow[], currentNik: string): Perfo
 export function buildMTDPerf(rows: MTDRow[], currentNik: string, dateFrom = '', dateTo = ''): PerformanceData {
   const safeRows = Array.isArray(rows) ? rows : []
   const nc = normNik(currentNik)
-  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc) ?? safeRows[0]
+  const my  = safeRows.find(r => niksMatch(r.nik, currentNik)) ?? safeRows.find(r => normNik(r.nik) === nc)
   const src = my ?? { sales: 0, target: 1, transaksi: 0, basketSize: 0, proteksi: 0, newMember: 0, instantUpgrade: 0, total5Strategy: 0, offCuti: 0 }
 
   const actual  = src.sales

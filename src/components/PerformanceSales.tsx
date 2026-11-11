@@ -450,7 +450,14 @@ function RankingRow({
 }
 
 export default function PerformanceSales({ user, onBack }: Props) {
-  const { todayPerf, mtdPerf, loading, error, users } = useAtlasData()
+  const {
+    todayPerf,
+    mtdPerf,
+    loading,
+    error,
+    salesAttributionWarning,
+    users,
+  } = useAtlasData()
 
   const { settings } = useAdminSettings()
 
@@ -721,6 +728,20 @@ export default function PerformanceSales({ user, onBack }: Props) {
           }}
         >
           ⚠ {error}
+        </div>
+      )}
+      {!error && salesAttributionWarning && (
+        <div
+          role="status"
+          style={{
+            background: "#fff7ed",
+            borderBottom: "1px solid #fed7aa",
+            padding: `8px ${px}`,
+            fontSize: 13,
+            color: "#9a3412",
+          }}
+        >
+          ⚠ {salesAttributionWarning}. Periksa NIK dan nama pada sumber data sales.
         </div>
       )}
 

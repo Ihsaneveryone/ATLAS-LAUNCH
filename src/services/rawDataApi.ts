@@ -8,7 +8,7 @@
 import type { DailyTrend, PerformanceData, KPIItem } from '../data/mockData'
 import { YTD_PERFORMANCE } from '../data/mockData'
 import { getConfiguredColumnIndex } from './columnMappingService'
-import { niksMatch, canonicalNik, looksLikeNik } from './nik'
+import { niksMatch, canonicalNik, isValidNikFormat, looksLikeNik } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const DEFAULT_DAILY_TARGET = 5_000_000
@@ -264,86 +264,50 @@ export async function fetchSkuMap(): Promise<SkuMap> {
 let nikNameMappingInFlight: Promise<Map<string, string>> | null = null
 
 async function fetchNikNameMappingUncached(): Promise<Map<string, string>> {
-  try {
-    // Try ATLAS DATABASE first (punya explicit NIK-NAMA mapping)
-    let raw = await fetchCSV('ATLAS DATABASE').catch(() => null)
-    
-    if (!raw) {
-      // Fallback ke COPAS (aggregated sheet)
-      raw = await fetchCSV('COPAS')
+  const readMappingSheet = async (sheet: string): Promise<string[][] | null> => {
+    try {
+      return await fetchCSV(sheet)
+    } catch (error) {
+      debugWarn(`[NIK Mapping] ${sheet} tidak tersedia:`, error)
+      return null
     }
-    
-    if (!raw) {
-      debugWarn('[NIK Mapping] Neither ATLAS DATABASE nor COPAS available')
-      return new Map()
-    }
-    
-    const nikNameMap = new Map<string, string>()
-    
-    // Sheet structure: A=NIK, B=NAMA, ...
-    for (const row of raw.slice(1)) {
-      const nik = c(row, 0).trim()
-      const nama = c(row, 1).trim()
-      // Support: 101902 (digit 1 + 4 more digits) or I01902 (letter I + 5 digits)
-      if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+  }
+
+  const [atlasRows, copasRows, userRows] = await Promise.all([
+    readMappingSheet('ATLAS DATABASE'),
+    readMappingSheet('COPAS'),
+    readMappingSheet('USERS'),
+  ])
+  const sources = [atlasRows, copasRows, userRows].filter(
+    (rows): rows is string[][] => rows !== null,
+  )
+  const nikNameMap = new Map<string, string>()
+
+  for (const rows of sources) {
+    for (const row of rows.slice(1)) {
+      const nik = c(row, 0)
+      const nama = c(row, 1)
+      if (isValidNikFormat(nik) && nama && !nikNameMap.has(nik)) {
         nikNameMap.set(nik, nama)
       }
     }
-    
-    // Merge USERS as well: ATLAS DATABASE can contain a few known names while
-    // still missing other employees whose transaction rows omit their NIK.
-    const usersRaw = await fetchCSV('USERS').catch((error) => {
-      debugWarn('[NIK Mapping] USERS sheet fallback failed:', error)
-      return null
-    })
-    if (usersRaw) {
-      for (const row of usersRaw.slice(1)) {
-        const nik = c(row, 0).trim()
-        const nama = c(row, 1).trim()
-        if (nik && nama && /^(I\d{5}|\d{4,})$/i.test(nik)) {
-          // Only add if not already in map (ATLAS takes precedence)
-          if (!nikNameMap.has(nik)) {
-            nikNameMap.set(nik, nama)
-          }
-        }
-      }
-      debugWarn('[NIK Mapping] Merged USERS sheet, total now:', nikNameMap.size)
-    }
-    
-    debugWarn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
-    // Log sample entries
-    const debugEntries = Array.from(nikNameMap.entries()).slice(0, 5)
-    debugWarn('[NIK Mapping] Sample:', debugEntries.map(([k,v]) => `${k}→${v}`).join(', '))
-    // Check target names
-    found = 0
-    for (const [nik, nama] of nikNameMap) {
-      if (nama.includes('GWEN') || nama.includes('ADITYA') || nama.includes('ROZIAN')) {
-        debugWarn(`[NIK Mapping] TARGET: ${nik} = ${nama}`)
-        found++
-      }
-    }
-    debugWarn(`[NIK Mapping] Found ${found} target names (GWEN/ADITYA/ROZIAN)`)
-    // Hardcoded fallbacks for known mixed-format NIKs that sometimes
-    // appear blank or with an I-prefix in the COPAS S2 sheet export.
-    // This ensures the parser can associate sales rows (even if A is empty)
-    // to the correct numeric NIK used throughout the app.
-    const hardcoded: Record<string, string> = {
-      'GWEN MALIKA': '101902', // I01902
-      'ADITYA PUTRA': '101903',       // I01903
-      'MOCH.ROZIAN NAUFAL': '101904',     // I01904
-    }
-    for (const [name, nik] of Object.entries(hardcoded)) {
-      if (!nikNameMap.has(nik)) {
-        debugWarn(`[NIK Mapping] Adding hardcoded fallback: ${nik} -> ${name}`)
-        nikNameMap.set(nik, name)
-      }
-    }
-
-    return nikNameMap
-  } catch (e) {
-    debugWarn('[NIK Mapping] Failed:', e)
-    return new Map()
   }
+
+  if (sources.length === 0) {
+    debugWarn('[NIK Mapping] ATLAS DATABASE, COPAS, and USERS all failed to load')
+  }
+  debugWarn('[NIK Mapping] Loaded:', nikNameMap.size, 'entries')
+
+  const hardcoded: Record<string, string> = {
+    'GWEN MALIKA': '101902',
+    'ADITYA PUTRA': '101903',
+    'MOCH.ROZIAN NAUFAL': '101904',
+  }
+  for (const [name, nik] of Object.entries(hardcoded)) {
+    if (!nikNameMap.has(nik)) nikNameMap.set(nik, name)
+  }
+
+  return nikNameMap
 }
 
 function fetchNikNameMapping(): Promise<Map<string, string>> {
@@ -528,7 +492,7 @@ function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
     
     // Struktur COPAS S2 raw: [NIK] [NAMA] [...] [TANGGAL di kolom N]
     // Col0: NIK = angka 4+ digit (maybe with leading zeros), atau I-prefixed
-    const col0IsNik = /^(I?\d{4,}|I\d{5})$/i.test(col0)
+    const col0IsNik = isValidNikFormat(col0)
     // Col1: NAMA = text (bukan semua digit), length > 2 (bukan short codes)
     const col1IsName = col1 && !/^[\d\.\,\-]+$/.test(col1) && col1.length > 2
     // Kolom N: tanggal transaksi, termasuk serial tanggal numerik.
@@ -695,7 +659,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
 
   // Some COPAS S2 exports omit the header row; preserve the first transaction.
   const firstRowLooksLikeTransaction =
-    /^(I?\d{4,})$/i.test((raw[0]?.[0] ?? '').trim())
+    isValidNikFormat(raw[0]?.[0])
     && Boolean((raw[0]?.[1] ?? '').trim())
     && looksLikeDateHeader((raw[0]?.[13] ?? '').trim())
   let dataStart = firstRowLooksLikeTransaction ? 0 : 1
@@ -725,6 +689,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
 
   const nikByNormalizedName = new Map<string, string>()
   const ambiguousNames = new Set<string>()
+  const unmappedNameSales = new Map<string, { name: string; rows: number; sales: number }>()
   const rememberName = (nik: string, nama: string) => {
     const key = normalizeNameForMatch(nama)
     if (!key || ambiguousNames.has(key)) return
@@ -742,7 +707,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   for (const row of raw.slice(dataStart)) {
     const nik = c(row, nikIdx)
     const nama = c(row, namaIdx).replace(/^[A-Z]{2,3}-/i, '').trim()
-    if (/^(I\d{5}|\d{4,})$/i.test(nik) && nama) {
+    if (isValidNikFormat(nik) && nama) {
       rememberName(canonicalNik(nik), nama)
     }
   }
@@ -760,8 +725,8 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     if (/^0+(?:\.0+)?$/.test(nikVal)) { lastNik = ''; lastNama = ''; continue }
 
     // Update NIK & NAMA kalau ada nilai baru
-    // Accept: \d{4,} (pure digits) or I\d{5} (I-prefix format like I01902)
-    const hasExplicitNik = /^(I\d{5}|\d{4,})$/i.test(nikVal)
+    // Accept numeric NIKs and I-prefixed NIKs with at least four digits.
+    const hasExplicitNik = isValidNikFormat(nikVal)
     if (hasExplicitNik) lastNik = canonicalNik(nikVal)
     if (namaVal && namaVal !== lastNama && !/^\d/.test(namaVal)) {
       lastNama = namaVal.replace(/^[A-Z]{2,3}-/i, '').trim()
@@ -772,36 +737,19 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     }
     if (hasExplicitNik && namaVal && lastNama) rememberName(lastNik, lastNama)
 
-    // Fallback: Kalau NIK kosong tapi NAMA ada, cari NIK dari nikNameMap
-    if (!lastNik && lastNama && nikNameMap.size > 0) {
-      const normalizedLastNama = normalizeNameForMatch(lastNama)
-      let found = false
-      for (const [nik, nama] of nikNameMap) {
-        if (normalizeNameForMatch(nama) === normalizedLastNama) {
-          lastNik = nik
-          found = true
-          debugWarn(`[COPAS S2 Fallback] Match: "${lastNama}" → NIK "${nik}"`)
-          break
-        }
-      }
-      if (!found && (lastNama.includes('GWEN') || lastNama.includes('ADITYA') || lastNama.includes('ROZIAN'))) {
-        debugWarn(`[COPAS S2 Fallback] NO EXACT MATCH for "${lastNama}"`)
-        for (const [nik, nama] of nikNameMap) {
-          const normNama = normalizeNameForMatch(nama)
-          if (normNama.includes(normalizedLastNama) || normalizedLastNama.includes(normNama)) {
-            lastNik = nik
-            debugWarn(`[COPAS S2 Fallback] Fuzzy match: "${lastNama}" → NIK "${nik}"`)
-            break
-          }
-        }
-      }
-    }
-
-    // Skip kalau NIK belum terisi atau tidak ada tanggal
-    if (!lastNik || !tgl) continue
-
     // Include negative sales/returns so totals reconcile to COPAS S2 net values.
     const tv = numVal(c(row, totalValueIdx))
+    if (!lastNik || !tgl) {
+      if (!lastNik && tgl) {
+        const name = lastNama || namaVal || '(nama kosong)'
+        const key = normalizeNameForMatch(name)
+        const entry = unmappedNameSales.get(key) ?? { name, rows: 0, sales: 0 }
+        entry.rows += 1
+        entry.sales += tv
+        unmappedNameSales.set(key, entry)
+      }
+      continue
+    }
 
     txns.push({
       nik:        lastNik,
@@ -815,6 +763,18 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       qty:        numVal(c(row, qtyIdx)),
       totalValue: tv,
     })
+  }
+
+  if (unmappedNameSales.size > 0) {
+    const unresolved = [...unmappedNameSales.values()]
+    const topNames = [...unresolved]
+      .sort((a, b) => Math.abs(b.sales) - Math.abs(a.sales))
+      .slice(0, 5)
+    const rowCount = unresolved.reduce((sum, item) => sum + item.rows, 0)
+    const sales = unresolved.reduce((sum, item) => sum + item.sales, 0)
+    debugRows.push(
+      `Sales tidak terpetakan: ${rowCount} baris / ${unresolved.length} nama; total Rp ${sales.toLocaleString('id-ID')}; teratas: ${topNames.map(item => `${item.name} (${item.rows} baris, Rp ${item.sales.toLocaleString('id-ID')})`).join('; ')}`,
+    )
   }
 
   return { txns, debugRows }
@@ -989,7 +949,7 @@ export async function fetchTargets(): Promise<Map<string, TargetData>> {
       }
       // Simpan by NIK (kalau NIK terbaca oleh gviz atau sudah ditemukan dari fallback)
       // Support: I01902 (I + 5 digits) atau 101902+ (4+ digits)
-      if (nik && /^(I\d{5}|\d{4,})$/i.test(nik)) {
+      if (isValidNikFormat(nik)) {
         setTargetEntry(map, nik, entry)
         setTargetEntry(map, canonicalNik(nik), entry)
       }
@@ -1518,6 +1478,7 @@ export interface RawPerfResult {
   teamTodayEmployees: TeamEmployeeSummary[]
   teamMtdEmployees: TeamEmployeeSummary[]
   teamFullMonthEmployees: TeamEmployeeSummary[]
+  salesAttributionWarning: string | null
 }
 
 function normNik(nik: string): string {
@@ -1537,6 +1498,8 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
     fetchMemberData(),
     fetchSettings(),
   ])
+  const salesAttributionWarning =
+    debugRows.find(message => message.startsWith('Sales tidak terpetakan:')) ?? null
   log(`SETTING: ${settings.length} baris (KPI=${settings.filter(s=>s.section==='KPI').length}, KATEGORI=${settings.filter(s=>s.section==='KATEGORI').length})`)
   log(`TARGET: ${targets.size} entri — NIK intern: ${['I01902','I01903','I01904'].map(n=>{const f=findTargetByNik(targets,n);return`${n}=${f?f.daily:'❌'}`}).join(', ')}`)
 
@@ -1780,6 +1743,7 @@ export async function buildRawPerformance(currentNik: string, onLog?: (s: string
       validNiks,
       true,
     ),
+    salesAttributionWarning,
 
     todayPerf: {
       achievement: dailyAch,

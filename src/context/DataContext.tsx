@@ -80,6 +80,8 @@ export interface AtlasData {
 
   error: string | null
 
+  salesAttributionWarning: string | null
+
   usingLive: boolean
 
   debugLog: string[]
@@ -117,6 +119,8 @@ export const DataContext = createContext<AtlasData>({
   loading: false,
 
   error: null,
+
+  salesAttributionWarning: null,
 
   usingLive: false,
 
@@ -163,6 +167,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       loading: false,
 
       error: null,
+
+      salesAttributionWarning: null,
 
       usingLive: false,
 
@@ -292,6 +298,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       let teamFullMonthEmployees: TeamEmployeeSummary[] = []
 
       let rawPerfError: string | null = null
+      let salesAttributionWarning: string | null = null
 
       try {
         log("Mengolah data mentah COPAS S2…")
@@ -303,6 +310,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         )
 
         const result = await buildRawPerformance(nik, log, validNiks)
+        salesAttributionWarning = result.salesAttributionWarning
 
         const visibleRanking = (ranking: typeof result.todayPerf.ranking) =>
           ranking
@@ -452,6 +460,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         loading: false,
 
         error: rawPerfError,
+
+        salesAttributionWarning:
+          rawPerfError && prev.usingLive
+            ? prev.salesAttributionWarning
+            : salesAttributionWarning,
 
         usingLive: anyLive,
 

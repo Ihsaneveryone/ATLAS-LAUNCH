@@ -66,6 +66,165 @@ describe('buildRawPerformance', () => {
     expect(salesContributionKeyForZone('ONLINE')).toBeNull()
   })
 
+  it('includes sales for 6-digit I-prefixed NIKs in all sales periods', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-07-17T12:00:00+07:00'))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const sheet = new URL(url).searchParams.get('sheet')
+
+      if (sheet === 'COPAS S2') {
+        return csvResponse([
+          'NIK,NAMA,,RECEIPT NO,ARTIKEL,DESKRIPSI,KODE,QTY,EMPTY1,EMPTY2,EMPTY3,TOTAL VALUE,,TANGGAL',
+          'I152535,Sales User,,R1,SKU1,Desc,Code,1,,,,250000,,16/07/2026',
+          'I152535,Sales User,,R2,SKU1,Desc,Code,1,,,,300000,,17/07/2026',
+        ].join('\n'))
+      }
+
+      if (sheet === 'KUNCIAN SKU') {
+        return csvResponse(['SKU', 'SKU1'].join('\n'))
+      }
+
+      if (sheet === 'TARGET') {
+        return csvResponse([
+          'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+          'I152535,Sales User,1000000,3000000',
+        ].join('\n'))
+      }
+
+      if (sheet === 'MEMBER') {
+        return csvResponse(['TANGGAL,TYPE,NAMA', ''].join('\n'))
+      }
+
+      if (sheet === 'SETTING') {
+        return csvResponse(['SECTION,NAMA,AKTIF', ''].join('\n'))
+      }
+
+      if (sheet === 'ATLAS DATABASE') {
+        return csvResponse(['NIK,NAMA', ''].join('\n'))
+      }
+
+      if (sheet === 'COPAS') {
+        return csvResponse(['NIK,NAMA', ''].join('\n'))
+      }
+
+      if (sheet === 'USERS') {
+        return csvResponse(['NIK,NAMA,ROLE,JOBTITLE,PASSWORD', 'I152535,Sales User,user,Sales,123456'].join('\n'))
+      }
+
+      return csvResponse('')
+    }))
+
+    try {
+      const result = await buildRawPerformance('I152535', undefined, new Set(['I152535']))
+
+      expect(result.mtdPerf.actual).toBe(250000)
+      expect(result.mtdPerf.ranking.find(entry => entry.nik === '152535')?.value).toBe(250000)
+      expect(result.todayPerf.actual).toBe(300000)
+      expect(result.teamMtdEmployees.find(employee => employee.nik === '152535')?.sales).toBe(250000)
+      expect(result.teamFullMonthEmployees.find(employee => employee.nik === '152535')?.sales).toBe(550000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('maps blank-NIK sales using USERS even when ATLAS DATABASE has other employees', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T12:00:00+07:00'))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const sheet = new URL(String(input)).searchParams.get('sheet')
+
+      if (sheet === 'COPAS S2') {
+        return csvResponse([
+          'NIK,NAMA,DATE,NO RECEIPT,ARTICLE CODE,ARTICLE NAME,DEPARTMENT,QUANTITY,PRICE,DISCOUNT,INCLUDE PPN,EXCLUDE PPN,JOBTITLE,TANGGAL,ZONA',
+          ',BASTOMI FEBRIANTO,01/11/2026,R1,SKU1,Product,Dept,1,400000,0,400000,360270,,01-11-2026,Outdoor Comfort',
+          ',BASTOMI FEBRIANTO,04/11/2026,R2,SKU2,Product,Dept,1,600000,0,600000,531441,,04-11-2026,Home Textile',
+          ',UNMAPPED FORMER EMPLOYEE,05/11/2026,R3,SKU3,Product,Dept,1,500000,0,500000,450000,,05-11-2026,Other',
+        ].join('\n'))
+      }
+
+      if (sheet === 'KUNCIAN SKU') return csvResponse('SKU,SKU1')
+      if (sheet === 'TARGET') return csvResponse([
+        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+        '152535,BASTOMI FEBRIANTO,1000000,30000000',
+      ].join('\n'))
+      if (sheet === 'USERS') return csvResponse([
+        'NIK,NAMA,ROLE,JOBTITLE,PASSWORD',
+        '152535,BASTOMI FEBRIANTO,user,ADVISOR,123456',
+      ].join('\n'))
+      if (sheet === 'ATLAS DATABASE') {
+        return csvResponse('NIK,NAMA\n190001,Other Employee')
+      }
+      if (sheet === 'COPAS') {
+        return csvResponse('NIK,NAMA\n190002,Another Employee')
+      }
+      if (sheet === 'MEMBER' || sheet === 'SETTING') return csvResponse('SECTION,NAMA,AKTIF')
+      return csvResponse('')
+    }))
+
+    try {
+      const debugLog: string[] = []
+      const result = await buildRawPerformance(
+        '152535',
+        message => debugLog.push(message),
+        new Set(['152535']),
+      )
+
+      expect(result.mtdPerf.actual).toBe(891711)
+      expect(result.mtdPerf.ranking.find(entry => entry.nik === '152535')?.value).toBe(891711)
+      expect(result.teamMtdEmployees.find(employee => employee.nik === '152535')?.sales).toBe(891711)
+      expect(result.mtdPerf.actual).not.toBe(1341711)
+      expect(result.salesAttributionWarning).toContain('UNMAPPED FORMER EMPLOYEE')
+      expect(debugLog.some(message => message.includes('UNMAPPED FORMER EMPLOYEE'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not assign blank-NIK sales when the employee name maps to multiple NIKs', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-11T12:00:00+07:00'))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const sheet = new URL(String(input)).searchParams.get('sheet')
+      if (sheet === 'COPAS S2') {
+        return csvResponse([
+          'NIK,NAMA,DATE,NO RECEIPT,ARTICLE CODE,ARTICLE NAME,DEPARTMENT,QUANTITY,PRICE,DISCOUNT,INCLUDE PPN,EXCLUDE PPN,JOBTITLE,TANGGAL,ZONA',
+          ',SHARED EMPLOYEE NAME,01/11/2026,R1,SKU1,Product,Dept,1,500000,0,500000,450000,,01-11-2026,Zone',
+        ].join('\n'))
+      }
+      if (sheet === 'KUNCIAN SKU') return csvResponse('SKU,SKU1')
+      if (sheet === 'TARGET') return csvResponse([
+        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+        '152535,SHARED EMPLOYEE NAME,1000000,30000000',
+      ].join('\n'))
+      if (sheet === 'USERS') return csvResponse([
+        'NIK,NAMA,ROLE,JOBTITLE,PASSWORD',
+        '152535,SHARED EMPLOYEE NAME,user,ADVISOR,123456',
+        '152536,SHARED EMPLOYEE NAME,user,ADVISOR,123456',
+      ].join('\n'))
+      if (sheet === 'ATLAS DATABASE' || sheet === 'COPAS') return csvResponse('NIK,NAMA')
+      if (sheet === 'MEMBER' || sheet === 'SETTING') return csvResponse('SECTION,NAMA,AKTIF')
+      return csvResponse('')
+    }))
+
+    try {
+      const result = await buildRawPerformance(
+        '152535',
+        undefined,
+        new Set(['152535', '152536']),
+      )
+
+      expect(result.mtdPerf.actual).toBe(0)
+      expect(result.teamMtdEmployees.find(employee => employee.nik === '152535')?.sales).toBe(0)
+      expect(result.teamMtdEmployees.find(employee => employee.nik === '152536')?.sales).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('includes sales rows for users whose NIK uses an alternate format', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

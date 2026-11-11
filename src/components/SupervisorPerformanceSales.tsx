@@ -83,6 +83,7 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
     mtdPerf,
     loading,
     error,
+    salesAttributionWarning,
   } = useAtlasData()
 
   const isMobile = useMobile()
@@ -428,6 +429,20 @@ export default function SupervisorPerformanceSales({ user, onBack }: Props) {
           }}
         >
           Data sales: {error}
+        </div>
+      )}
+      {!error && salesAttributionWarning && (
+        <div
+          role="status"
+          style={{
+            background: "#fff7ed",
+            borderBottom: "1px solid #fed7aa",
+            padding: `8px ${px}`,
+            fontSize: 13,
+            color: "#9a3412",
+          }}
+        >
+          Data sales: {salesAttributionWarning}. Periksa NIK dan nama pada sumber data sales.
         </div>
       )}
       {deptError && (
