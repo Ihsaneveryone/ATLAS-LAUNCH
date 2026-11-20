@@ -129,7 +129,7 @@ function lightBg(pct: number) {
   return "#fff1f2"
 }
 
-function Ring({ pct, size = 140 }: { pct: number size?: number }) {
+function Ring({ pct, size = 140 }: { pct: number; size?: number }) {
   const r = size * 0.386,
     c = 2 * Math.PI * r,
     color = ac(pct)
@@ -455,7 +455,6 @@ export default function PerformanceSales({ user, onBack }: Props) {
     mtdPerf,
     loading,
     error,
-    salesAttributionWarning,
     users,
   } = useAtlasData()
 
@@ -730,21 +729,6 @@ export default function PerformanceSales({ user, onBack }: Props) {
           ⚠ {error}
         </div>
       )}
-      {!error && salesAttributionWarning && (
-        <div
-          role="status"
-          style={{
-            background: "#fff7ed",
-            borderBottom: "1px solid #fed7aa",
-            padding: `8px ${px}`,
-            fontSize: 13,
-            color: "#9a3412",
-          }}
-        >
-          ⚠ {salesAttributionWarning}. Periksa NIK dan nama pada sumber data sales.
-        </div>
-      )}
-
       {period === "ytd" && <YTDPage user={user} />}
 
       <main

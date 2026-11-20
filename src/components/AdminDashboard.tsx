@@ -192,7 +192,7 @@ interface YouTubePlayerEvent {
 }
 
 interface YouTubeIframeApi {
-  PlayerState: { ENDED: number PLAYING: number BUFFERING: number }
+  PlayerState: { ENDED: number; PLAYING: number; BUFFERING: number }
 
   Player: new (
     element: HTMLIFrameElement,
@@ -328,7 +328,7 @@ function bgPct(pct: number) {
   return "#fff1f2"
 }
 
-const ZONE_COLORS: Record<string, { dot: string bg: string text: string }> = {
+const ZONE_COLORS: Record<string, { dot: string; bg: string; text: string }> = {
   hijau: { dot: "#16a34a", bg: "#dcfce7", text: "#166534" },
 
   biru: { dot: "#2563eb", bg: "#dbeafe", text: "#1e3a8a" },
@@ -425,7 +425,7 @@ function StatCard({
 
 // ── Section header ───────────────────────────────────────────────────────────
 
-function SectionTitle({ title, sub }: { title: string sub?: string }) {
+function SectionTitle({ title, sub }: { title: string; sub?: string }) {
   return (
     <div
       style={{
@@ -459,8 +459,6 @@ function TVSlideshow({
   mtdRanking,
 
   fullMonthRanking,
-
-  users,
 
   loading,
 
@@ -510,8 +508,6 @@ function TVSlideshow({
     value: number
     rank?: number
   }>
-
-  users: User[]
 
   loading: boolean
 
@@ -5438,7 +5434,7 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       ? mtdPerf.target / mtdPerf.targetMTD
       : 1
 
-  const isSupervisorRow = (row: { nik?: string jobTitle?: string }) => {
+  const isSupervisorRow = (row: { nik?: string; jobTitle?: string }) => {
     return (
       isSupervisorJobTitle(row.jobTitle) ||
       users.some(
@@ -6167,7 +6163,6 @@ export default function AdminDashboard({ user, onLogout }: Props) {
               ...r,
               achievement: Number.isFinite(r.achievement) ? r.achievement : 0,
             }))}
-            users={users}
             loading={loading}
             dataError={error}
             receiptRows={receiptRows}

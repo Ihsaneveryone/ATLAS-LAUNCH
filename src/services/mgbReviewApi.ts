@@ -266,7 +266,6 @@ async function requestYesterdayMgbReviews(user: User): Promise<MgbReview[]> {
   if (endpoint) {
     return new Promise((resolve, reject) => {
       const callbackName = `__atlasMgbCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`
-      const callbacks = window as Window & Record<string, (result: { data?: MgbReview[]; error?: string }) => void>
       const script = document.createElement('script')
       const url = new URL(endpoint)
       url.searchParams.set('nik', user.nik)
@@ -274,7 +273,7 @@ async function requestYesterdayMgbReviews(user: User): Promise<MgbReview[]> {
 
       const cleanup = () => {
         window.clearTimeout(timeout)
-        delete callbacks[callbackName]
+        Reflect.deleteProperty(window, callbackName)
         script.remove()
       }
       const timeout = window.setTimeout(() => {
@@ -282,18 +281,21 @@ async function requestYesterdayMgbReviews(user: User): Promise<MgbReview[]> {
         reject(new Error('Waktu tunggu Apps Script habis. Pastikan Web App sudah di-deploy dan URL endpoint benar.'))
       }, 30_000)
 
-      callbacks[callbackName] = result => {
-        cleanup()
-        if (result.error) {
-          reject(new Error(result.error))
-          return
-        }
-        if (!Array.isArray(result.data)) {
-          reject(new Error('Apps Script mengirim respons yang tidak sesuai.'))
-          return
-        }
-        resolve(result.data)
-      }
+      Object.defineProperty(window, callbackName, {
+        configurable: true,
+        value: (result: { data?: MgbReview[]; error?: string }) => {
+          cleanup()
+          if (result.error) {
+            reject(new Error(result.error))
+            return
+          }
+          if (!Array.isArray(result.data)) {
+            reject(new Error('Apps Script mengirim respons yang tidak sesuai.'))
+            return
+          }
+          resolve(result.data)
+        },
+      })
       script.onerror = () => {
         cleanup()
         reject(new Error('Tidak dapat menghubungi Apps Script. Periksa URL endpoint dan akses Web App.'))
@@ -330,7 +332,7 @@ export function loadYesterdayMgbReviews(user: User, forceRefresh = false): Promi
   const activeRequest = reviewRequests.get(key)
   if (!forceRefresh && activeRequest) return activeRequest
 
-  const request = requestYesterdayMgbReviews(user).then<MgbReviewResult>(
+  const request = requestYesterdayMgbReviews(user).then<MgbReviewResult, MgbReviewResult>(
     reviews => ({ reviews, error: '' }),
     reason => ({ reviews: [], error: reason instanceof Error ? reason.message : String(reason) }),
   ).then(result => {

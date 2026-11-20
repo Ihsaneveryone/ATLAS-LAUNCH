@@ -805,7 +805,6 @@ describe('buildRawPerformance', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-09-13T12:00:00+07:00'))
     const today = new Date()
-    const month = String(today.getMonth() + 1).padStart(2, '0')
     const year = today.getFullYear()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const sheet = new URL(String(input)).searchParams.get('sheet')

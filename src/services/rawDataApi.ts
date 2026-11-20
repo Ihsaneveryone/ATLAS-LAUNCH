@@ -391,6 +391,7 @@ function parseMatrixDailySheet(rows: string[][], nikNameMap: Map<string, string>
         date: parseDate(headers[idx]),
         receiptNo: '',
         artikel: '',
+        deskripsi: '',
         subCategory: '',
         qty: val,
         totalValue: val,
