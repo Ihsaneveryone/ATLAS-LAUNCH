@@ -20,7 +20,7 @@ import { fetchPencapaianToko, type TokoRow } from "../services/tokoApi"
 
 import { niksMatch } from "../services/nik"
 
-import { isSupervisorJobTitle } from "../services/jobTitle"
+import { isSupervisorJobTitle, normalizeJobTitle } from "../services/jobTitle"
 
 import type {
   User,
@@ -309,7 +309,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
           liveUsers.filter((u) => u.role === "user").map((u) => u.nik),
         )
 
-        const result = await buildRawPerformance(nik, log, validNiks)
+        const currentUser = liveUsers.find((candidate) => niksMatch(candidate.nik, nik))
+        const currentNormalizedTitle = normalizeJobTitle(currentUser?.jobTitle)
+        const loadAllTransactions =
+          isSupervisorJobTitle(currentUser?.jobTitle) ||
+          currentNormalizedTitle === "MANAGER" ||
+          currentUser?.role === "admin"
+
+        const result = await buildRawPerformance(
+          nik,
+          log,
+          validNiks,
+          loadAllTransactions,
+        )
         salesAttributionWarning = result.salesAttributionWarning
 
         const visibleRanking = (ranking: typeof result.todayPerf.ranking) =>

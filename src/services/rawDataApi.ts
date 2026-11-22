@@ -56,6 +56,33 @@ async function fetchCSV(name: string, gid?: number, retries = 2, spreadsheetId =
   throw lastErr
 }
 
+async function fetchProjectedSalesCSV(nik: string, retries = 1): Promise<string[][]> {
+  const digits = canonicalNik(nik).replace(/\D/g, '')
+  if (!digits) return []
+  const query = `select A,B,D,E,H,L,O,P,N where A = ${digits}`
+  const url =
+    `https://docs.google.com/spreadsheets/d/${SALES_DATA_SHEET_ID}/gviz/tq` +
+    `?tqx=out:csv&sheet=SALES_DATA&tq=${encodeURIComponent(query)}&_t=${Date.now()}`
+
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12_000)
+    try {
+      const res = await fetch(url, { cache: 'no-store', signal: controller.signal })
+      const text = await res.text()
+      if (!res.ok || text.trimStart().startsWith('<!')) throw new Error('Data sales per-NIK tidak bisa dibaca')
+      return parseCSV(text)
+    } catch (error) {
+      lastErr = error
+      if (attempt < retries) await new Promise(resolve => setTimeout(resolve, 250))
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  throw lastErr
+}
+
 function parseCSV(text: string): string[][] {
   // Iterasi seluruh teks (bukan split per baris dulu) — sel deskripsi produk
   // sering mengandung enter literal, dan split('\n') di awal akan memecah
@@ -535,15 +562,36 @@ function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
   return false
 }
 
-export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
+let rawTransactionCache: {
+  key: string
+  expiresAt: number
+  value: { txns: RawTxn[]; debugRows: string[] }
+} | null = null
+
+export async function fetchRawTransactions(preferredNik?: string, loadAllTransactions = true): Promise<{ txns: RawTxn[], debugRows: string[] }> {
+  const cacheKey = `${loadAllTransactions ? 'all' : preferredNik ?? 'none'}`
+  if (
+    typeof window !== 'undefined' &&
+    rawTransactionCache &&
+    rawTransactionCache.key === cacheKey &&
+    rawTransactionCache.expiresAt > Date.now()
+  ) {
+    return rawTransactionCache.value
+  }
+
   const nikNameMap = await fetchNikNameMapping()
   // Utamakan SALES_DATA langsung; COPAS S2 hanya menjadi fallback jika sumber utama belum tersedia.
   const copasCandidates = [
     ['COPAS S2', 1092675108],
     ['COPAS S2', undefined],
   ] as const
-  const candidates = [
-    ['SALES_DATA', undefined, SALES_DATA_SHEET_ID],
+  const candidates: ReadonlyArray<readonly [string, number | undefined, string]> = [
+    ...(!loadAllTransactions && preferredNik && typeof window !== 'undefined'
+      ? [['SALES_DATA', undefined, SALES_DATA_SHEET_ID] as const]
+      : []),
+    ...(loadAllTransactions || !preferredNik || typeof window === 'undefined'
+      ? [['SALES_DATA', undefined, SALES_DATA_SHEET_ID] as const]
+      : []),
     ...copasCandidates.map(([name, gid]) => [name, gid, SHEET_ID] as const),
   ] as const
 
@@ -556,7 +604,9 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   let matrixFallback: { rows: string[][]; name: string } | null = null
   for (const [candidate, gid, spreadsheetId] of candidates) {
     try {
-      let candidateRows = await fetchCSV(candidate, gid, 2, spreadsheetId)
+      let candidateRows = !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
+        ? await fetchProjectedSalesCSV(preferredNik)
+        : await fetchCSV(candidate, gid, 2, spreadsheetId)
       // Koneksi bisa terputus TEPAT setelah baris header (tanpa melempar error dan tanpa
       // kutip yang tidak tertutup), jadi hasilnya cuma 1 baris kosong padahal harusnya
       // ribuan baris. Ini hanya relevan utk kandidat utama ('COPAS S2') yang seharusnya
@@ -629,7 +679,9 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   if (!raw) {
     for (const [candidate, gid, spreadsheetId] of candidates) {
       try {
-        const candidateRows = await fetchCSV(candidate, gid, 2, spreadsheetId)
+        const candidateRows = !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
+          ? await fetchProjectedSalesCSV(preferredNik)
+          : await fetchCSV(candidate, gid, 2, spreadsheetId)
         if (candidateRows.length > 10) {
           // Keep any permissive fallback confined to COPAS S2 itself.
           debugRows.push(`[FALLBACK-DATA] ${candidate} punya ${candidateRows.length} baris, accept dengan fallback`)
@@ -660,7 +712,11 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   if (looksLikeMatrix) {
     const txns = parseMatrixDailySheet(raw, nikNameMap)
     debugRows.push(`Parsed as matrix daily sheet: ${txns.length} transaksi`)
-    return { txns, debugRows }
+    const value = { txns, debugRows }
+    if (typeof window !== 'undefined') {
+      rawTransactionCache = { key: cacheKey, expiresAt: Date.now() + 45_000, value }
+    }
+    return value
   }
 
   // Some COPAS S2 exports omit the header row; preserve the first transaction.
@@ -801,7 +857,11 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
     )
   }
 
-  return { txns, debugRows }
+  const value = { txns, debugRows }
+  if (typeof window !== 'undefined') {
+    rawTransactionCache = { key: cacheKey, expiresAt: Date.now() + 45_000, value }
+  }
+  return value
 }
 
 export async function fetchSIDDataSignature(): Promise<string> {
@@ -1509,14 +1569,19 @@ function normNik(nik: string): string {
   return (nik ?? '').trim().toLowerCase()
 }
 
-export async function buildRawPerformance(currentNik: string, onLog?: (s: string) => void, validNiks: Set<string> = new Set()): Promise<RawPerfResult> {
+export async function buildRawPerformance(
+  currentNik: string,
+  onLog?: (s: string) => void,
+  validNiks: Set<string> = new Set(),
+  loadAllTransactions = true,
+): Promise<RawPerfResult> {
   const log = (s: string) => { debugWarn('[ATLAS RAW]', s); onLog?.(s) }
   // Normalize currentNik to canonical format (I01902 → 101902) so it matches transaction NIKs
   const canonicalCurrent = canonicalNik(currentNik)
   const normCurrent = normNik(canonicalCurrent)
 
   const [{ txns: rawTxns, debugRows }, skuMap, targets, memberEntries, settings] = await Promise.all([
-    fetchRawTransactions(),
+    fetchRawTransactions(currentNik, loadAllTransactions),
     fetchSkuMap(),
     fetchTargets(),
     fetchMemberData(),
