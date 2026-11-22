@@ -8,7 +8,7 @@
 import type { DailyTrend, PerformanceData, KPIItem } from '../data/mockData'
 import { YTD_PERFORMANCE } from '../data/mockData'
 import { getConfiguredColumnIndex } from './columnMappingService'
-import { niksMatch, canonicalNik, isValidNikFormat, looksLikeNik } from './nik'
+import { niksMatch, canonicalNik, isValidNikFormat, looksLikeNik, getNikVariants } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
 const SALES_DATA_SHEET_ID = '1CBz9oPc9FMiEu545NX-wJZl_fzUsX_rqggtVwaAlM7k'
@@ -57,9 +57,21 @@ async function fetchCSV(name: string, gid?: number, retries = 2, spreadsheetId =
 }
 
 async function fetchProjectedSalesCSV(nik: string, retries = 1): Promise<string[][]> {
-  const digits = canonicalNik(nik).replace(/\D/g, '')
-  if (!digits) return []
-  const query = `select A,B,D,E,H,L,O,P,N where A = ${digits}`
+  const variants = getNikVariants(nik)
+    .map(value => value.trim())
+    .filter(Boolean)
+  if (variants.length === 0) return []
+
+  const numericVariants = variants
+    .filter(value => /^\d+$/.test(value))
+    .map(value => `A = ${value}`)
+  const textVariants = variants
+    .filter(value => /[A-Z]/i.test(value) && !/^\d+$/.test(value))
+    .map(value => `A = '${value.replace(/'/g, "''")}'`)
+  const conditions = [...numericVariants, ...textVariants].join(' or ')
+  if (!conditions) return []
+
+  const query = `select A,B,D,E,H,L,O,P,N where ${conditions}`
   const url =
     `https://docs.google.com/spreadsheets/d/${SALES_DATA_SHEET_ID}/gviz/tq` +
     `?tqx=out:csv&sheet=SALES_DATA&tq=${encodeURIComponent(query)}&_t=${Date.now()}`
@@ -482,6 +494,201 @@ export async function fetchCopasS2TableData(): Promise<CopasS2TableData> {
   }
 }
 
+export interface SegmentedReceipt {
+  receiptNo: string
+  nik: string
+  nama: string
+  value: number
+  channel: 'online' | 'offline'
+}
+
+export interface ReceiptSegment {
+  key: string
+  label: string
+  count: number
+  receipts: SegmentedReceipt[]
+}
+
+export interface ReceiptSegmentationResult {
+  segments: ReceiptSegment[]
+  totalReceipts: number
+  lowValueReceipts: ReceiptUserSummary[]
+  highValueReceipts: ReceiptUserSummary[]
+  lowValueOnline: ReceiptUserSummary[]
+  lowValueOffline: ReceiptUserSummary[]
+  highValueOnline: ReceiptUserSummary[]
+  highValueOffline: ReceiptUserSummary[]
+}
+
+export interface ReceiptUserSummary {
+  nik: string
+  nama: string
+  receiptCount: number
+  averageValue: number
+}
+
+function receiptSegmentKey(value: number): string {
+  if (value <= 200_000) return '0-200'
+  if (value <= 300_000) return '200-300'
+  if (value <= 400_000) return '300-400'
+  if (value <= 500_000) return '400-500'
+  if (value <= 600_000) return '500-600'
+  if (value <= 700_000) return '600-700'
+  if (value <= 800_000) return '700-800'
+  if (value <= 1_000_000) return '800-1000'
+  if (value <= 5_000_000) return '1000-5000'
+  if (value <= 10_000_000) return '5000-10000'
+  return 'gt-10000'
+}
+
+export async function fetchReceiptSegmentation(dateFilter = ''): Promise<ReceiptSegmentationResult> {
+  const query = 'select D,A,B,L,C,O,N'
+  const url =
+    `https://docs.google.com/spreadsheets/d/${SALES_DATA_SHEET_ID}/gviz/tq` +
+    `?tqx=out:csv&sheet=SALES_DATA&tq=${encodeURIComponent(query)}&_t=${Date.now()}`
+
+  const res = await fetch(url, { cache: 'no-store' })
+  const text = await res.text()
+  if (!res.ok || text.trimStart().startsWith('<!')) {
+    throw new Error('Data segmentasi receipt tidak dapat dibaca.')
+  }
+
+  const rows = parseCSV(text)
+  if (rows.length < 2) {
+    return buildEmptyReceiptSegmentation()
+  }
+
+  const dateParts = dateFilter.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const slashDate = dateParts ? `${dateParts[3]}/${dateParts[2]}/${dateParts[1]}` : ''
+  const dashDate = dateParts ? `${dateParts[3]}-${dateParts[2]}-${dateParts[1]}` : ''
+  const receiptMap = new Map<string, SegmentedReceipt>()
+
+  for (const row of rows.slice(1)) {
+    const receiptNo = c(row, 0)
+    if (!receiptNo) continue
+    const transactionDateSlash = c(row, 4)
+    const transactionDateDash = c(row, 5)
+    if (dateFilter && transactionDateSlash !== slashDate && transactionDateDash !== dashDate) continue
+
+    const nik = c(row, 1)
+    const nama = c(row, 2)
+    const value = numVal(c(row, 3))
+    const channelText = c(row, 6).toUpperCase()
+    const channel: 'online' | 'offline' =
+      channelText === 'ONLINE' || /\.78(?:$|[^0-9])/i.test(receiptNo)
+        ? 'online'
+        : 'offline'
+    const current = receiptMap.get(receiptNo)
+    if (current) {
+      current.value += value
+      if (channel === 'online') current.channel = 'online'
+      if (nik && !current.nik.includes(nik)) current.nik = `${current.nik}, ${nik}`.replace(/^, /, '')
+      if (nama && !current.nama.includes(nama)) current.nama = `${current.nama}, ${nama}`.replace(/^, /, '')
+    } else {
+      receiptMap.set(receiptNo, { receiptNo, nik, nama, value, channel })
+    }
+  }
+
+  for (const [receiptNo, receipt] of receiptMap) {
+    if (receipt.value <= 0) receiptMap.delete(receiptNo)
+  }
+
+  const segmentLabels: Array<{ key: string; label: string }> = [
+    { key: '0-200', label: '0-200 RB' },
+    { key: '200-300', label: '200 RB-300 RB' },
+    { key: '300-400', label: '300 RB-400 RB' },
+    { key: '400-500', label: '400 RB-500 RB' },
+    { key: '500-600', label: '500 RB-600 RB' },
+    { key: '600-700', label: '600 RB-700 RB' },
+    { key: '700-800', label: '700 RB-800 RB' },
+    { key: '800-1000', label: '800 RB-1 JT' },
+    { key: '1000-5000', label: '1 JT-5 JT' },
+    { key: '5000-10000', label: '5 JT-10 JT' },
+    { key: 'gt-10000', label: '> 10 JT' },
+  ]
+  const segments = segmentLabels.map(({ key, label }) => ({
+    key,
+    label,
+    count: 0,
+    receipts: [] as SegmentedReceipt[],
+  }))
+
+  for (const receipt of receiptMap.values()) {
+    if (receipt.value <= 0) continue
+    const key = receiptSegmentKey(receipt.value)
+    const segment = segments.find(item => item.key === key)
+    if (!segment) continue
+    segment.receipts.push(receipt)
+  }
+
+  for (const segment of segments) {
+    segment.receipts.sort((a, b) => b.value - a.value || a.receiptNo.localeCompare(b.receiptNo))
+    segment.count = segment.receipts.length
+  }
+
+  const summarizeUsers = (
+    receipts: SegmentedReceipt[],
+    channel?: 'online' | 'offline',
+  ): ReceiptUserSummary[] => {
+    const grouped = new Map<string, ReceiptUserSummary>()
+    for (const receipt of receipts) {
+      if (channel && receipt.channel !== channel) continue
+      if (!receipt.nik || !receipt.nama) continue
+      const key = `${canonicalNik(receipt.nik)}|${receipt.nama.trim().toUpperCase()}`
+      const current = grouped.get(key)
+      if (current) {
+        current.receiptCount += 1
+        current.averageValue =
+          ((current.averageValue * (current.receiptCount - 1)) + receipt.value) /
+          current.receiptCount
+      } else {
+        grouped.set(key, {
+          nik: canonicalNik(receipt.nik),
+          nama: receipt.nama.trim(),
+          receiptCount: 1,
+          averageValue: receipt.value,
+        })
+      }
+    }
+    return [...grouped.values()].sort((a, b) =>
+      b.receiptCount - a.receiptCount || a.nama.localeCompare(b.nama, 'id'),
+    )
+  }
+
+  const lowValueReceipts = segments.find(item => item.key === '0-200')?.receipts ?? []
+  const highValueReceipts = segments.find(item => item.key === 'gt-10000')?.receipts ?? []
+
+  return {
+    segments,
+    totalReceipts: receiptMap.size,
+    lowValueReceipts: summarizeUsers(lowValueReceipts),
+    highValueReceipts: summarizeUsers(highValueReceipts),
+    lowValueOnline: summarizeUsers(lowValueReceipts, 'online'),
+    lowValueOffline: summarizeUsers(lowValueReceipts, 'offline'),
+    highValueOnline: summarizeUsers(highValueReceipts, 'online'),
+    highValueOffline: summarizeUsers(highValueReceipts, 'offline'),
+  }
+}
+
+function buildEmptyReceiptSegmentation(): ReceiptSegmentationResult {
+  const segments: ReceiptSegment[] = [
+    ['0-200', '0-200 RB'], ['200-300', '200 RB-300 RB'], ['300-400', '300 RB-400 RB'],
+    ['400-500', '400 RB-500 RB'], ['500-600', '500 RB-600 RB'], ['600-700', '600 RB-700 RB'],
+    ['700-800', '700 RB-800 RB'], ['800-1000', '800 RB-1 JT'], ['1000-5000', '1 JT-5 JT'],
+    ['5000-10000', '5 JT-10 JT'], ['gt-10000', '> 10 JT'],
+  ].map(([key, label]) => ({ key, label, count: 0, receipts: [] }))
+  return {
+    segments,
+    totalReceipts: 0,
+    lowValueReceipts: [],
+    highValueReceipts: [],
+    lowValueOnline: [],
+    lowValueOffline: [],
+    highValueOnline: [],
+    highValueOffline: [],
+  }
+}
+
 // Deteksi COPAS S2 format ketat: header kosong, tapi data rows punya struktur transaksi
 // Atau: header tidak dikenal (bukan NIK/NAMA/TANGGAL/RECEIPT), cek data untuk confirm
 function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
@@ -568,10 +775,15 @@ let rawTransactionCache: {
   value: { txns: RawTxn[]; debugRows: string[] }
 } | null = null
 
-export async function fetchRawTransactions(preferredNik?: string, loadAllTransactions = true): Promise<{ txns: RawTxn[], debugRows: string[] }> {
+export async function fetchRawTransactions(
+  preferredNik?: string,
+  loadAllTransactions = true,
+  bypassCache = false,
+): Promise<{ txns: RawTxn[], debugRows: string[] }> {
   const cacheKey = `${loadAllTransactions ? 'all' : preferredNik ?? 'none'}`
   if (
     typeof window !== 'undefined' &&
+    !bypassCache &&
     rawTransactionCache &&
     rawTransactionCache.key === cacheKey &&
     rawTransactionCache.expiresAt > Date.now()
@@ -607,6 +819,10 @@ export async function fetchRawTransactions(preferredNik?: string, loadAllTransac
       let candidateRows = !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
         ? await fetchProjectedSalesCSV(preferredNik)
         : await fetchCSV(candidate, gid, 2, spreadsheetId)
+      if (!loadAllTransactions && candidate === 'SALES_DATA' && candidateRows.length <= 1) {
+        debugRows.push(`SALES_DATA per-NIK kosong untuk ${preferredNik}; mencoba COPAS S2`)
+        continue
+      }
       // Koneksi bisa terputus TEPAT setelah baris header (tanpa melempar error dan tanpa
       // kutip yang tidak tertutup), jadi hasilnya cuma 1 baris kosong padahal harusnya
       // ribuan baris. Ini hanya relevan utk kandidat utama ('COPAS S2') yang seharusnya
@@ -1574,6 +1790,7 @@ export async function buildRawPerformance(
   onLog?: (s: string) => void,
   validNiks: Set<string> = new Set(),
   loadAllTransactions = true,
+  bypassCache = false,
 ): Promise<RawPerfResult> {
   const log = (s: string) => { debugWarn('[ATLAS RAW]', s); onLog?.(s) }
   // Normalize currentNik to canonical format (I01902 → 101902) so it matches transaction NIKs
@@ -1581,7 +1798,7 @@ export async function buildRawPerformance(
   const normCurrent = normNik(canonicalCurrent)
 
   const [{ txns: rawTxns, debugRows }, skuMap, targets, memberEntries, settings] = await Promise.all([
-    fetchRawTransactions(currentNik, loadAllTransactions),
+    fetchRawTransactions(currentNik, loadAllTransactions, bypassCache),
     fetchSkuMap(),
     fetchTargets(),
     fetchMemberData(),

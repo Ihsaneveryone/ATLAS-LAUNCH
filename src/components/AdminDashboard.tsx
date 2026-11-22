@@ -13,6 +13,9 @@ import {
   fetchSIDDataSignature,
   SALES_CONTRIBUTION_GROUPS,
   salesContributionKeyForZone,
+  fetchReceiptSegmentation,
+  type ReceiptSegmentationResult,
+  type ReceiptUserSummary,
   type YTDEmployee,
 } from "../services/rawDataApi"
 
@@ -78,7 +81,7 @@ import {
   Legend,
 } from "recharts"
 
-type NavPage = "today" | "mtd" | "fullmonth" | "ytd" | "dept" | "tv" | "receipt" | "setting"
+type NavPage = "today" | "mtd" | "fullmonth" | "ytd" | "dept" | "tv" | "receipt" | "receipt-segment" | "setting"
 
 type SortKey = "nama" | "jobTitle" | "sales" | "achievement" | "transaksi" | "upt" | "qty" | "basketSize" | "aur" | "newMember"
 
@@ -5138,6 +5141,26 @@ export default function AdminDashboard({ user, onLogout }: Props) {
 
   const [receiptLoaded, setReceiptLoaded] = useState(false)
 
+  const [receiptSegment, setReceiptSegment] =
+    useState<ReceiptSegmentationResult | null>(null)
+
+  const [receiptSegmentLoading, setReceiptSegmentLoading] = useState(false)
+
+  const [receiptSegmentError, setReceiptSegmentError] = useState("")
+
+  const [receiptSegmentDate, setReceiptSegmentDate] = useState(() => {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date())
+    const get = (type: string) => parts.find((part) => part.type === type)?.value ?? ""
+    return `${get("year")}-${get("month")}-${get("day")}`
+  })
+
+  const [copiedReceiptGroup, setCopiedReceiptGroup] = useState("")
+
   const [trackerUrl, setTrackerUrlState] = useState(getTrackerUrl)
 
   const [trackerSaved, setTrackerSaved] = useState(false)
@@ -5357,6 +5380,35 @@ export default function AdminDashboard({ user, onLogout }: Props) {
       cancelled = true
     }
   }, [dailyDate])
+
+  useEffect(() => {
+    if (page !== "receipt-segment") return
+
+    let cancelled = false
+    setReceiptSegmentLoading(true)
+    setReceiptSegmentError("")
+
+    void fetchReceiptSegmentation(receiptSegmentDate)
+      .then((result) => {
+        if (!cancelled) setReceiptSegment(result)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setReceiptSegmentError(
+            error instanceof Error
+              ? error.message
+              : "Segmentasi receipt gagal dimuat.",
+          )
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReceiptSegmentLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [page, receiptSegmentDate])
 
   useEffect(() => {
     if ((page !== "receipt" && page !== "tv") || receiptLoaded) return
@@ -5800,12 +5852,69 @@ export default function AdminDashboard({ user, onLogout }: Props) {
     },
 
     {
+      key: "receipt-segment" as NavPage,
+      label: "Segmentasi Receipt",
+      icon: "📊",
+      sub: "Per nilai receipt",
+    },
+
+    {
       key: "setting" as NavPage,
       label: "Pengaturan",
       icon: "⚙️",
       sub: "Konfigurasi",
     },
   ]
+
+  const copyReceiptText = async (
+    title: string,
+    receipts: ReceiptUserSummary[],
+  ) => {
+    const formatCompactRupiah = (value: number) => {
+      if (value >= 1_000_000) {
+        const jt = value / 1_000_000
+        return `Rp ${jt.toLocaleString("id-ID", {
+          minimumFractionDigits: jt % 1 === 0 ? 0 : 1,
+          maximumFractionDigits: 1,
+        })} jt`
+      }
+      const rb = value / 1_000
+      return `Rp ${rb.toLocaleString("id-ID", {
+        minimumFractionDigits: rb % 1 === 0 ? 0 : 1,
+        maximumFractionDigits: 1,
+      })} rb`
+    }
+
+    const lines = [
+      `*${title}*`,
+      "",
+      ...receipts.flatMap((receipt, index) => [
+        `${index + 1}. *${receipt.nama || "-"}*`,
+        `   NIK: ${receipt.nik || "-"}`,
+        `   Receipt: ${receipt.receiptCount.toLocaleString("id-ID")} receipt`,
+        `   Rata-rata: ${formatCompactRupiah(receipt.averageValue)}`,
+        "",
+      ]),
+      `Total karyawan: ${receipts.length.toLocaleString("id-ID")}`,
+    ]
+    const text = lines.join("\n").trimEnd()
+
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      const textarea = document.createElement("textarea")
+      textarea.value = text
+      textarea.style.position = "fixed"
+      textarea.style.opacity = "0"
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand("copy")
+      document.body.removeChild(textarea)
+    }
+
+    setCopiedReceiptGroup(title)
+    window.setTimeout(() => setCopiedReceiptGroup(""), 1600)
+  }
 
   const isDisplayMode = page === "tv"
 
@@ -6181,7 +6290,10 @@ export default function AdminDashboard({ user, onLogout }: Props) {
           />
         )}
         {/* ── Konten Laporan (Today / MTD / Full Month / YTD) ─────────── */}
-        {page !== "setting" && page !== "receipt" && page !== "tv" && (
+        {page !== "setting" &&
+          page !== "receipt" &&
+          page !== "receipt-segment" &&
+          page !== "tv" && (
           <>
             {/* Page title */}
             {!isMobile && (
@@ -8291,6 +8403,171 @@ export default function AdminDashboard({ user, onLogout }: Props) {
               loading={receiptLoading}
               isMobile={isMobile}
             />
+          </div>
+        )}
+        {page === "receipt-segment" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, color: S.text }}>
+                  Segmentasi Receipt
+                </div>
+                <div style={{ marginTop: 3, fontSize: 11, color: S.muted }}>
+                  Berdasarkan jumlah total nilai per nomor receipt
+                </div>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, color: S.sub, fontSize: 12, fontWeight: 700 }}>
+                Tanggal
+                <input
+                  type="date"
+                  value={receiptSegmentDate}
+                  onChange={(event) => setReceiptSegmentDate(event.target.value)}
+                  style={{
+                    height: 36,
+                    border: `1px solid ${S.border}`,
+                    borderRadius: 8,
+                    padding: "0 10px",
+                    color: S.text,
+                    background: "#fff",
+                  }}
+                />
+              </label>
+            </div>
+
+            {receiptSegmentLoading && (
+              <div style={{ padding: 20, borderRadius: 12, background: "#fff", color: S.sub, border: `1px solid ${S.border}` }}>
+                Menghitung segmentasi receipt…
+              </div>
+            )}
+
+            {receiptSegmentError && (
+              <div role="alert" style={{ padding: 12, borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", color: "#9a3412" }}>
+                {receiptSegmentError}
+              </div>
+            )}
+
+            {!receiptSegmentLoading && receiptSegment && (
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(180px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ padding: 16, borderRadius: 14, background: "#fff", border: `1px solid ${S.border}` }}>
+                    <div style={{ fontSize: 11, color: S.muted, fontWeight: 800 }}>TOTAL RECEIPT</div>
+                    <div style={{ marginTop: 5, fontSize: 24, fontWeight: 900, color: S.text }}>
+                      {receiptSegment.totalReceipts.toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                  <div style={{ padding: 16, borderRadius: 14, background: "#fff", border: `1px solid ${S.border}` }}>
+                    <div style={{ fontSize: 11, color: S.muted, fontWeight: 800 }}>RECEIPT 0-200 RB</div>
+                    <div style={{ marginTop: 5, fontSize: 24, fontWeight: 900, color: S.red }}>
+                    {(receiptSegment.segments.find((segment) => segment.key === "0-200")?.count ?? 0).toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                  <div style={{ padding: 16, borderRadius: 14, background: "#fff", border: `1px solid ${S.border}` }}>
+                    <div style={{ fontSize: 11, color: S.muted, fontWeight: 800 }}>RECEIPT &gt; 10 JT</div>
+                    <div style={{ marginTop: 5, fontSize: 24, fontWeight: 900, color: S.red }}>
+                    {(receiptSegment.segments.find((segment) => segment.key === "gt-10000")?.count ?? 0).toLocaleString("id-ID")}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ overflowX: "auto", background: "#fff", border: `1px solid ${S.border}`, borderRadius: 14 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc", color: S.muted }}>
+                        <th style={{ textAlign: "left", padding: "12px 14px" }}>SEGMENTASI NILAI</th>
+                        <th style={{ textAlign: "right", padding: "12px 14px" }}>JUMLAH RECEIPT</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {receiptSegment.segments.map((segment) => (
+                        <tr key={segment.key}>
+                          <td style={{ padding: "11px 14px", borderTop: `1px solid ${S.border}`, fontWeight: 700, color: S.text }}>
+                            {segment.label}
+                          </td>
+                          <td style={{ padding: "11px 14px", borderTop: `1px solid ${S.border}`, textAlign: "right", fontWeight: 900, color: S.text }}>
+                            {segment.count.toLocaleString("id-ID")} Receipt
+                          </td>
+                        </tr>
+                      ))}
+                      <tr style={{ background: "#f8fafc" }}>
+                        <td style={{ padding: "12px 14px", borderTop: `2px solid ${S.border}`, fontWeight: 900, color: S.text }}>TOTAL RECEIPT</td>
+                        <td style={{ padding: "12px 14px", borderTop: `2px solid ${S.border}`, textAlign: "right", fontWeight: 900, color: S.red }}>
+                          {receiptSegment.totalReceipts.toLocaleString("id-ID")} Receipt
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+                  {[
+                    { title: "Receipt 0-200 RB · ONLINE", receipts: receiptSegment.lowValueOnline },
+                    { title: "Receipt 0-200 RB · OFFLINE", receipts: receiptSegment.lowValueOffline },
+                    { title: "Receipt > 10 JT · ONLINE", receipts: receiptSegment.highValueOnline },
+                    { title: "Receipt > 10 JT · OFFLINE", receipts: receiptSegment.highValueOffline },
+                  ].map((detail) => (
+                    <div key={detail.title} style={{ background: "#fff", border: `1px solid ${S.border}`, borderRadius: 14, overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "13px 14px", borderBottom: `1px solid ${S.border}`, fontSize: 12, fontWeight: 900, color: S.text }}>
+                        <span>{detail.title}</span>
+                        <button
+                          type="button"
+                          disabled={detail.receipts.length === 0}
+                          onClick={() => void copyReceiptText(detail.title, detail.receipts)}
+                          style={{
+                            border: `1px solid ${copiedReceiptGroup === detail.title ? "#86efac" : S.border}`,
+                            borderRadius: 8,
+                            padding: "6px 9px",
+                            background: copiedReceiptGroup === detail.title ? "#dcfce7" : "#fff",
+                            color: copiedReceiptGroup === detail.title ? "#166534" : S.text,
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: detail.receipts.length === 0 ? "not-allowed" : "pointer",
+                            opacity: detail.receipts.length === 0 ? 0.5 : 1,
+                          }}
+                        >
+                          {copiedReceiptGroup === detail.title ? "Tersalin" : "Salin Text"}
+                        </button>
+                      </div>
+                      {detail.receipts.length === 0 ? (
+                        <div style={{ padding: 18, color: S.muted, fontSize: 12 }}>Tidak ada receipt pada rentang ini.</div>
+                      ) : (
+                        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                          {detail.receipts.map((receipt) => (
+                            <div key={`${receipt.nik}-${receipt.nama}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${S.border}`, fontSize: 12 }}>
+                              <div>
+                                <div style={{ fontWeight: 800, color: S.text }}>{receipt.nama || "-"}</div>
+                                <div style={{ marginTop: 2, color: S.muted }}>NIK {receipt.nik || "-"}</div>
+                              </div>
+                              <div style={{ flexShrink: 0, textAlign: "right" }}>
+                                <div style={{ fontWeight: 900, color: S.text }}>
+                                  {receipt.receiptCount.toLocaleString("id-ID")} Receipt
+                                </div>
+                                <div style={{ marginTop: 3, color: S.muted, fontSize: 11 }}>
+                                  Avg {formatRupiahFull(receipt.averageValue)}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
         {/* ── Tab: Pengaturan ─────────────────────────────────────────── */}

@@ -47,7 +47,7 @@ function AppInner() {
       const currentMonth = getJakartaMonthKey()
       if (currentMonth === loadedMonth) return
       loadedMonth = currentMonth
-      void reload(user.nik)
+      void reload(user.nik, true)
     }
     const interval = window.setInterval(reloadForNewMonth, 60_000)
     document.addEventListener("visibilitychange", reloadForNewMonth)
@@ -61,7 +61,7 @@ function AppInner() {
     if (u.role === "admin") {
       setUser(u)
       setPage("admin")
-      reload(u.nik)
+      reload(u.nik, true)
       return
     }
 

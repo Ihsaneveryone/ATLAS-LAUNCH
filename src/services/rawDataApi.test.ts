@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildRawPerformance, fetchCopasS2TableData, fetchTargets, salesContributionKeyForZone } from './rawDataApi'
+import { buildRawPerformance, fetchCopasS2TableData, fetchReceiptSegmentation, fetchTargets, salesContributionKeyForZone } from './rawDataApi'
 
 function csvResponse(text: string) {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/csv' } })
@@ -167,6 +167,38 @@ describe('buildRawPerformance', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('segments unique receipts by combined receipt value and returns low/high details', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      if (url.searchParams.get('sheet') === 'SALES_DATA') {
+        return csvResponse([
+          'NO RECEIPT,NIK,NAMA,EXCLUDE PPN,DATE,TANGGAL,CHANNEL',
+          'R-LOW,100001,User Low,120.000,22/11/2026,22-11-2026,OFFLINE',
+          'R-LOW,100001,User Low,70.000,22/11/2026,22-11-2026,OFFLINE',
+          'R-HIGH,100002,User High,12.000.000,22/11/2026,22-11-2026,ONLINE',
+          'R-MID,100003,User Mid,350.000,22/11/2026,22-11-2026,OFFLINE',
+          'R-NEGATIVE,100004,User Negative,-50.000,22/11/2026,22-11-2026,OFFLINE',
+        ].join('\n'))
+      }
+      return csvResponse('')
+    }))
+
+    const result = await fetchReceiptSegmentation('2026-11-22')
+
+    expect(result.totalReceipts).toBe(3)
+    expect(result.segments.find(segment => segment.key === '0-200')?.count).toBe(1)
+    expect(result.segments.find(segment => segment.key === '300-400')?.count).toBe(1)
+    expect(result.segments.find(segment => segment.key === 'gt-10000')?.count).toBe(1)
+    expect(result.lowValueReceipts[0]?.nik).toBe('100001')
+    expect(result.lowValueReceipts[0]?.receiptCount).toBe(1)
+    expect(result.lowValueReceipts[0]?.averageValue).toBe(190000)
+    expect(result.lowValueOffline[0]?.nik).toBe('100001')
+    expect(result.highValueReceipts[0]?.nik).toBe('100002')
+    expect(result.highValueReceipts[0]?.receiptCount).toBe(1)
+    expect(result.highValueOnline[0]?.averageValue).toBe(12000000)
+    expect(result.segments.flatMap(segment => segment.receipts).some(receipt => receipt.receiptNo === 'R-NEGATIVE')).toBe(false)
   })
 
   it('maps blank-NIK sales using USERS even when ATLAS DATABASE has other employees', async () => {

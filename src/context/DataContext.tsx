@@ -90,7 +90,7 @@ export interface AtlasData {
 
   tokoRows: TokoRow[]
 
-  reload: (nik: string) => void
+  reload: (nik: string, bypassCache?: boolean) => void
 
   reloadMenuConfig: () => void
 }
@@ -230,7 +230,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const reload = useCallback(
-    async (nik: string) => {
+    async (nik: string, bypassCache = false) => {
       const requestId = ++reloadRequestIdRef.current
 
       setData((prev) => ({
@@ -312,15 +312,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const currentUser = liveUsers.find((candidate) => niksMatch(candidate.nik, nik))
         const currentNormalizedTitle = normalizeJobTitle(currentUser?.jobTitle)
         const loadAllTransactions =
-          isSupervisorJobTitle(currentUser?.jobTitle) ||
+          !currentUser ||
+          isSupervisorJobTitle(currentUser.jobTitle) ||
           currentNormalizedTitle === "MANAGER" ||
-          currentUser?.role === "admin"
+          currentUser.role === "admin"
 
         const result = await buildRawPerformance(
           nik,
           log,
           validNiks,
           loadAllTransactions,
+          bypassCache,
         )
         salesAttributionWarning = result.salesAttributionWarning
 
