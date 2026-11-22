@@ -11,6 +11,7 @@ import { getConfiguredColumnIndex } from './columnMappingService'
 import { niksMatch, canonicalNik, isValidNikFormat, looksLikeNik } from './nik'
 
 const SHEET_ID = '1mNGKDPFNnF1Ca0CtNzyriwTE8zjuwdJei0RafXxna38'
+const SALES_DATA_SHEET_ID = '1CBz9oPc9FMiEu545NX-wJZl_fzUsX_rqggtVwaAlM7k'
 const DEFAULT_DAILY_TARGET = 5_000_000
 const SID_RAW_DATA_GID = 1092675108
 
@@ -18,22 +19,22 @@ function debugWarn(...values: unknown[]): void {
   if (import.meta.env.DEV) console.warn(...values)
 }
 
-function sheetUrl(name: string, gid?: number) {
+function sheetUrl(name: string, gid?: number, spreadsheetId = SHEET_ID) {
   // Jika ada gid, gunakan gid (lebih reliable dari sheet name)
   if (gid !== undefined) {
-    return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}&_t=${Date.now()}`
+    return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=${gid}&_t=${Date.now()}`
   }
   // Fallback: gunakan sheet name dengan proper URL encoding
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&_t=${Date.now()}`
+  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(name)}&_t=${Date.now()}`
 }
 
-async function fetchCSV(name: string, gid?: number, retries = 2): Promise<string[][]> {
+async function fetchCSV(name: string, gid?: number, retries = 2, spreadsheetId = SHEET_ID): Promise<string[][]> {
   let lastErr: unknown
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 25_000)
     try {
-      const res = await fetch(sheetUrl(name, gid), { cache: 'no-store', signal: controller.signal })
+      const res = await fetch(sheetUrl(name, gid, spreadsheetId), { cache: 'no-store', signal: controller.signal })
       const text = await res.text()
       if (!res.ok || text.trimStart().startsWith('<!')) throw new Error(`Sheet "${name}" tidak bisa dibaca`)
       // Koneksi yang terputus di tengah download (umum utk sheet besar) tidak selalu
@@ -536,10 +537,14 @@ function detectCopasS2WithEmptyHeader(rows: string[][]): boolean {
 
 export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRows: string[] }> {
   const nikNameMap = await fetchNikNameMapping()
-  // Hanya baca COPAS S2: sheet lain tidak boleh menjadi sumber fallback sales.
-  const candidates = [
+  // Utamakan SALES_DATA langsung; COPAS S2 hanya menjadi fallback jika sumber utama belum tersedia.
+  const copasCandidates = [
     ['COPAS S2', 1092675108],
     ['COPAS S2', undefined],
+  ] as const
+  const candidates = [
+    ['SALES_DATA', undefined, SALES_DATA_SHEET_ID],
+    ...copasCandidates.map(([name, gid]) => [name, gid, SHEET_ID] as const),
   ] as const
 
   const debugRows: string[] = []
@@ -549,9 +554,9 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   // Prefer the COPAS S2 raw transaction layout; accept its matrix layout only
   // if the same sheet contains a validated transaction matrix.
   let matrixFallback: { rows: string[][]; name: string } | null = null
-  for (const [candidate, gid] of candidates) {
+  for (const [candidate, gid, spreadsheetId] of candidates) {
     try {
-      let candidateRows = await fetchCSV(candidate, gid)
+      let candidateRows = await fetchCSV(candidate, gid, 2, spreadsheetId)
       // Koneksi bisa terputus TEPAT setelah baris header (tanpa melempar error dan tanpa
       // kutip yang tidak tertutup), jadi hasilnya cuma 1 baris kosong padahal harusnya
       // ribuan baris. Ini hanya relevan utk kandidat utama ('COPAS S2') yang seharusnya
@@ -559,7 +564,7 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
       if (candidate === 'COPAS S2' && gid && candidateRows.length <= 1) {
         for (let extra = 0; extra < 2 && candidateRows.length <= 1; extra++) {
           await new Promise(r => setTimeout(r, 300))
-          const retryRows = await fetchCSV(candidate, gid)
+          const retryRows = await fetchCSV(candidate, gid, 2, spreadsheetId)
           if (retryRows.length > candidateRows.length) candidateRows = retryRows
         }
 
@@ -622,9 +627,9 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   // Alasan: gviz silent fallback ke gid=0 bisa return data yang tidak expected, tapi paling tidak punya rows.
   // Validasi ketat (looksLikeMatrix, looksLikeRaw, dll) mungkin terlalu restrictive untuk beberapa format.
   if (!raw) {
-    for (const [candidate, gid] of candidates) {
+    for (const [candidate, gid, spreadsheetId] of candidates) {
       try {
-        const candidateRows = await fetchCSV(candidate, gid)
+        const candidateRows = await fetchCSV(candidate, gid, 2, spreadsheetId)
         if (candidateRows.length > 10) {
           // Keep any permissive fallback confined to COPAS S2 itself.
           debugRows.push(`[FALLBACK-DATA] ${candidate} punya ${candidateRows.length} baris, accept dengan fallback`)
@@ -659,10 +664,16 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   }
 
   // Some COPAS S2 exports omit the header row; preserve the first transaction.
+  const dynamicPreviewTanggalIdx = headers.findIndex(h =>
+    h.includes('TANGGAL') || h === 'DATE'
+  )
+  const previewTanggalIdx = dynamicPreviewTanggalIdx >= 0
+    ? dynamicPreviewTanggalIdx
+    : getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TANGGAL', 13)
   const firstRowLooksLikeTransaction =
     isValidNikFormat(raw[0]?.[0])
     && Boolean((raw[0]?.[1] ?? '').trim())
-    && looksLikeDateHeader((raw[0]?.[13] ?? '').trim())
+    && looksLikeDateHeader((raw[0]?.[previewTanggalIdx] ?? '').trim())
   let dataStart = firstRowLooksLikeTransaction ? 0 : 1
   if (!firstRowLooksLikeTransaction) {
     for (let i = 0; i < Math.min(5, raw.length); i++) {
@@ -680,13 +691,25 @@ export async function fetchRawTransactions(): Promise<{ txns: RawTxn[], debugRow
   let lastNama = ''
   const txns: RawTxn[] = []
 
-  const namaIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_NAMA', 1)
-  const tanggalIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TANGGAL', 13)
-  const receiptIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_RECEIPT_NO', 3)
-  const artikelIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_ARTIKEL', 4)
-  const qtyIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_QTY', 7)
-  const totalValueIdx = getConfiguredColumnIndex('COPAS S2', 'COPAS_S2_TOTAL_VALUE', 11)
-  const subCategoryIdx = 14
+  const findHeaderIndex = (aliases: string[], fallbackId: string, fallbackIndex: number) => {
+    for (const alias of aliases) {
+      const idx = headers.findIndex(h => h === alias)
+      if (idx >= 0) return idx
+    }
+    for (const alias of aliases) {
+      const idx = headers.findIndex(h => h.includes(alias))
+      if (idx >= 0) return idx
+    }
+    return getConfiguredColumnIndex('COPAS S2', fallbackId, fallbackIndex)
+  }
+
+  const namaIdx = findHeaderIndex(['NAMA'], 'COPAS_S2_NAMA', 1)
+  const tanggalIdx = findHeaderIndex(['TANGGAL', 'DATE'], 'COPAS_S2_TANGGAL', 13)
+  const receiptIdx = findHeaderIndex(['NO RECEIPT', 'RECEIPT NO', 'RECEIPT'], 'COPAS_S2_RECEIPT_NO', 3)
+  const artikelIdx = findHeaderIndex(['ARTICLE CODE', 'ARTIKEL'], 'COPAS_S2_ARTIKEL', 4)
+  const qtyIdx = findHeaderIndex(['QUANTITY', 'QTY'], 'COPAS_S2_QTY', 7)
+  const totalValueIdx = findHeaderIndex(['EXCLUDE PPN', 'TOTAL VALUE'], 'COPAS_S2_TOTAL_VALUE', 11)
+  const subCategoryIdx = findHeaderIndex(['ZONA', 'SUB CATEGORY', 'SUBKATEGORI'], 'COPAS_S2_DESKRIPSI', 15)
 
   const nikByNormalizedName = new Map<string, string>()
   const ambiguousNames = new Set<string>()

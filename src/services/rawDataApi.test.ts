@@ -129,6 +129,46 @@ describe('buildRawPerformance', () => {
     }
   })
 
+  it('reads the live SALES_DATA layout with TANGGAL in column O', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-22T12:00:00+07:00'))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const sheet = url.searchParams.get('sheet')
+
+      if (sheet === 'SALES_DATA') {
+        return csvResponse([
+          'NIK,NAMA,DATE,NO RECEIPT,ARTICLE CODE,ARTICLE NAME,DEPARTMENT,QUANTITY,PRICE,DISCOUNT,INCLUDE PPN,EXCLUDE PPN,JOBTITLE,CHANNEL,TANGGAL,ZONA',
+          '191924,Manager Test,22/11/2026,R1,SKU1,Product,Dept,2,250000,0,500000,450000,,ONLINE,22-11-2026,Home Improvement',
+        ].join('\n'))
+      }
+      if (sheet === 'KUNCIAN SKU') return csvResponse('SKU,SKU1')
+      if (sheet === 'TARGET') return csvResponse([
+        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+        '191924,Manager Test,1000000,30000000',
+      ].join('\n'))
+      if (sheet === 'MEMBER') return csvResponse('TANGGAL,TYPE,NAMA')
+      if (sheet === 'SETTING') return csvResponse('SECTION,NAMA,AKTIF')
+      if (sheet === 'USERS') return csvResponse(
+        'NIK,NAMA,ROLE,JOBTITLE,PASSWORD\n191924,Manager Test,user,Manager,123456',
+      )
+      if (sheet === 'ATLAS DATABASE' || sheet === 'COPAS') return csvResponse('NIK,NAMA')
+      return csvResponse('')
+    }))
+
+    try {
+      const result = await buildRawPerformance('191924', undefined, new Set(['191924']))
+
+      expect(result.todayPerf.actual).toBe(450000)
+      expect(result.todayPerf.ranking.find(entry => entry.nik === '191924')?.value).toBe(450000)
+      expect(result.teamTodayEmployees.find(employee => employee.nik === '191924')?.sales).toBe(450000)
+      expect(result.dailyDate).toBe('22/11/2026')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('maps blank-NIK sales using USERS even when ATLAS DATABASE has other employees', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-11T12:00:00+07:00'))
