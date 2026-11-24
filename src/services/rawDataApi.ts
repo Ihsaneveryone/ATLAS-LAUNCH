@@ -95,6 +95,42 @@ async function fetchProjectedSalesCSV(nik: string, retries = 1): Promise<string[
   throw lastErr
 }
 
+async function fetchProjectedTeamSalesCSV(retries = 1): Promise<string[][]> {
+  const nowWIB = new Date(Date.now() + 7 * 60 * 60 * 1000)
+  const year = nowWIB.getUTCFullYear()
+  const month = nowWIB.getUTCMonth()
+  const start = new Date(Date.UTC(year, month, 1))
+  const end = new Date(Date.UTC(year, month + 1, 1))
+  const toDateLiteral = (date: Date) =>
+    `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+  const query =
+    `select A,B,D,E,H,L,O,P,N where O >= date '${toDateLiteral(start)}' ` +
+    `and O < date '${toDateLiteral(end)}'`
+  const url =
+    `https://docs.google.com/spreadsheets/d/${SALES_DATA_SHEET_ID}/gviz/tq` +
+    `?tqx=out:csv&sheet=SALES_DATA&tq=${encodeURIComponent(query)}&_t=${Date.now()}`
+
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 20_000)
+    try {
+      const res = await fetch(url, { cache: 'no-store', signal: controller.signal })
+      const text = await res.text()
+      if (!res.ok || text.trimStart().startsWith('<!')) {
+        throw new Error('Data ranking tim tidak bisa dibaca')
+      }
+      return parseCSV(text)
+    } catch (error) {
+      lastErr = error
+      if (attempt < retries) await new Promise(resolve => setTimeout(resolve, 250))
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  throw lastErr
+}
+
 function parseCSV(text: string): string[][] {
   // Iterasi seluruh teks (bukan split per baris dulu) — sel deskripsi produk
   // sering mengandung enter literal, dan split('\n') di awal akan memecah
@@ -779,8 +815,11 @@ export async function fetchRawTransactions(
   preferredNik?: string,
   loadAllTransactions = true,
   bypassCache = false,
+  includeTeamRanking = false,
 ): Promise<{ txns: RawTxn[], debugRows: string[] }> {
-  const cacheKey = `${loadAllTransactions ? 'all' : preferredNik ?? 'none'}`
+  const cacheKey = includeTeamRanking
+    ? 'team-ranking'
+    : `${loadAllTransactions ? 'all' : preferredNik ?? 'none'}`
   if (
     typeof window !== 'undefined' &&
     !bypassCache &&
@@ -798,10 +837,15 @@ export async function fetchRawTransactions(
     ['COPAS S2', undefined],
   ] as const
   const candidates: ReadonlyArray<readonly [string, number | undefined, string]> = [
-    ...(!loadAllTransactions && preferredNik && typeof window !== 'undefined'
+    ...(!loadAllTransactions && includeTeamRanking
       ? [['SALES_DATA', undefined, SALES_DATA_SHEET_ID] as const]
       : []),
-    ...(loadAllTransactions || !preferredNik || typeof window === 'undefined'
+    ...(!loadAllTransactions && !includeTeamRanking && preferredNik && typeof window !== 'undefined'
+      ? [['SALES_DATA', undefined, SALES_DATA_SHEET_ID] as const]
+      : []),
+    ...(loadAllTransactions ||
+      !preferredNik ||
+      (!includeTeamRanking && typeof window === 'undefined')
       ? [['SALES_DATA', undefined, SALES_DATA_SHEET_ID] as const]
       : []),
     ...copasCandidates.map(([name, gid]) => [name, gid, SHEET_ID] as const),
@@ -816,9 +860,11 @@ export async function fetchRawTransactions(
   let matrixFallback: { rows: string[][]; name: string } | null = null
   for (const [candidate, gid, spreadsheetId] of candidates) {
     try {
-      let candidateRows = !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
-        ? await fetchProjectedSalesCSV(preferredNik)
-        : await fetchCSV(candidate, gid, 2, spreadsheetId)
+      let candidateRows = candidate === 'SALES_DATA' && includeTeamRanking
+        ? await fetchProjectedTeamSalesCSV()
+        : !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
+          ? await fetchProjectedSalesCSV(preferredNik)
+          : await fetchCSV(candidate, gid, 2, spreadsheetId)
       if (!loadAllTransactions && candidate === 'SALES_DATA' && candidateRows.length <= 1) {
         debugRows.push(`SALES_DATA per-NIK kosong untuk ${preferredNik}; mencoba COPAS S2`)
         continue
@@ -895,9 +941,11 @@ export async function fetchRawTransactions(
   if (!raw) {
     for (const [candidate, gid, spreadsheetId] of candidates) {
       try {
-        const candidateRows = !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
-          ? await fetchProjectedSalesCSV(preferredNik)
-          : await fetchCSV(candidate, gid, 2, spreadsheetId)
+        const candidateRows = candidate === 'SALES_DATA' && includeTeamRanking
+          ? await fetchProjectedTeamSalesCSV()
+          : !loadAllTransactions && preferredNik && candidate === 'SALES_DATA'
+            ? await fetchProjectedSalesCSV(preferredNik)
+            : await fetchCSV(candidate, gid, 2, spreadsheetId)
         if (candidateRows.length > 10) {
           // Keep any permissive fallback confined to COPAS S2 itself.
           debugRows.push(`[FALLBACK-DATA] ${candidate} punya ${candidateRows.length} baris, accept dengan fallback`)
@@ -1791,6 +1839,7 @@ export async function buildRawPerformance(
   validNiks: Set<string> = new Set(),
   loadAllTransactions = true,
   bypassCache = false,
+  includeTeamRanking = false,
 ): Promise<RawPerfResult> {
   const log = (s: string) => { debugWarn('[ATLAS RAW]', s); onLog?.(s) }
   // Normalize currentNik to canonical format (I01902 → 101902) so it matches transaction NIKs
@@ -1798,7 +1847,7 @@ export async function buildRawPerformance(
   const normCurrent = normNik(canonicalCurrent)
 
   const [{ txns: rawTxns, debugRows }, skuMap, targets, memberEntries, settings] = await Promise.all([
-    fetchRawTransactions(currentNik, loadAllTransactions, bypassCache),
+    fetchRawTransactions(currentNik, loadAllTransactions, bypassCache, includeTeamRanking),
     fetchSkuMap(),
     fetchTargets(),
     fetchMemberData(),

@@ -323,6 +323,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           validNiks,
           loadAllTransactions,
           bypassCache,
+          !loadAllTransactions,
         )
         salesAttributionWarning = result.salesAttributionWarning
 

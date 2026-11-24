@@ -169,6 +169,63 @@ describe('buildRawPerformance', () => {
     }
   })
 
+  it('loads team ranking for a regular user without downloading all history', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-24T12:00:00+07:00'))
+
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input))
+      const sheet = url.searchParams.get('sheet')
+      if (sheet === 'SALES_DATA') {
+        expect(url.searchParams.get('tq')).toContain('where O >=')
+        expect(url.searchParams.get('tq')).not.toContain('A =')
+        return csvResponse([
+          'NIK,NAMA,NO RECEIPT,ARTICLE CODE,QUANTITY,EXCLUDE PPN,TANGGAL,ZONA,CHANNEL',
+          '191924,Manager Test,R1,SKU1,1,1.000.000,24-11-2026,Home Improvement,OFFLINE',
+          '176419,Second User,R2,SKU2,1,2.000.000,24-11-2026,Home Living,ONLINE',
+        ].join('\n'))
+      }
+      if (sheet === 'KUNCIAN SKU') return csvResponse('REGULER,SKU1,SKU2')
+      if (sheet === 'TARGET') return csvResponse([
+        'NIK,NAMA,TARGET SALES DAILY,TARGET SALES BULAN',
+        '191924,Manager Test,1000000,30000000',
+        '176419,Second User,1000000,30000000',
+      ].join('\n'))
+      if (sheet === 'USERS') return csvResponse([
+        'NIK,NAMA,ROLE,JOBTITLE,PASSWORD',
+        '191924,Manager Test,user,ADVISOR,123456',
+        '176419,Second User,user,ADVISOR,123456',
+      ].join('\n'))
+      if (sheet === 'ATLAS DATABASE' || sheet === 'COPAS') {
+        return csvResponse('NIK,NAMA\n191924,Manager Test\n176419,Second User')
+      }
+      if (sheet === 'MEMBER' || sheet === 'SETTING') return csvResponse('SECTION,NAMA,AKTIF')
+      return csvResponse('')
+    }))
+
+    try {
+      const result = await buildRawPerformance(
+        '191924',
+        undefined,
+        new Set(['191924', '176419']),
+        false,
+        true,
+        true,
+      )
+
+      expect(result.todayPerf.ranking.map((employee) => employee.nik)).toEqual([
+        '176419',
+        '191924',
+      ])
+      expect(result.todayPerf.ranking.map((employee) => employee.value)).toEqual([
+        2_000_000,
+        1_000_000,
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('segments unique receipts by combined receipt value and returns low/high details', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(String(input))
